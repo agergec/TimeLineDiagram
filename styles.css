@@ -1221,7 +1221,13 @@ body {
 
 .diagram-item.active {
     border-color: var(--accent-primary);
-    background: rgba(99, 102, 241, 0.15);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.25) 100%);
+    box-shadow: 0 0 0 1px var(--accent-primary), 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.diagram-item.active .diagram-item-title {
+    color: #fff;
+    font-weight: 600;
 }
 
 .diagram-item-info {
@@ -1554,4 +1560,36 @@ body {
 
 .measurement-overlay.pinned .measurement-line {
     stroke-width: 2;
+}
+
+/* =====================================================
+   Locked Diagram State
+   ===================================================== */
+body.diagram-locked .lanes-canvas {
+    cursor: not-allowed;
+}
+
+body.diagram-locked .timeline-box {
+    cursor: default;
+}
+
+body.diagram-locked .lane-item {
+    opacity: 0.7;
+}
+
+body.diagram-locked .lane-controls,
+body.diagram-locked .lane-delete-btn {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+body.diagram-locked .title-input,
+body.diagram-locked .time-input {
+    background: var(--bg-tertiary);
+    cursor: not-allowed;
+}
+
+body.diagram-locked #add-lane {
+    opacity: 0.3;
+    pointer-events: none;
 }

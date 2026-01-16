@@ -13,6 +13,7 @@ class TimelineDiagram {
         this.boxes = [];
         this.nextLaneId = 1;
         this.nextBoxId = 1;
+        this.locked = false;
     }
 
     addLane(name, baseColor = null) {
@@ -125,6 +126,7 @@ class TimelineDiagram {
             boxes: this.boxes,
             nextLaneId: this.nextLaneId,
             nextBoxId: this.nextBoxId,
+            locked: this.locked,
             settings: app.settings, // Include global settings
             measurement: measurement // Include pinned measurement
         };
@@ -137,6 +139,7 @@ class TimelineDiagram {
         this.boxes = data.boxes || [];
         this.nextLaneId = data.nextLaneId || 1;
         this.nextBoxId = data.nextBoxId || 1;
+        this.locked = data.locked || false;
         // Restore settings if present
         if (data.settings) {
             app.settings = { ...app.settings, ...data.settings };
@@ -439,7 +442,7 @@ function saveCurrentDiagram() {
         data: app.diagram.toJSON()
     };
 
-    // Find existing or add new
+    // Find existing or add new (keep original order, don't sort)
     const existingIndex = diagrams.findIndex(d => d.id === currentDiagramId);
     if (existingIndex >= 0) {
         diagrams[existingIndex] = diagramData;
@@ -447,8 +450,7 @@ function saveCurrentDiagram() {
         diagrams.unshift(diagramData);
     }
 
-    // Sort by updatedAt (most recent first) and limit to MAX_DIAGRAMS
-    diagrams.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Limit to MAX_DIAGRAMS (remove oldest if needed)
     const trimmedDiagrams = diagrams.slice(0, MAX_DIAGRAMS);
 
     saveDiagramsList(trimmedDiagrams);
@@ -486,6 +488,9 @@ function loadDiagram(diagramId) {
     renderAlignmentMarkers();
     updateTotalDuration();
     renderDiagramsList();
+
+    // Update lock state
+    updateLockState();
 
     // Restore pinned measurement if present
     restorePinnedMeasurement();
@@ -832,6 +837,10 @@ function renderLaneList() {
     // Add event listeners for lane name inputs
     container.querySelectorAll('.lane-name-input').forEach(input => {
         input.addEventListener('change', (e) => {
+            if (!isEditingAllowed()) {
+                e.target.value = app.diagram.lanes.find(l => l.id === parseInt(e.target.dataset.laneId, 10))?.name || '';
+                return;
+            }
             const laneId = parseInt(e.target.dataset.laneId, 10);
             app.diagram.renameLane(laneId, e.target.value);
             renderLanesCanvas();
@@ -842,6 +851,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-delete-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const laneId = parseInt(e.target.dataset.laneId, 10);
             const lane = app.diagram.lanes.find(l => l.id === laneId);
             const boxCount = app.diagram.getBoxesForLane(laneId).length;
@@ -863,6 +873,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const laneId = parseInt(e.target.dataset.laneId, 10);
             if (app.diagram.moveLane(laneId, 'up')) {
                 renderLaneList();
@@ -875,6 +886,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const laneId = parseInt(e.target.dataset.laneId, 10);
             if (app.diagram.moveLane(laneId, 'down')) {
                 renderLaneList();
@@ -887,6 +899,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
             const name = `Lane ${app.diagram.nextLaneId}`;
             app.diagram.insertLaneAt(index, name);
@@ -899,6 +912,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
             const name = `Lane ${app.diagram.nextLaneId}`;
             app.diagram.insertLaneAt(index + 1, name);
@@ -911,6 +925,7 @@ function renderLaneList() {
     container.querySelectorAll('.lane-color-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (!isEditingAllowed()) return;
             const laneId = parseInt(e.target.dataset.laneId, 10);
             showLanePropertiesPanel(laneId);
         });
@@ -926,6 +941,10 @@ function setupLaneDragAndDrop() {
 
     container.querySelectorAll('.lane-item').forEach(item => {
         item.addEventListener('dragstart', (e) => {
+            if (app.diagram.locked) {
+                e.preventDefault();
+                return;
+            }
             draggedItem = item;
             item.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
@@ -1386,6 +1405,11 @@ function handleTrackMouseDown(e) {
         return;
     }
 
+    // Don't allow editing if diagram is locked
+    if (app.diagram.locked) {
+        return;
+    }
+
     if (e.target.classList.contains('timeline-box') ||
         e.target.closest('.timeline-box')) {
         return; // Let box handle its own events
@@ -1429,6 +1453,9 @@ function handleTrackMouseDown(e) {
 
 function handleBoxDragStart(e, boxId) {
     e.stopPropagation();
+
+    // Don't allow dragging if locked
+    if (app.diagram.locked) return;
 
     const box = app.diagram.boxes.find(b => b.id === boxId);
     if (!box) return;
@@ -1850,6 +1877,7 @@ function handleZoomFit() {
 // =====================================================
 function handleBoxPropertyChange() {
     if (!app.selectedBoxId) return;
+    if (app.diagram.locked) return; // Silent fail for property changes when locked
 
     const updates = {
         label: app.elements.boxLabel.value,
@@ -1869,6 +1897,7 @@ function handleBoxPropertyChange() {
 
 function handleDeleteBox() {
     if (!app.selectedBoxId) return;
+    if (!isEditingAllowed()) return;
 
     app.diagram.removeBox(app.selectedBoxId);
     deselectBox();
@@ -2709,6 +2738,11 @@ function showSettingsPanel() {
         alignmentCheckbox.checked = app.settings.showAlignmentLines;
     }
 
+    const lockCheckbox = document.getElementById('config-lock-diagram');
+    if (lockCheckbox) {
+        lockCheckbox.checked = app.diagram.locked;
+    }
+
     // Deselect any box/lane
     app.selectedBoxId = null;
     app.selectedLaneId = null;
@@ -2743,6 +2777,44 @@ function handleSettingsChange() {
     renderTimeMarkers();
     renderAlignmentMarkers();
     updateTotalDuration();
+}
+
+function handleLockChange() {
+    const lockCheckbox = document.getElementById('config-lock-diagram');
+    if (lockCheckbox) {
+        app.diagram.locked = lockCheckbox.checked;
+        updateLockState();
+        autoSave();
+    }
+}
+
+function isEditingAllowed() {
+    if (app.diagram.locked) {
+        showToast({
+            type: 'warning',
+            title: 'Diagram Locked',
+            message: 'Unlock in Settings to edit.',
+            duration: 2000
+        });
+        return false;
+    }
+    return true;
+}
+
+function updateLockState() {
+    const body = document.body;
+    const lockIndicator = document.getElementById('lock-indicator');
+
+    if (app.diagram.locked) {
+        body.classList.add('diagram-locked');
+        // Update title input to readonly
+        app.elements.diagramTitle.readOnly = true;
+        app.elements.startTime.readOnly = true;
+    } else {
+        body.classList.remove('diagram-locked');
+        app.elements.diagramTitle.readOnly = false;
+        app.elements.startTime.readOnly = false;
+    }
 }
 
 // =====================================================
@@ -2854,6 +2926,11 @@ function init() {
         alignmentCheckbox.addEventListener('change', handleSettingsChange);
     }
 
+    const lockCheckbox = document.getElementById('config-lock-diagram');
+    if (lockCheckbox) {
+        lockCheckbox.addEventListener('change', handleLockChange);
+    }
+
     // Also sync header title input changes to settings
     app.elements.diagramTitle.addEventListener('input', (e) => {
         app.diagram.title = e.target.value;
@@ -2883,6 +2960,7 @@ function init() {
 
     // Lane management
     document.getElementById('add-lane').addEventListener('click', () => {
+        if (!isEditingAllowed()) return;
         const name = `Lane ${app.diagram.lanes.length + 1}`;
         app.diagram.addLane(name);
         renderLaneList();
