@@ -1704,12 +1704,13 @@ function handleTrackMouseDown(e) {
     if (app.isPicking) {
         app.isPicking = false;
         document.body.style.cursor = '';
+        document.body.classList.remove('picking-mode');
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
 
         // Remove toast and visual feedback
         hidePickModeToast();
-        stopPickableGlowAnimation();
+        clearPickableColors();
         document.querySelectorAll('.timeline-box').forEach(box => {
             box.classList.remove('pickable');
         });
@@ -3344,63 +3345,98 @@ function hidePickModeToast() {
 }
 
 // Helper function to get contrast color for a given color
-function getContrastGlowColor(hexColor) {
-    // Convert hex to RGB
-    let hex = hexColor.replace('#', '');
-    if (hex.length === 3) {
-        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-    }
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
+function getContrastGlowColor(colorStr) {
+    let r, g, b;
 
-    // Calculate luminance
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    // Return contrasting color - bright cyan for dark colors, deep magenta for light colors
-    if (luminance > 0.5) {
-        // Light color - use deep magenta/purple glow
-        return { r: 255, g: 0, b: 255 }; // Magenta
+    // Handle rgb() or rgba() format
+    const rgbMatch = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (rgbMatch) {
+        r = parseInt(rgbMatch[1], 10);
+        g = parseInt(rgbMatch[2], 10);
+        b = parseInt(rgbMatch[3], 10);
     } else {
-        // Dark color - use bright cyan glow
-        return { r: 0, g: 255, b: 255 }; // Cyan
+        // Handle hex format
+        let hex = colorStr.replace('#', '');
+        if (hex.length === 3) {
+            hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+        }
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
     }
+
+    // Convert RGB to HSL
+    const rNorm = r / 255;
+    const gNorm = g / 255;
+    const bNorm = b / 255;
+    const max = Math.max(rNorm, gNorm, bNorm);
+    const min = Math.min(rNorm, gNorm, bNorm);
+    let h, s, l = (max + min) / 2;
+
+    if (max === min) {
+        h = s = 0; // achromatic
+    } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case rNorm: h = ((gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0)) / 6; break;
+            case gNorm: h = ((bNorm - rNorm) / d + 2) / 6; break;
+            case bNorm: h = ((rNorm - gNorm) / d + 4) / 6; break;
+        }
+    }
+
+    // Get complementary hue (opposite on color wheel)
+    let newH = (h + 0.5) % 1;
+    // Use high saturation and appropriate lightness for visibility
+    let newS = Math.max(s, 0.8); // Ensure saturation is high
+    let newL = l > 0.5 ? 0.4 : 0.7; // Dark glow for light boxes, light glow for dark boxes
+
+    // Convert HSL back to RGB
+    function hslToRgb(h, s, l) {
+        let r, g, b;
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return {
+            r: Math.round(r * 255),
+            g: Math.round(g * 255),
+            b: Math.round(b * 255)
+        };
+    }
+
+    return hslToRgb(newH, newS, newL);
 }
 
-// Apply pulsing glow effect to pickable boxes
-function startPickableGlowAnimation() {
-    if (app.pickableAnimationId) return;
-
-    let phase = 0;
-    const animate = () => {
-        phase += 0.05;
-        const intensity = 0.5 + 0.3 * Math.sin(phase); // Oscillates between 0.2 and 0.8
-
-        document.querySelectorAll('.timeline-box.pickable').forEach(boxEl => {
-            const boxId = boxEl.dataset.boxId;
-            const box = app.diagram.boxes.find(b => b.id === boxId);
-            if (box) {
-                const c = getContrastGlowColor(box.color);
-                const glow1 = `0 0 0 3px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity})`;
-                const glow2 = `0 0 ${15 + intensity * 10}px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity * 0.6})`;
-                const glow3 = `0 0 ${30 + intensity * 20}px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity * 0.3})`;
-                boxEl.style.boxShadow = `${glow1}, ${glow2}, ${glow3}`;
-            }
-        });
-
-        app.pickableAnimationId = requestAnimationFrame(animate);
-    };
-    app.pickableAnimationId = requestAnimationFrame(animate);
-}
-
-function stopPickableGlowAnimation() {
-    if (app.pickableAnimationId) {
-        cancelAnimationFrame(app.pickableAnimationId);
-        app.pickableAnimationId = null;
-    }
-    // Clear inline styles
+// Apply contrast color to pickable boxes via CSS variable
+function applyPickableColors() {
     document.querySelectorAll('.timeline-box.pickable').forEach(boxEl => {
-        boxEl.style.boxShadow = '';
+        // Get color directly from the element's background
+        const bgColor = boxEl.style.backgroundColor;
+        if (bgColor) {
+            const c = getContrastGlowColor(bgColor);
+            const color = `rgb(${c.r}, ${c.g}, ${c.b})`;
+            boxEl.style.setProperty('--pickable-color', color);
+        }
+    });
+}
+
+function clearPickableColors() {
+    document.querySelectorAll('.timeline-box').forEach(boxEl => {
+        boxEl.style.removeProperty('--pickable-color');
     });
 }
 
@@ -3426,6 +3462,7 @@ function enterPickMode() {
     if (!isEditingAllowed()) return;
     app.isPicking = true;
     document.body.style.cursor = 'crosshair';
+    document.body.classList.add('picking-mode');
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.add('active');
 
@@ -3437,14 +3474,15 @@ function enterPickMode() {
         boxEl.classList.add('pickable');
     });
 
-    // Start the pulsing glow animation
-    startPickableGlowAnimation();
+    // Apply contrast colors to each box
+    applyPickableColors();
 }
 
 function completePickStart(targetBoxId) {
     if (!app.selectedBoxId) {
         app.isPicking = false;
         document.body.style.cursor = '';
+        document.body.classList.remove('picking-mode');
         return;
     }
 
@@ -3452,12 +3490,13 @@ function completePickStart(targetBoxId) {
     if (!isEditingAllowed()) {
         app.isPicking = false;
         document.body.style.cursor = '';
+        document.body.classList.remove('picking-mode');
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
 
         // Remove toast and visual feedback
         hidePickModeToast();
-        stopPickableGlowAnimation();
+        clearPickableColors();
         document.querySelectorAll('.timeline-box').forEach(box => {
             box.classList.remove('pickable');
         });
@@ -3481,12 +3520,13 @@ function completePickStart(targetBoxId) {
 
     app.isPicking = false;
     document.body.style.cursor = '';
+    document.body.classList.remove('picking-mode');
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.remove('active');
 
     // Remove toast and visual feedback
     hidePickModeToast();
-    stopPickableGlowAnimation();
+    clearPickableColors();
     document.querySelectorAll('.timeline-box').forEach(box => {
         box.classList.remove('pickable');
     });

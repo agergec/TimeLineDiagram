@@ -1176,14 +1176,36 @@ body.show-box-labels .lane-row {
     }
 }
 
-/* Pickable boxes visual feedback - glow color set via inline style */
+/* Pickable boxes visual feedback - elegant pulsing glow */
 .timeline-box.pickable {
-    cursor: pointer;
-    transform: translateY(-1px);
+    cursor: pointer !important;
+    z-index: 100 !important;
+    outline: 2px solid var(--pickable-color, #00FFFF);
+    outline-offset: 0px;
+    animation: pickablePulse 1.5s ease-in-out infinite;
+    filter: brightness(1.1);
 }
 
 .timeline-box.pickable:hover {
-    transform: translateY(-3px) scale(1.02);
+    transform: scale(1.03);
+    z-index: 101 !important;
+    animation: none;
+    outline: 3px solid var(--pickable-color, #00FFFF);
+    outline-offset: 2px;
+    filter: brightness(1.2) drop-shadow(0 0 8px var(--pickable-color, #00FFFF));
+}
+
+@keyframes pickablePulse {
+    0%, 100% {
+        outline-width: 2px;
+        outline-offset: 0px;
+        filter: brightness(1.05);
+    }
+    50% {
+        outline-width: 3px;
+        outline-offset: 2px;
+        filter: brightness(1.15) drop-shadow(0 0 6px var(--pickable-color, #00FFFF));
+    }
 }
 
 .form-actions .btn {
