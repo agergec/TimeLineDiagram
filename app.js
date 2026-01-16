@@ -2,6 +2,9 @@
    Timeline Diagram Editor - Main Application Logic
    ===================================================== */
 
+// Default minimum timeline scale for new diagrams (in milliseconds)
+const DEFAULT_MIN_TIMELINE_MS = 10000;
+
 // =====================================================
 // Data Model
 // =====================================================
@@ -179,7 +182,8 @@ const app = {
     settings: {
         timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
         showAlignmentLines: true,  // Toggle vertical alignment lines
-        showBoxLabels: false       // Toggle persistent floating labels above boxes
+        showBoxLabels: false,      // Toggle persistent floating labels above boxes
+        autoOpenBoxProperties: false // Auto-open box properties panel after creating a new box
     },
 
     // DOM Elements
@@ -711,7 +715,8 @@ function purgeApplication() {
                 app.settings = {
                     timeFormatThreshold: 1000,
                     showAlignmentLines: true,
-                    showBoxLabels: false
+                    showBoxLabels: false,
+                    autoOpenBoxProperties: false
                 };
 
                 closeMeasurement();
@@ -1205,13 +1210,10 @@ function setupLaneDragAndDrop() {
 
 function renderTimelineRuler() {
     const ruler = app.elements.timelineRuler;
-    const canvasWidth = app.elements.lanesCanvas.clientWidth -
-        getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width').replace('px', '');
 
     ruler.innerHTML = '';
 
-    const totalDuration = Math.max(app.diagram.getTotalDuration(), 1000);
-    const visibleMs = pixelsToMs(canvasWidth - 160); // Subtract lane label width
+    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
 
     // Calculate appropriate interval
     let interval = 100; // Start with 100ms
@@ -1225,8 +1227,12 @@ function renderTimelineRuler() {
         }
     }
 
-    // Add 20% padding beyond total duration
-    const endTime = Math.max(totalDuration * 1.2, visibleMs);
+    // Match the lane-track extension: 50% padding beyond total duration
+    const endTime = totalDuration * 1.5;
+
+    // Set ruler width to match lane-track width
+    const rulerWidth = msToPixels(endTime);
+    ruler.style.minWidth = `${rulerWidth}px`;
 
     for (let time = 0; time <= endTime; time += interval) {
         const mark = document.createElement('div');
@@ -1241,6 +1247,10 @@ function renderLanesCanvas() {
     const canvas = app.elements.lanesCanvas;
     canvas.innerHTML = '';
 
+    // Calculate minimum width for tracks based on timeline duration + 50% padding
+    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
+    const minTrackWidth = msToPixels(totalDuration * 1.5);
+
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
         row.className = 'lane-row';
@@ -1254,6 +1264,7 @@ function renderLanesCanvas() {
         const track = document.createElement('div');
         track.className = 'lane-track';
         track.dataset.laneId = lane.id;
+        track.style.minWidth = `${minTrackWidth}px`;
 
         // Render boxes for this lane
         const boxes = app.diagram.getBoxesForLane(lane.id);
@@ -1415,9 +1426,15 @@ function renderAlignmentMarkers() {
     const offsetX = sidebarWidth + laneLabelWidth;
     const offsetY = headerHeight + rulerHeight;
     const canvasHeight = canvas.scrollHeight;
+    const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
 
     timePoints.forEach(time => {
-        const x = offsetX + msToPixels(time);
+        const x = offsetX + msToPixels(time) - scrollLeft;
+
+        // Only draw lines that are visible in the track area (not in lane label area)
+        if (x < offsetX) {
+            return; // Line would be in the lane label area or sidebar, skip it
+        }
 
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('class', 'alignment-line');
@@ -1437,7 +1454,7 @@ function updateTotalDuration() {
     autoSave();
 }
 
-function updatePropertiesPanel() {
+function updatePropertiesPanel(isNewBox = false) {
     const panel = app.elements.propertiesPanel;
     const boxProps = document.getElementById('box-props');
     const laneProps = document.getElementById('lane-props');
@@ -1461,7 +1478,21 @@ function updatePropertiesPanel() {
     if (settingsProps) settingsProps.classList.add('hidden');
     if (propsTitle) propsTitle.textContent = 'Box Properties';
 
-    panel.classList.remove('hidden');
+    // Determine if panel should be visible:
+    // - If this is a NEW box: only open if autoOpenBoxProperties is enabled
+    // - If clicking existing box: always open
+    // - If updating (drag/resize): keep current visibility
+    const panelWasVisible = !panel.classList.contains('hidden');
+    if (isNewBox) {
+        // New box created - respect setting
+        if (app.settings.autoOpenBoxProperties) {
+            panel.classList.remove('hidden');
+        }
+    } else if (!panelWasVisible) {
+        // Not a new box and panel was closed - this is a click on existing box, open it
+        panel.classList.remove('hidden');
+    }
+    // If panel was already visible, keep it visible (already the case)
 
     app.elements.boxLabel.value = box.label;
     app.elements.boxColor.value = box.color;
@@ -1484,6 +1515,12 @@ function renderTimeMarkers() {
     if (!container) return;
 
     container.innerHTML = '';
+
+    // Match the ruler and lane-track width
+    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
+    const endTime = totalDuration * 1.5;
+    const markerWidth = msToPixels(endTime);
+    container.style.minWidth = `${markerWidth}px`;
 
     if (app.diagram.boxes.length === 0) return;
 
@@ -1564,7 +1601,7 @@ function renderTimeMarkers() {
 // =====================================================
 // Interaction Handlers
 // =====================================================
-function selectBox(boxId) {
+function selectBox(boxId, isNewBox = false) {
     // Deselect previous
     document.querySelectorAll('.timeline-box.selected').forEach(el => {
         el.classList.remove('selected');
@@ -1578,7 +1615,7 @@ function selectBox(boxId) {
         boxEl.classList.add('selected');
     }
 
-    updatePropertiesPanel();
+    updatePropertiesPanel(isNewBox);
 
     // Glimpse the pick-start button to draw attention
     setTimeout(() => {
@@ -1806,7 +1843,9 @@ function handleMouseUp(e) {
             renderLanesCanvas();
             renderTimeMarkers();
             updateTotalDuration();
-            selectBox(box.id);
+
+            // Select the box (and open properties if auto-open is enabled)
+            selectBox(box.id, true);
         }
     } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
         renderTimelineRuler();
@@ -3110,6 +3149,11 @@ function showSettingsPanel() {
         labelsCheckbox.checked = app.settings.showBoxLabels;
     }
 
+    const autoOpenCheckbox = document.getElementById('config-auto-open-properties');
+    if (autoOpenCheckbox) {
+        autoOpenCheckbox.checked = app.settings.autoOpenBoxProperties;
+    }
+
     // Deselect any box/lane
     app.selectedBoxId = null;
     app.selectedLaneId = null;
@@ -3144,6 +3188,12 @@ function handleSettingsChange() {
     if (labelsCheckbox) {
         app.settings.showBoxLabels = labelsCheckbox.checked;
         updateBoxLabelsState();
+    }
+
+    // Auto-open box properties toggle
+    const autoOpenCheckbox = document.getElementById('config-auto-open-properties');
+    if (autoOpenCheckbox) {
+        app.settings.autoOpenBoxProperties = autoOpenCheckbox.checked;
     }
 
     // Re-render to apply changes
@@ -3356,12 +3406,16 @@ function init() {
         autoSave();
     });
 
-    // Synchronize scroll between canvas, ruler, and time markers
+    // Synchronize scroll between canvas, ruler, time markers, and alignment lines
     app.elements.lanesCanvas.addEventListener('scroll', (e) => {
-        app.elements.timelineRuler.scrollLeft = e.target.scrollLeft;
-        if (app.elements.timeMarkers) {
-            app.elements.timeMarkers.scrollLeft = e.target.scrollLeft;
-        }
+        const scrollLeft = e.target.scrollLeft;
+
+        // Synchronize horizontal scroll position
+        app.elements.timelineRuler.scrollLeft = scrollLeft;
+        app.elements.timeMarkers.scrollLeft = scrollLeft;
+
+        // Update alignment markers to account for scroll position
+        renderAlignmentMarkers();
     });
     // Settings button
     document.getElementById('settings-btn').addEventListener('click', showSettingsPanel);
@@ -3385,6 +3439,11 @@ function init() {
     const labelsCheckbox = document.getElementById('config-show-labels');
     if (labelsCheckbox) {
         labelsCheckbox.addEventListener('change', handleSettingsChange);
+    }
+
+    const autoOpenCheckbox = document.getElementById('config-auto-open-properties');
+    if (autoOpenCheckbox) {
+        autoOpenCheckbox.addEventListener('change', handleSettingsChange);
     }
 
     // Also sync header title input changes to settings
@@ -3474,6 +3533,17 @@ function init() {
     // Measurement tool - Cmd/Ctrl + Left Click or measurement tool button active
     app.elements.lanesCanvas.addEventListener('mousedown', (e) => {
         if ((e.ctrlKey || e.metaKey || app.measureToolActive) && e.button === 0) {
+            // Check if click is on scrollbar (not on content area)
+            const canvas = app.elements.lanesCanvas;
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // If clicking in scrollbar area (beyond client area), don't start measurement
+            if (clickX >= canvas.clientWidth || clickY >= canvas.clientHeight) {
+                return; // Click is on scrollbar, ignore
+            }
+
             startMeasurement(e);
             e.preventDefault();
             e.stopPropagation();
