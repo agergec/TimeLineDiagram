@@ -653,9 +653,13 @@ function purgeApplication() {
                 renderTimeMarkers();
                 renderAlignmentMarkers();
                 updateTotalDuration();
-                renderDiagramsList();
 
                 app.elements.propertiesPanel.classList.add('hidden');
+
+                // Render diagrams list after a brief delay to ensure storage is synced
+                setTimeout(() => {
+                    renderDiagramsList();
+                }, 50);
 
                 showToast({ type: 'success', title: 'Purged', message: `${unlockedDiagrams.length} diagram(s) deleted. Locked diagrams preserved.`, duration: 3000 });
             } else {
@@ -2905,6 +2909,7 @@ function updateLockState() {
 // =====================================================
 function enterPickMode() {
     if (!app.selectedBoxId) return;
+    if (!isEditingAllowed()) return;
     app.isPicking = true;
     document.body.style.cursor = 'crosshair';
     const btn = document.getElementById('pick-start-btn');
@@ -2915,6 +2920,15 @@ function completePickStart(targetBoxId) {
     if (!app.selectedBoxId) {
         app.isPicking = false;
         document.body.style.cursor = '';
+        return;
+    }
+
+    // Check if editing is allowed (diagram not locked)
+    if (!isEditingAllowed()) {
+        app.isPicking = false;
+        document.body.style.cursor = '';
+        const btn = document.getElementById('pick-start-btn');
+        if (btn) btn.classList.remove('active');
         return;
     }
 
@@ -2930,6 +2944,7 @@ function completePickStart(targetBoxId) {
         }
         updatePropertiesPanel();
         renderTimeMarkers();
+        autoSave();
     }
 
     app.isPicking = false;
