@@ -109,6 +109,15 @@ class TimelineDiagram {
     }
 
     toJSON() {
+        // Build measurement data if pinned
+        let measurement = null;
+        if (app.measurePinned && app.measureStart && app.measureEnd) {
+            measurement = {
+                startX: app.measureStart.x,
+                endX: app.measureEnd.x
+            };
+        }
+
         return {
             title: this.title,
             startTime: this.startTime,
@@ -116,7 +125,8 @@ class TimelineDiagram {
             boxes: this.boxes,
             nextLaneId: this.nextLaneId,
             nextBoxId: this.nextBoxId,
-            settings: app.settings // Include global settings
+            settings: app.settings, // Include global settings
+            measurement: measurement // Include pinned measurement
         };
     }
 
@@ -130,6 +140,12 @@ class TimelineDiagram {
         // Restore settings if present
         if (data.settings) {
             app.settings = { ...app.settings, ...data.settings };
+        }
+        // Restore measurement if present
+        if (data.measurement) {
+            app.pinnedMeasurementData = data.measurement;
+        } else {
+            app.pinnedMeasurementData = null;
         }
     }
 }
@@ -153,6 +169,7 @@ const app = {
     measurePinned: false,
     measureStart: null,
     measureEnd: null,
+    pinnedMeasurementData: null, // Stored measurement from loaded diagram
 
     // Global settings
     settings: {
@@ -470,6 +487,9 @@ function loadDiagram(diagramId) {
     updateTotalDuration();
     renderDiagramsList();
 
+    // Restore pinned measurement if present
+    restorePinnedMeasurement();
+
     showToast({ type: 'success', title: 'Loaded', message: `"${diagram.title}" restored.`, duration: 2000 });
     return true;
 }
@@ -486,9 +506,15 @@ function deleteDiagram(diagramId) {
             const filtered = diagrams.filter(d => d.id !== diagramId);
             saveDiagramsList(filtered);
 
-            // If deleting current diagram, start fresh
+            // If deleting current diagram, load another or create new
             if (diagramId === currentDiagramId) {
-                createNewDiagram();
+                if (filtered.length > 0) {
+                    // Load the most recent remaining diagram
+                    loadDiagram(filtered[0].id);
+                } else {
+                    // No diagrams left, create a new one
+                    createNewDiagram();
+                }
             } else {
                 renderDiagramsList();
             }
@@ -498,12 +524,22 @@ function deleteDiagram(diagramId) {
     });
 }
 
+function generateDiagramTitle() {
+    const now = new Date();
+    const pad = (n, len = 2) => String(n).padStart(len, '0');
+    return `Diagram-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}-${pad(now.getMilliseconds(), 3)}`;
+}
+
 function createNewDiagram() {
     currentDiagramId = generateDiagramId();
     app.diagram = new TimelineDiagram();
+    app.diagram.title = generateDiagramTitle();
     app.diagram.addLane('Lane 1');
     app.selectedBoxId = null;
     app.selectedLaneId = null;
+
+    // Clear any pinned measurement
+    closeMeasurement();
 
     app.elements.diagramTitle.value = app.diagram.title;
     app.elements.startTime.value = app.diagram.startTime;
@@ -1568,10 +1604,53 @@ function toggleMeasurementPin() {
 function closeMeasurement() {
     app.isMeasuring = false;
     app.measurePinned = false;
+    app.measureStart = null;
+    app.measureEnd = null;
     const overlay = document.getElementById('measurement-overlay');
     const infoBox = document.getElementById('measurement-info');
     overlay.classList.remove('active', 'pinned');
     infoBox.classList.remove('pinned');
+}
+
+function restorePinnedMeasurement() {
+    // First close any existing measurement
+    closeMeasurement();
+
+    // Check if there's measurement data to restore
+    if (!app.pinnedMeasurementData) return;
+
+    const canvas = app.elements.lanesCanvas;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const laneLabelWidth = 160;
+
+    // Restore measurement coordinates
+    const startX = app.pinnedMeasurementData.startX;
+    const endX = app.pinnedMeasurementData.endX;
+
+    // Calculate Y position (center of lanes area)
+    const lanesAreaHeight = app.diagram.lanes.length * 50; // 50px per lane
+    const y = lanesAreaHeight / 2;
+
+    // Convert canvas X to client X
+    const clientStartX = rect.left + startX - canvas.scrollLeft;
+    const clientEndX = rect.left + endX - canvas.scrollLeft;
+    const clientY = rect.top + y - canvas.scrollTop;
+
+    app.measureStart = { x: startX, y: y, clientX: clientStartX, clientY: clientY, snapped: false };
+    app.measureEnd = { x: endX, y: y, clientX: clientEndX, clientY: clientY, snapped: false };
+    app.measurePinned = true;
+
+    // Show measurement overlay
+    const overlay = document.getElementById('measurement-overlay');
+    overlay.classList.add('active', 'pinned');
+
+    // Update display
+    updateMeasurementDisplay();
+
+    // Clear the stored data
+    app.pinnedMeasurementData = null;
 }
 
 function updateMeasurementDisplay() {
@@ -1735,6 +1814,9 @@ function loadFromJSON(file) {
             saveCurrentDiagram();
             renderDiagramsList();
 
+            // Restore pinned measurement if present
+            restorePinnedMeasurement();
+
             showToast({
                 type: 'success',
                 title: 'Loaded',
@@ -1781,6 +1863,8 @@ function loadFromURL() {
         const data = decodeFromURL(encoded);
         if (data) {
             app.diagram.fromJSON(data);
+            // Schedule measurement restore after initial render
+            setTimeout(() => restorePinnedMeasurement(), 100);
             return true;
         }
     }
