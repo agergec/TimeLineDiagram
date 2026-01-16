@@ -1673,6 +1673,10 @@ function deselectBox() {
     // Remove active state from settings button
     const settingsBtn = document.getElementById('settings-btn');
     if (settingsBtn) settingsBtn.classList.remove('active');
+
+    // Remove glimpsed state from pick-start button
+    const pickBtn = document.getElementById('pick-start-btn');
+    if (pickBtn) pickBtn.classList.remove('glimpsed');
 }
 
 function handleTrackMouseDown(e) {
@@ -1703,8 +1707,9 @@ function handleTrackMouseDown(e) {
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
 
-        // Remove helper text and visual feedback
-        hidePickHelperText();
+        // Remove toast and visual feedback
+        hidePickModeToast();
+        stopPickableGlowAnimation();
         document.querySelectorAll('.timeline-box').forEach(box => {
             box.classList.remove('pickable');
         });
@@ -3318,38 +3323,85 @@ function updateLockState() {
 // =====================================================
 // Pick Mode Helper Functions
 // =====================================================
-function showPickHelperText() {
-    // Check if helper already exists
-    let helper = document.getElementById('pick-helper-text');
-    if (helper) {
-        helper.style.display = 'block';
-        return;
-    }
+function showPickModeToast() {
+    // Hide any existing pick mode toast first
+    hidePickModeToast();
 
-    // Create helper text element
-    helper = document.createElement('div');
-    helper.id = 'pick-helper-text';
-    helper.className = 'pick-helper-text';
-    helper.innerHTML = `
-        <span class="pick-helper-icon">📍</span>
-        <span>Click any box to set start time to its end time</span>
-    `;
+    // Show toast for 10 seconds
+    app.pickModeToast = showToast({
+        type: 'info',
+        title: 'Pick Mode Active',
+        message: 'Click any box to set start time to its end time',
+        duration: 10000
+    });
+}
 
-    // Insert after the pick button's label
-    const pickBtn = document.getElementById('pick-start-btn');
-    if (pickBtn) {
-        const label = pickBtn.closest('label');
-        if (label) {
-            label.parentElement.appendChild(helper);
-        }
+function hidePickModeToast() {
+    if (app.pickModeToast) {
+        hideToast(app.pickModeToast);
+        app.pickModeToast = null;
     }
 }
 
-function hidePickHelperText() {
-    const helper = document.getElementById('pick-helper-text');
-    if (helper) {
-        helper.style.display = 'none';
+// Helper function to get contrast color for a given color
+function getContrastGlowColor(hexColor) {
+    // Convert hex to RGB
+    let hex = hexColor.replace('#', '');
+    if (hex.length === 3) {
+        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
     }
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return contrasting color - bright cyan for dark colors, deep magenta for light colors
+    if (luminance > 0.5) {
+        // Light color - use deep magenta/purple glow
+        return { r: 255, g: 0, b: 255 }; // Magenta
+    } else {
+        // Dark color - use bright cyan glow
+        return { r: 0, g: 255, b: 255 }; // Cyan
+    }
+}
+
+// Apply pulsing glow effect to pickable boxes
+function startPickableGlowAnimation() {
+    if (app.pickableAnimationId) return;
+
+    let phase = 0;
+    const animate = () => {
+        phase += 0.05;
+        const intensity = 0.5 + 0.3 * Math.sin(phase); // Oscillates between 0.2 and 0.8
+
+        document.querySelectorAll('.timeline-box.pickable').forEach(boxEl => {
+            const boxId = boxEl.dataset.boxId;
+            const box = app.diagram.boxes.find(b => b.id === boxId);
+            if (box) {
+                const c = getContrastGlowColor(box.color);
+                const glow1 = `0 0 0 3px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity})`;
+                const glow2 = `0 0 ${15 + intensity * 10}px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity * 0.6})`;
+                const glow3 = `0 0 ${30 + intensity * 20}px rgba(${c.r}, ${c.g}, ${c.b}, ${intensity * 0.3})`;
+                boxEl.style.boxShadow = `${glow1}, ${glow2}, ${glow3}`;
+            }
+        });
+
+        app.pickableAnimationId = requestAnimationFrame(animate);
+    };
+    app.pickableAnimationId = requestAnimationFrame(animate);
+}
+
+function stopPickableGlowAnimation() {
+    if (app.pickableAnimationId) {
+        cancelAnimationFrame(app.pickableAnimationId);
+        app.pickableAnimationId = null;
+    }
+    // Clear inline styles
+    document.querySelectorAll('.timeline-box.pickable').forEach(boxEl => {
+        boxEl.style.boxShadow = '';
+    });
 }
 
 function glimpsePickStartButton() {
@@ -3359,10 +3411,11 @@ function glimpsePickStartButton() {
     // Add glimpse class for animation
     btn.classList.add('glimpse');
 
-    // Remove class after animation completes
+    // After animation completes, keep the green border
     setTimeout(() => {
         btn.classList.remove('glimpse');
-    }, 1500);
+        btn.classList.add('glimpsed');
+    }, 750);
 }
 
 // =====================================================
@@ -3376,13 +3429,16 @@ function enterPickMode() {
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.add('active');
 
-    // Show helper text
-    showPickHelperText();
+    // Show toast message
+    showPickModeToast();
 
-    // Add visual feedback - highlight all boxes
-    document.querySelectorAll('.timeline-box').forEach(box => {
-        box.classList.add('pickable');
+    // Add visual feedback - highlight all boxes with contrast glow colors
+    document.querySelectorAll('.timeline-box').forEach(boxEl => {
+        boxEl.classList.add('pickable');
     });
+
+    // Start the pulsing glow animation
+    startPickableGlowAnimation();
 }
 
 function completePickStart(targetBoxId) {
@@ -3399,8 +3455,9 @@ function completePickStart(targetBoxId) {
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
 
-        // Remove helper text and visual feedback
-        hidePickHelperText();
+        // Remove toast and visual feedback
+        hidePickModeToast();
+        stopPickableGlowAnimation();
         document.querySelectorAll('.timeline-box').forEach(box => {
             box.classList.remove('pickable');
         });
@@ -3427,8 +3484,9 @@ function completePickStart(targetBoxId) {
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.remove('active');
 
-    // Remove helper text and visual feedback
-    hidePickHelperText();
+    // Remove toast and visual feedback
+    hidePickModeToast();
+    stopPickableGlowAnimation();
     document.querySelectorAll('.timeline-box').forEach(box => {
         box.classList.remove('pickable');
     });

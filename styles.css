@@ -1133,6 +1133,11 @@ body.show-box-labels .lane-row {
     animation: glimpse 0.75s ease-in-out forwards;
 }
 
+#pick-start-btn.glimpsed {
+    border-color: #39FF14;
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.4);
+}
+
 @keyframes pulse {
     0%, 100% {
         transform: scale(1);
@@ -1171,54 +1176,14 @@ body.show-box-labels .lane-row {
     }
 }
 
-/* Pick Helper Text */
-.pick-helper-text {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-    padding: 8px 12px;
-    background: rgba(99, 102, 241, 0.1);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--accent-primary);
-    animation: slideIn 0.3s ease-out;
-}
-
-.pick-helper-icon {
-    font-size: 16px;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Pickable boxes visual feedback */
+/* Pickable boxes visual feedback - glow color set via inline style */
 .timeline-box.pickable {
     cursor: pointer;
-    animation: boxHighlight 1.5s ease-in-out infinite;
+    transform: translateY(-1px);
 }
 
 .timeline-box.pickable:hover {
-    box-shadow: 0 0 0 2px var(--accent-primary), 0 4px 16px rgba(99, 102, 241, 0.4);
-    transform: translateY(-2px);
-}
-
-@keyframes boxHighlight {
-    0%, 100% {
-        box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3), 0 4px 12px rgba(0, 0, 0, 0.4);
-    }
-    50% {
-        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.6), 0 4px 16px rgba(99, 102, 241, 0.3);
-    }
+    transform: translateY(-3px) scale(1.02);
 }
 
 .form-actions .btn {
