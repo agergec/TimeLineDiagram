@@ -598,6 +598,18 @@ body.show-box-labels .box-floating-label {
     display: block;
 }
 
+body.show-box-labels .timeline-box {
+    overflow: visible;
+}
+
+body.show-box-labels .lane-track {
+    overflow: visible;
+}
+
+body.show-box-labels .lane-row {
+    overflow: visible;
+}
+
 /* =====================================================
    Canvas Container
    ===================================================== */
