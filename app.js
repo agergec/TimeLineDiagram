@@ -504,6 +504,17 @@ function deleteDiagram(diagramId) {
     const diagram = diagrams.find(d => d.id === diagramId);
     if (!diagram) return;
 
+    // Prevent deleting locked diagrams
+    if (diagram.data && diagram.data.locked) {
+        showToast({
+            type: 'warning',
+            title: 'Diagram Locked',
+            message: 'Unlock the diagram before deleting.',
+            duration: 2500
+        });
+        return;
+    }
+
     showConfirmToast({
         title: 'Delete Diagram?',
         message: `"${diagram.title}" will be permanently removed.`,
@@ -533,6 +544,17 @@ function resetDiagram(diagramId) {
     const diagrams = getAllDiagrams();
     const diagram = diagrams.find(d => d.id === diagramId);
     if (!diagram) return;
+
+    // Prevent resetting locked diagrams
+    if (diagram.data && diagram.data.locked) {
+        showToast({
+            type: 'warning',
+            title: 'Diagram Locked',
+            message: 'Unlock the diagram before resetting.',
+            duration: 2500
+        });
+        return;
+    }
 
     showConfirmToast({
         title: 'Reset Diagram?',
@@ -577,6 +599,21 @@ function resetDiagram(diagramId) {
 }
 
 function purgeApplication() {
+    // Check if any diagrams are locked
+    const diagrams = getAllDiagrams();
+    const lockedDiagrams = diagrams.filter(d => d.data && d.data.locked);
+
+    if (lockedDiagrams.length > 0) {
+        const names = lockedDiagrams.map(d => d.data.title || 'Untitled').join(', ');
+        showToast({
+            type: 'warning',
+            title: 'Cannot Purge',
+            message: `${lockedDiagrams.length} locked diagram(s): ${names}. Unlock them first.`,
+            duration: 4000
+        });
+        return;
+    }
+
     showConfirmToast({
         title: 'Purge Application?',
         message: 'ALL diagrams and settings will be permanently deleted. This cannot be undone!',
