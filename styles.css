@@ -844,16 +844,23 @@ body.show-box-labels .lane-row {
     background: var(--bg-primary);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
+    position: relative;
+    z-index: 60;
 }
 
 .time-markers {
     flex: 1;
     position: relative;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     /* Hide scrollbar but allow programmatic scrolling */
     scrollbar-width: none;
     -ms-overflow-style: none;
+}
+
+.time-markers-inner {
+    position: relative;
+    height: 100%;
 }
 
 .time-markers::-webkit-scrollbar {
@@ -872,6 +879,17 @@ body.show-box-labels .lane-row {
     transition: left 0.05s linear, bottom 0.2s ease;
     white-space: nowrap;
     z-index: 20;
+    overflow: visible;
+}
+
+.time-marker-line {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    opacity: 0.4;
+    pointer-events: none;
 }
 
 .time-marker-tick {
@@ -1112,7 +1130,7 @@ body.show-box-labels .lane-row {
 }
 
 #pick-start-btn.glimpse {
-    animation: glimpse 1.5s ease-in-out;
+    animation: glimpse 0.75s ease-in-out forwards;
 }
 
 @keyframes pulse {
@@ -1130,6 +1148,7 @@ body.show-box-labels .lane-row {
     0% {
         transform: scale(1);
         box-shadow: 0 0 0 rgba(99, 102, 241, 0);
+        border-color: var(--border-color);
     }
     25% {
         transform: scale(1.15);
@@ -1147,7 +1166,8 @@ body.show-box-labels .lane-row {
     }
     100% {
         transform: scale(1);
-        box-shadow: 0 0 0 rgba(99, 102, 241, 0);
+        box-shadow: 0 0 4px rgba(57, 255, 20, 0.4);
+        border-color: #39FF14;
     }
 }
 
@@ -1246,8 +1266,7 @@ body.show-box-labels .lane-row {
 }
 
 .alignment-line {
-    stroke: rgba(255, 255, 255, 0.4);
-    /* Brighter for visibility on dark bg */
+    /* stroke color is set dynamically per-line via inline attribute */
     stroke-width: 1;
     stroke-dasharray: 4 4;
 }

@@ -1230,16 +1230,22 @@ function renderTimelineRuler() {
     // Match the lane-track extension: 50% padding beyond total duration
     const endTime = totalDuration * 1.5;
 
-    // Set ruler width to match lane-track width
+    // Create an inner wrapper div to define scrollable width
+    // (absolutely positioned children don't contribute to scroll width)
     const rulerWidth = msToPixels(endTime);
-    ruler.style.minWidth = `${rulerWidth}px`;
+    const innerWrapper = document.createElement('div');
+    innerWrapper.className = 'timeline-ruler-inner';
+    innerWrapper.style.position = 'relative';
+    innerWrapper.style.width = `${rulerWidth}px`;
+    innerWrapper.style.height = '100%';
+    ruler.appendChild(innerWrapper);
 
     for (let time = 0; time <= endTime; time += interval) {
         const mark = document.createElement('div');
         mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
         mark.style.left = `${msToPixels(time)}px`;
         mark.innerHTML = `<span>${formatDuration(time)}</span>`;
-        ruler.appendChild(mark);
+        innerWrapper.appendChild(mark);
     }
 }
 
@@ -1255,6 +1261,9 @@ function renderLanesCanvas() {
         const row = document.createElement('div');
         row.className = 'lane-row';
         row.dataset.laneId = lane.id;
+        // Set min-width on row to extend alternating colors across entire scrollable area
+        // Add lane-label-width to account for the sticky label
+        row.style.minWidth = `calc(var(--lane-label-width) + ${minTrackWidth}px)`;
 
         const label = document.createElement('div');
         label.className = 'lane-label';
@@ -1404,11 +1413,18 @@ function renderAlignmentMarkers() {
     if (!app.settings.showAlignmentLines) return;
     if (app.diagram.boxes.length === 0) return;
 
-    // Collect all unique time points
-    const timePoints = new Set();
+    // Collect all time points with their box colors
+    const timePointsMap = new Map(); // time -> color (first box's color at that time)
     app.diagram.boxes.forEach(box => {
-        timePoints.add(box.startOffset);
-        timePoints.add(box.startOffset + box.duration);
+        const startTime = box.startOffset;
+        const endTime = box.startOffset + box.duration;
+
+        if (!timePointsMap.has(startTime)) {
+            timePointsMap.set(startTime, box.color);
+        }
+        if (!timePointsMap.has(endTime)) {
+            timePointsMap.set(endTime, box.color);
+        }
     });
 
     svg.style.display = 'block';
@@ -1428,7 +1444,7 @@ function renderAlignmentMarkers() {
     const canvasHeight = canvas.scrollHeight;
     const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
 
-    timePoints.forEach(time => {
+    timePointsMap.forEach((color, time) => {
         const x = offsetX + msToPixels(time) - scrollLeft;
 
         // Only draw lines that are visible in the track area (not in lane label area)
@@ -1441,7 +1457,11 @@ function renderAlignmentMarkers() {
         line.setAttribute('x1', x);
         line.setAttribute('y1', offsetY);
         line.setAttribute('x2', x);
+        // End at the bottom of the lanes canvas (scrollbar area)
         line.setAttribute('y2', offsetY + canvasHeight);
+        // Apply box color to the dashed line
+        line.setAttribute('stroke', color);
+        line.setAttribute('stroke-opacity', '0.5');
 
         svg.appendChild(line);
     });
@@ -1520,7 +1540,15 @@ function renderTimeMarkers() {
     const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
     const endTime = totalDuration * 1.5;
     const markerWidth = msToPixels(endTime);
-    container.style.minWidth = `${markerWidth}px`;
+
+    // Create an inner wrapper div to define scrollable width
+    // (absolutely positioned children don't contribute to scroll width)
+    const innerWrapper = document.createElement('div');
+    innerWrapper.className = 'time-markers-inner';
+    innerWrapper.style.position = 'relative';
+    innerWrapper.style.width = `${markerWidth}px`;
+    innerWrapper.style.height = '100%';
+    container.appendChild(innerWrapper);
 
     if (app.diagram.boxes.length === 0) return;
 
@@ -1575,6 +1603,10 @@ function renderTimeMarkers() {
         }
     });
 
+    // Get the height of the lanes canvas to calculate line height
+    const lanesCanvas = app.elements.lanesCanvas;
+    const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : 200;
+
     markers.forEach(m => {
         const x = msToPixels(m.time);
 
@@ -1584,6 +1616,13 @@ function renderTimeMarkers() {
         el.style.bottom = `${4 + (m.level * 16)}px`;
         el.style.color = m.color;
 
+        // Vertical colored line extending upward to the lanes canvas
+        const line = document.createElement('div');
+        line.className = 'time-marker-line';
+        line.style.backgroundColor = m.color;
+        // Height extends from current position up through lanes canvas
+        line.style.height = `${lanesCanvasHeight + 80}px`;
+
         const tick = document.createElement('div');
         tick.className = 'time-marker-tick';
         tick.style.backgroundColor = m.color;
@@ -1592,9 +1631,10 @@ function renderTimeMarkers() {
         label.className = 'time-marker-text';
         label.textContent = m.text;
 
+        el.appendChild(line);
         el.appendChild(tick);
         el.appendChild(label);
-        container.appendChild(el);
+        innerWrapper.appendChild(el);
     });
 }
 
@@ -1636,6 +1676,11 @@ function deselectBox() {
 }
 
 function handleTrackMouseDown(e) {
+    // Only handle left-click (button 0), allow right-click for context menu
+    if (e.button !== 0) {
+        return;
+    }
+
     // Don't create boxes while measuring or in measurement mode
     if (app.isMeasuring || app.measureToolActive || e.ctrlKey || e.metaKey) {
         return;
@@ -2535,26 +2580,34 @@ function exportToPNG() {
         ctx.fillRect(laneLabelWidth, y, width - laneLabelWidth, laneHeight);
     });
 
-    // Draw alignment lines if enabled
+    // Draw alignment lines if enabled (with box colors)
     if (app.settings.showAlignmentLines && boxes.length > 0) {
-        const timePoints = new Set();
+        // Collect time points with their colors
+        const timePointsMap = new Map();
         boxes.forEach(box => {
-            timePoints.add(box.startOffset);
-            timePoints.add(box.startOffset + box.duration);
+            if (!timePointsMap.has(box.startOffset)) {
+                timePointsMap.set(box.startOffset, box.color);
+            }
+            const endTime = box.startOffset + box.duration;
+            if (!timePointsMap.has(endTime)) {
+                timePointsMap.set(endTime, box.color);
+            }
         });
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1;
 
-        timePoints.forEach(time => {
+        timePointsMap.forEach((color, time) => {
             const x = laneLabelWidth + msToPixels(time);
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.5;
             ctx.beginPath();
             ctx.moveTo(x, lanesStartY);
             ctx.lineTo(x, lanesStartY + lanesAreaHeight);
             ctx.stroke();
         });
 
+        ctx.globalAlpha = 1;
         ctx.setLineDash([]);
     }
 
@@ -2654,15 +2707,25 @@ function exportToPNG() {
     ctx.fillStyle = '#1a1f2e';
     ctx.fillRect(0, timeMarkersY, laneLabelWidth, timeMarkersHeight);
 
-    // Draw time markers
+    // Draw time markers with vertical lines extending up through lanes
     ctx.font = '9px Monaco, monospace';
     markers.forEach(m => {
         const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
 
-        // Draw tick line
+        // Draw vertical line extending up through lanes area (solid, colored)
         ctx.strokeStyle = m.color;
+        ctx.globalAlpha = 0.4;
         ctx.lineWidth = 1;
         ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(m.x, lanesStartY);
+        ctx.lineTo(m.x, timeMarkersY);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Draw tick line in time markers area
+        ctx.strokeStyle = m.color;
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(m.x, timeMarkersY + 2);
         ctx.lineTo(m.x, yPos - 6);
@@ -2895,18 +2958,24 @@ function exportToSVG() {
         svg += `  <rect x="${laneLabelWidth}" y="${y}" width="${width - laneLabelWidth}" height="${laneHeight}" fill="${index % 2 === 0 ? '#0f1419' : '#101520'}"/>\n`;
     });
 
-    // Alignment lines if enabled
+    // Alignment lines if enabled (with box colors)
     if (app.settings.showAlignmentLines && boxes.length > 0) {
-        const timePoints = new Set();
+        // Collect time points with their colors
+        const timePointsMap = new Map();
         boxes.forEach(box => {
-            timePoints.add(box.startOffset);
-            timePoints.add(box.startOffset + box.duration);
+            if (!timePointsMap.has(box.startOffset)) {
+                timePointsMap.set(box.startOffset, box.color);
+            }
+            const endTime = box.startOffset + box.duration;
+            if (!timePointsMap.has(endTime)) {
+                timePointsMap.set(endTime, box.color);
+            }
         });
 
         svg += `  <!-- Alignment Lines -->\n`;
-        timePoints.forEach(time => {
+        timePointsMap.forEach((color, time) => {
             const x = Math.round(laneLabelWidth + msToPixels(time));
-            svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="#ffffff" stroke-opacity="0.4" stroke-dasharray="4 4"/>\n`;
+            svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="${color}" stroke-opacity="0.5" stroke-dasharray="4 4"/>\n`;
         });
     }
 
@@ -2961,10 +3030,12 @@ function exportToSVG() {
     svg += `  <rect x="${laneLabelWidth}" y="${timeMarkersY}" width="${width - laneLabelWidth}" height="${timeMarkersHeight}" fill="#0f1419"/>\n`;
     svg += `  <rect x="0" y="${timeMarkersY}" width="${laneLabelWidth}" height="${timeMarkersHeight}" fill="#1a1f2e"/>\n`;
 
-    // Draw time markers with colored labels (same as PNG)
+    // Draw time markers with colored labels and vertical lines extending up
     markers.forEach(m => {
         const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
-        // Tick line
+        // Vertical line extending up through lanes area (solid, colored)
+        svg += `  <line x1="${Math.round(m.x)}" y1="${lanesStartY}" x2="${Math.round(m.x)}" y2="${timeMarkersY}" stroke="${m.color}" stroke-opacity="0.4"/>\n`;
+        // Tick line in time markers area
         svg += `  <line x1="${Math.round(m.x)}" y1="${timeMarkersY + 2}" x2="${Math.round(m.x)}" y2="${yPos - 6}" stroke="${m.color}"/>\n`;
         // Label
         svg += `  <text x="${Math.round(m.x)}" y="${yPos}" text-anchor="middle" class="time-marker" fill="${m.color}">${m.text}</text>\n`;
