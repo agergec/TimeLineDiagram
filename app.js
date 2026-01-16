@@ -177,7 +177,8 @@ const app = {
     // Global settings
     settings: {
         timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
-        showAlignmentLines: true   // Toggle vertical alignment lines
+        showAlignmentLines: true,  // Toggle vertical alignment lines
+        showBoxLabels: false       // Toggle persistent floating labels above boxes
     },
 
     // DOM Elements
@@ -492,6 +493,9 @@ function loadDiagram(diagramId) {
     // Update lock state
     updateLockState();
 
+    // Update box labels state
+    updateBoxLabelsState();
+
     // Restore pinned measurement if present
     restorePinnedMeasurement();
 
@@ -675,7 +679,8 @@ function purgeApplication() {
                 app.selectedLaneId = null;
                 app.settings = {
                     timeFormatThreshold: 1000,
-                    showAlignmentLines: true
+                    showAlignmentLines: true,
+                    showBoxLabels: false
                 };
 
                 closeMeasurement();
@@ -1187,8 +1192,10 @@ function createBoxElement(box) {
     el.style.color = getContrastColor(box.color);
 
     const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
+    const floatingLabelText = box.label ? `${box.label}: ${formatDuration(box.duration)}` : formatDuration(box.duration);
 
     el.innerHTML = `
+        <div class="box-floating-label">${escapeHtml(floatingLabelText)}</div>
         <div class="box-resize-handle left"></div>
         <span class="box-label">${escapeHtml(labelText)}</span>
         <div class="box-resize-handle right"></div>
@@ -2825,6 +2832,11 @@ function showSettingsPanel() {
         alignmentCheckbox.checked = app.settings.showAlignmentLines;
     }
 
+    const labelsCheckbox = document.getElementById('config-show-labels');
+    if (labelsCheckbox) {
+        labelsCheckbox.checked = app.settings.showBoxLabels;
+    }
+
     const lockCheckbox = document.getElementById('config-lock-diagram');
     if (lockCheckbox) {
         lockCheckbox.checked = app.diagram.locked;
@@ -2858,12 +2870,27 @@ function handleSettingsChange() {
         app.settings.showAlignmentLines = alignmentCheckbox.checked;
     }
 
+    // Box labels toggle
+    const labelsCheckbox = document.getElementById('config-show-labels');
+    if (labelsCheckbox) {
+        app.settings.showBoxLabels = labelsCheckbox.checked;
+        updateBoxLabelsState();
+    }
+
     // Re-render to apply changes
     renderLanesCanvas();
     renderTimelineRuler();
     renderTimeMarkers();
     renderAlignmentMarkers();
     updateTotalDuration();
+}
+
+function updateBoxLabelsState() {
+    if (app.settings.showBoxLabels) {
+        document.body.classList.add('show-box-labels');
+    } else {
+        document.body.classList.remove('show-box-labels');
+    }
 }
 
 function handleLockChange() {
@@ -3022,6 +3049,11 @@ function init() {
     const alignmentCheckbox = document.getElementById('config-show-alignment');
     if (alignmentCheckbox) {
         alignmentCheckbox.addEventListener('change', handleSettingsChange);
+    }
+
+    const labelsCheckbox = document.getElementById('config-show-labels');
+    if (labelsCheckbox) {
+        labelsCheckbox.addEventListener('change', handleSettingsChange);
     }
 
     const lockCheckbox = document.getElementById('config-lock-diagram');
@@ -3201,6 +3233,7 @@ function init() {
     renderLanesCanvas();
     renderDiagramsList();
     updateTotalDuration();
+    updateBoxLabelsState();
 
     // Open diagrams panel by default if there are saved diagrams
     const diagrams = getAllDiagrams();
