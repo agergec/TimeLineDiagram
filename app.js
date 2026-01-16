@@ -1822,6 +1822,7 @@ function handleMouseMove(e) {
             boxEl.style.left = `${msToPixels(box.startOffset)}px`;
         }
         renderTimeMarkers();
+        renderAlignmentMarkers();
         updatePropertiesPanel();
     } else if (app.dragData.type === 'resize') {
         const box = app.diagram.boxes.find(b => b.id === app.dragData.boxId);
@@ -1854,6 +1855,7 @@ function handleMouseMove(e) {
             if (labelEl) labelEl.textContent = labelText;
         }
         renderTimeMarkers();
+        renderAlignmentMarkers();
 
         updatePropertiesPanel();
     }
