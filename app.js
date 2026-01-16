@@ -2356,6 +2356,39 @@ function exportToPNG() {
             ctx.textAlign = 'center';
             ctx.fillText(labelText, bx + bw / 2, by + bh / 2 + 4, bw - 8);
             ctx.textAlign = 'left';
+
+            // Draw floating label if enabled
+            if (app.settings.showBoxLabels) {
+                const floatingText = box.label ? `${box.label}: ${formatDuration(box.duration)}` : formatDuration(box.duration);
+                ctx.font = '500 10px Inter, sans-serif';
+                const textWidth = ctx.measureText(floatingText).width;
+                const labelPadX = 6;
+                const labelPadY = 3;
+                const labelW = textWidth + labelPadX * 2;
+                const labelH = 14;
+                const labelX = bx + bw / 2 - labelW / 2;
+                const labelY = by - labelH - 6;
+
+                // Label background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                ctx.beginPath();
+                ctx.roundRect(labelX, labelY, labelW, labelH, 3);
+                ctx.fill();
+
+                // Arrow pointing down
+                ctx.beginPath();
+                ctx.moveTo(bx + bw / 2 - 4, labelY + labelH);
+                ctx.lineTo(bx + bw / 2 + 4, labelY + labelH);
+                ctx.lineTo(bx + bw / 2, labelY + labelH + 4);
+                ctx.closePath();
+                ctx.fill();
+
+                // Label text
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.fillText(floatingText, bx + bw / 2, labelY + labelH - labelPadY);
+                ctx.textAlign = 'left';
+            }
         });
     });
 
@@ -2651,6 +2684,19 @@ function exportToSVG() {
 
             svg += `  <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="4" fill="${box.color}" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>\n`;
             svg += `  <text x="${bx + bw / 2}" y="${by + bh / 2 + 4}" text-anchor="middle" class="box-text" fill="${textColor}">${escapeHtml(labelText)}</text>\n`;
+
+            // Draw floating label if enabled
+            if (app.settings.showBoxLabels) {
+                const floatingText = box.label ? `${box.label}: ${formatDuration(box.duration)}` : formatDuration(box.duration);
+                const labelW = floatingText.length * 6 + 12;
+                const labelH = 14;
+                const labelX = bx + bw / 2 - labelW / 2;
+                const labelY = by - labelH - 6;
+
+                svg += `  <rect x="${labelX}" y="${labelY}" width="${labelW}" height="${labelH}" rx="3" fill="rgba(0,0,0,0.85)"/>\n`;
+                svg += `  <polygon points="${bx + bw / 2 - 4},${labelY + labelH} ${bx + bw / 2 + 4},${labelY + labelH} ${bx + bw / 2},${labelY + labelH + 4}" fill="rgba(0,0,0,0.85)"/>\n`;
+                svg += `  <text x="${bx + bw / 2}" y="${labelY + labelH - 3}" text-anchor="middle" style="font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 500; fill: #ffffff;">${escapeHtml(floatingText)}</text>\n`;
+            }
         });
     });
 
