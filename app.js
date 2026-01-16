@@ -599,62 +599,103 @@ function resetDiagram(diagramId) {
 }
 
 function purgeApplication() {
-    // Check if any diagrams are locked
     const diagrams = getAllDiagrams();
     const lockedDiagrams = diagrams.filter(d => d.data && d.data.locked);
+    const unlockedDiagrams = diagrams.filter(d => !d.data || !d.data.locked);
+    const hasLocked = lockedDiagrams.length > 0;
+    const hasUnlocked = unlockedDiagrams.length > 0;
 
-    if (lockedDiagrams.length > 0) {
-        const names = lockedDiagrams.map(d => d.data.title || 'Untitled').join(', ');
-        showToast({
-            type: 'warning',
-            title: 'Cannot Purge',
-            message: `${lockedDiagrams.length} locked diagram(s): ${names}. Unlock them first.`,
-            duration: 4000
-        });
+    // If nothing to delete
+    if (!hasUnlocked && !hasLocked) {
+        showToast({ type: 'info', title: 'Nothing to Purge', message: 'No diagrams found.', duration: 2000 });
         return;
     }
 
+    // Build message based on what will happen
+    let message, title;
+    if (hasLocked && hasUnlocked) {
+        title = 'Purge Unlocked Diagrams?';
+        message = `${unlockedDiagrams.length} unlocked diagram(s) will be deleted. ${lockedDiagrams.length} locked diagram(s) will be preserved.`;
+    } else if (hasLocked && !hasUnlocked) {
+        showToast({ type: 'info', title: 'All Diagrams Locked', message: 'No unlocked diagrams to purge.', duration: 2500 });
+        return;
+    } else {
+        title = 'Purge Application?';
+        message = 'ALL diagrams and settings will be permanently deleted. This cannot be undone!';
+    }
+
     showConfirmToast({
-        title: 'Purge Application?',
-        message: 'ALL diagrams and settings will be permanently deleted. This cannot be undone!',
-        confirmLabel: 'Purge All',
+        title: title,
+        message: message,
+        confirmLabel: hasLocked ? 'Purge Unlocked' : 'Purge All',
         onConfirm: () => {
-            // Clear all localStorage data for this app
-            localStorage.removeItem(STORAGE_KEY);
+            if (hasLocked) {
+                // Keep only locked diagrams
+                saveDiagramsList(lockedDiagrams);
 
-            // Reset app state
-            currentDiagramId = generateDiagramId();
-            app.diagram = new TimelineDiagram();
-            app.diagram.title = generateDiagramTitle();
-            app.diagram.addLane('Lane 1');
-            app.selectedBoxId = null;
-            app.selectedLaneId = null;
-            app.settings = {
-                timeFormatThreshold: 1000,
-                showAlignmentLines: true
-            };
+                // If current diagram was deleted, load a locked one
+                const currentStillExists = lockedDiagrams.some(d => d.id === currentDiagramId);
+                if (!currentStillExists) {
+                    const firstLocked = lockedDiagrams[0];
+                    currentDiagramId = firstLocked.id;
+                    app.diagram = TimelineDiagram.fromJSON(firstLocked.data);
+                    app.elements.diagramTitle.value = app.diagram.title;
+                    app.elements.startTime.value = app.diagram.startTime;
+                    updateLockState();
+                    restorePinnedMeasurement();
+                }
 
-            closeMeasurement();
+                closeMeasurement();
+                deselectBox();
+                renderLaneList();
+                renderLanesCanvas();
+                renderTimelineRuler();
+                renderTimeMarkers();
+                renderAlignmentMarkers();
+                updateTotalDuration();
+                renderDiagramsList();
 
-            app.elements.diagramTitle.value = app.diagram.title;
-            app.elements.startTime.value = app.diagram.startTime;
+                app.elements.propertiesPanel.classList.add('hidden');
 
-            deselectBox();
-            renderLaneList();
-            renderLanesCanvas();
-            renderTimelineRuler();
-            renderTimeMarkers();
-            renderAlignmentMarkers();
-            updateTotalDuration();
-            renderDiagramsList();
+                showToast({ type: 'success', title: 'Purged', message: `${unlockedDiagrams.length} diagram(s) deleted. Locked diagrams preserved.`, duration: 3000 });
+            } else {
+                // Clear all localStorage data for this app
+                localStorage.removeItem(STORAGE_KEY);
 
-            // Save the fresh diagram
-            saveCurrentDiagram();
+                // Reset app state
+                currentDiagramId = generateDiagramId();
+                app.diagram = new TimelineDiagram();
+                app.diagram.title = generateDiagramTitle();
+                app.diagram.addLane('Lane 1');
+                app.selectedBoxId = null;
+                app.selectedLaneId = null;
+                app.settings = {
+                    timeFormatThreshold: 1000,
+                    showAlignmentLines: true
+                };
 
-            // Close the settings panel
-            app.elements.propertiesPanel.classList.add('hidden');
+                closeMeasurement();
 
-            showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
+                app.elements.diagramTitle.value = app.diagram.title;
+                app.elements.startTime.value = app.diagram.startTime;
+
+                deselectBox();
+                renderLaneList();
+                renderLanesCanvas();
+                renderTimelineRuler();
+                renderTimeMarkers();
+                renderAlignmentMarkers();
+                updateTotalDuration();
+                renderDiagramsList();
+
+                // Save the fresh diagram
+                saveCurrentDiagram();
+
+                // Close the settings panel
+                app.elements.propertiesPanel.classList.add('hidden');
+
+                showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
+            }
         }
     });
 }
