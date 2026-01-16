@@ -1,0 +1,50 @@
+# timeline_refinements_plan.md
+
+## Goal
+Implement a series of UI/UX refinements requested by the user, focusing on visual clarity, automated styling, and advanced editing tools.
+
+## User Review Required
+- **Color Palette**: We will auto-assign colors to lanes from a fixed 16-color palette. Box colors will be variances of the lane color. Existing colors might be overwritten if we strictly enforce this, or we can only apply it to new lanes/boxes. *Decision: Apply to new lanes/boxes, but maybe offer a "Recolor All" option or just update the defaults.*
+- **Time Markers**: Switching from vertical rows to "regular horizontal" with proximity shifting. This might need more vertical space if many collisions occur.
+
+## Proposed Changes
+
+### 1. Lane Controls & Visuals
+- **CSS**: Adjust `.lane-item` and `.lane-controls` to ensure buttons are never obscured.
+- **CSS**: Enable `word-wrap: break-word` for `.lane-name-input` and allow resizing using standard CSS `resize: horizontal`.
+- **JS**: Remove default "IVR", "Routing" lanes from [init](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#1121-1254).
+
+### 2. Rendering Fixes
+- **CSS/JS**: Investigate [renderAlignmentMarkers](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#553-603) and `timeline-ruler` lines. Ensure `border-left` or `background` is used in a cross-browser compatible way (avoiding sub-pixel issues or specific browser rendering quirks with thin lines).
+
+### 3. Dynamic Time Markers
+- **JS**: Add [renderTimeMarkers()](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#640-710) calls to:
+    - [handleBoxDragStart](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#773-794) (or [handleMouseMove](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#816-875) during drag)
+    - [handleResizeStart](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#795-815) (or [handleMouseMove](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#816-875) during resize)
+- **JS**: Redesign [renderTimeMarkers](file:///Users/gokalp/Library/Mobile%20Documents/com~apple~CloudDocs/Projects/TimeLineDiagram/app.js#640-710) to:
+    - Use horizontal text.
+    - Detection collisions.
+    - Shift Y-position (line-height) to stack labels vertically (like row-0, row-1 but with horizontal text).
+    - Use box color for the label text.
+    - precise formatting (horizontal text might overlap more easily, need efficient packing).
+
+### 4. Color System
+- **JS**: Implement `colorPalette` array (16 colors).
+- **JS**: `getLaneColor(laneIndex)` returns base color.
+- **JS**: `getBoxColor(laneId, boxIndex)` returns a variation (lightness/saturation shift) of the lane color.
+- **CSS**: Add `border: 1px solid rgba(0,0,0,0.2)` to `.timeline-box`.
+
+### 5. Smart Positioning (Start from End)
+- **UI**: Add "Set Start from..." button in properties panel.
+- **JS**: `enterPickMode()` state.
+- **JS**: `handleBoxClick` (in pick mode) -> properties panel, update start time, exit pick mode.
+
+## Verification Plan
+### Automated Tests
+- None.
+
+### Manual Verification
+- Resize lanes to check controls visibility.
+- resize/drag boxes to see immediate bottom marker updates.
+- Check distinct colors for new lanes.
+- Test "Set Start from..." flow.

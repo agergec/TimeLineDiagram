@@ -1,0 +1,2052 @@
+/* =====================================================
+   Timeline Diagram Editor - Main Application Logic
+   ===================================================== */
+
+// =====================================================
+// Data Model
+// =====================================================
+class TimelineDiagram {
+    constructor() {
+        this.title = 'Timeline Diagram';
+        this.startTime = '00:00:00 000';
+        this.lanes = [];
+        this.boxes = [];
+        this.nextLaneId = 1;
+        this.nextBoxId = 1;
+    }
+
+    addLane(name, baseColor = null) {
+        const lane = {
+            id: this.nextLaneId++,
+            name: name,
+            order: this.lanes.length,
+            baseColor: baseColor // Optional: lane's base color for boxes
+        };
+        this.lanes.push(lane);
+        return lane;
+    }
+
+    removeLane(laneId) {
+        this.lanes = this.lanes.filter(l => l.id !== laneId);
+        this.boxes = this.boxes.filter(b => b.laneId !== laneId);
+        // Reorder remaining lanes
+        this.lanes.forEach((lane, index) => {
+            lane.order = index;
+        });
+    }
+
+    renameLane(laneId, newName) {
+        const lane = this.lanes.find(l => l.id === laneId);
+        if (lane) {
+            lane.name = newName;
+        }
+    }
+
+    insertLaneAt(position, name) {
+        const lane = {
+            id: this.nextLaneId++,
+            name: name,
+            order: position
+        };
+        this.lanes.splice(position, 0, lane);
+        // Reorder all lanes
+        this.lanes.forEach((l, index) => {
+            l.order = index;
+        });
+        return lane;
+    }
+
+    moveLane(laneId, direction) {
+        const index = this.lanes.findIndex(l => l.id === laneId);
+        if (index === -1) return false;
+
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        if (newIndex < 0 || newIndex >= this.lanes.length) return false;
+
+        // Swap lanes
+        [this.lanes[index], this.lanes[newIndex]] = [this.lanes[newIndex], this.lanes[index]];
+
+        // Update order
+        this.lanes.forEach((l, i) => {
+            l.order = i;
+        });
+        return true;
+    }
+
+    addBox(laneId, startOffset, duration, label, color) {
+        const box = {
+            id: this.nextBoxId++,
+            laneId: laneId,
+            startOffset: startOffset, // in ms
+            duration: duration, // in ms
+            label: label,
+            color: color
+        };
+        this.boxes.push(box);
+        return box;
+    }
+
+    removeBox(boxId) {
+        this.boxes = this.boxes.filter(b => b.id !== boxId);
+    }
+
+    updateBox(boxId, updates) {
+        const box = this.boxes.find(b => b.id === boxId);
+        if (box) {
+            Object.assign(box, updates);
+        }
+        return box;
+    }
+
+    getBoxesForLane(laneId) {
+        return this.boxes.filter(b => b.laneId === laneId)
+            .sort((a, b) => a.startOffset - b.startOffset);
+    }
+
+    getTotalDuration() {
+        if (this.boxes.length === 0) return 0;
+        return Math.max(...this.boxes.map(b => b.startOffset + b.duration));
+    }
+
+    toJSON() {
+        return {
+            title: this.title,
+            startTime: this.startTime,
+            lanes: this.lanes,
+            boxes: this.boxes,
+            nextLaneId: this.nextLaneId,
+            nextBoxId: this.nextBoxId,
+            settings: app.settings // Include global settings
+        };
+    }
+
+    fromJSON(data) {
+        this.title = data.title || 'Timeline Diagram';
+        this.startTime = data.startTime || '00:00:00 000';
+        this.lanes = data.lanes || [];
+        this.boxes = data.boxes || [];
+        this.nextLaneId = data.nextLaneId || 1;
+        this.nextBoxId = data.nextBoxId || 1;
+        // Restore settings if present
+        if (data.settings) {
+            app.settings = { ...app.settings, ...data.settings };
+        }
+    }
+}
+
+// =====================================================
+// Application State
+// =====================================================
+const app = {
+    diagram: new TimelineDiagram(),
+    selectedBoxId: null,
+    selectedLaneId: null,
+    pixelsPerMs: 0.15, // Default scale: 0.15px per ms
+    minPixelsPerMs: 0.01,
+    maxPixelsPerMs: 2,
+    isDragging: false,
+    dragData: null,
+    boxGap: 4, // Gap between boxes in pixels
+
+    // Global settings
+    settings: {
+        timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
+        showAlignmentLines: true   // Toggle vertical alignment lines
+    },
+
+    // DOM Elements
+    elements: {}
+};
+
+// Color palette reordered to maximize difference between adjacent lanes
+// Original: Red, Pink, Purple, Deep Purple, Indigo, Blue, Light Blue, Cyan,
+//           Teal, Green, Light Green, Lime, Yellow, Orange, Deep Orange, Brown
+// Reordered to alternate between warm/cool and spread hues
+const PALETTE = [
+    '#EF5350', // Red
+    '#26A69A', // Teal (opposite)
+    '#AB47BC', // Purple
+    '#66BB6A', // Green (opposite)
+    '#5C6BC0', // Indigo
+    '#FFA726', // Orange (opposite)
+    '#29B6F6', // Light Blue
+    '#FF7043', // Deep Orange (opposite)
+    '#7E57C2', // Deep Purple
+    '#9CCC65', // Light Green (opposite)
+    '#42A5F5', // Blue
+    '#FFEE58', // Yellow (opposite)
+    '#EC407A', // Pink
+    '#26C6DA', // Cyan (opposite)
+    '#8D6E63', // Brown
+    '#D4E157'  // Lime (opposite)
+];
+
+function adjustColor(hex, amount) {
+    let usePound = false;
+    if (hex[0] === "#") {
+        hex = hex.slice(1);
+        usePound = true;
+    }
+    let num = parseInt(hex, 16);
+    let r = (num >> 16) + amount;
+    if (r > 255) r = 255; else if (r < 0) r = 0;
+    let b = ((num >> 8) & 0x00FF) + amount;
+    if (b > 255) b = 255; else if (b < 0) b = 0;
+    let g = (num & 0x0000FF) + amount;
+    if (g > 255) g = 255; else if (g < 0) g = 0;
+    return (usePound ? "#" : "") + String(g | (b << 8) | (r << 16)).toString(16).padStart(6, '0');
+}
+
+// Adjust hue while keeping saturation and lightness high (bright colors)
+function adjustHue(hex, hueShift) {
+    // Convert hex to HSL
+    let r = parseInt(hex.slice(1, 3), 16) / 255;
+    let g = parseInt(hex.slice(3, 5), 16) / 255;
+    let b = parseInt(hex.slice(5, 7), 16) / 255;
+
+    let max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+
+    if (max === min) {
+        h = s = 0;
+    } else {
+        let d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+            case g: h = ((b - r) / d + 2) / 6; break;
+            case b: h = ((r - g) / d + 4) / 6; break;
+        }
+    }
+
+    // Shift hue
+    h = (h + hueShift / 360) % 1;
+    if (h < 0) h += 1;
+
+    // Keep saturation high (0.6-0.8) and lightness bright (0.5-0.65)
+    s = Math.max(0.6, Math.min(0.85, s));
+    l = Math.max(0.45, Math.min(0.65, l));
+
+    // Convert back to RGB
+    function hue2rgb(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+    }
+
+    let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    let p = 2 * l - q;
+    r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+    g = Math.round(hue2rgb(p, q, h) * 255);
+    b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+function getAutoBoxColor(laneId) {
+    const lane = app.diagram.lanes.find(l => l.id === parseInt(laneId));
+    if (!lane) return '#6366F1';
+
+    const laneIndex = app.diagram.lanes.indexOf(lane);
+
+    // Use lane's base color if set, otherwise use palette
+    const baseColor = lane.baseColor || PALETTE[laneIndex % PALETTE.length];
+
+    // Get count of boxes in this lane for variation
+    const laneBoxes = app.diagram.getBoxesForLane(laneId);
+    const boxCount = laneBoxes.length;
+
+    // Use hue shifts to create contrasting but related colors
+    // Small hue shifts keep colors in same family but visually distinct
+    const hueShifts = [0, 15, -12, 25, -20, 35, -30, 10]; // Degrees of hue rotation
+    const hueShift = hueShifts[boxCount % hueShifts.length];
+
+    return adjustHue(baseColor, hueShift);
+}
+
+function setLaneColor(laneId, color) {
+    const lane = app.diagram.lanes.find(l => l.id === parseInt(laneId));
+    if (lane) {
+        lane.baseColor = color;
+        // Update all boxes in this lane to use new color scheme
+        const laneBoxes = app.diagram.getBoxesForLane(laneId);
+        const hueShifts = [0, 15, -12, 25, -20, 35, -30, 10];
+        laneBoxes.forEach((box, index) => {
+            box.color = adjustHue(color, hueShifts[index % hueShifts.length]);
+        });
+        renderLanesCanvas();
+    }
+}
+
+// =====================================================
+// Utility Functions
+// =====================================================
+function parseTime(timeStr) {
+    // Parse "HH:MM:SS sss" format
+    const match = timeStr.match(/(\d{2}):(\d{2}):(\d{2})\s*(\d{3})?/);
+    if (!match) return 0;
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = parseInt(match[3], 10);
+    const ms = parseInt(match[4] || '0', 10);
+    return ((hours * 3600) + (minutes * 60) + seconds) * 1000 + ms;
+}
+
+function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const milliseconds = Math.round(ms % 1000);
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} ${String(milliseconds).padStart(3, '0')}`;
+}
+
+function formatDuration(ms) {
+    const threshold = app.settings.timeFormatThreshold;
+
+    // If threshold is 0, always show ms
+    if (threshold === 0) {
+        return `${Math.round(ms)}ms`;
+    }
+
+    // If duration exceeds threshold, show in appropriate unit
+    if (ms >= threshold) {
+        if (ms >= 60000) {
+            // Show minutes and seconds
+            const minutes = Math.floor(ms / 60000);
+            const seconds = ((ms % 60000) / 1000).toFixed(1);
+            return seconds === '0.0' ? `${minutes}m` : `${minutes}m ${seconds}s`;
+        }
+        // Show seconds
+        const seconds = (ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1);
+        return `${seconds}s`;
+    }
+    return `${Math.round(ms)}ms`;
+}
+
+function msToPixels(ms) {
+    return ms * app.pixelsPerMs;
+}
+
+function pixelsToMs(px) {
+    return px / app.pixelsPerMs;
+}
+
+function getContrastColor(hexColor) {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16);
+    const g = parseInt(hexColor.slice(3, 5), 16);
+    const b = parseInt(hexColor.slice(5, 7), 16);
+
+    // Calculate luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+}
+
+// =====================================================
+// Rendering Functions
+// =====================================================
+function renderLaneList() {
+    const container = app.elements.laneList;
+    container.innerHTML = '';
+    const totalLanes = app.diagram.lanes.length;
+
+    app.diagram.lanes.forEach((lane, index) => {
+        const item = document.createElement('div');
+        item.className = 'lane-item';
+        item.dataset.laneId = lane.id;
+        item.draggable = true;
+
+        const isFirst = index === 0;
+        const isLast = index === totalLanes - 1;
+
+        const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
+        item.innerHTML = `
+            <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
+            <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
+            <input type="text" class="lane-name-input" value="${escapeHtml(lane.name)}" data-lane-id="${lane.id}">
+            <div class="lane-controls">
+                <button class="lane-control-btn move-up" data-lane-id="${lane.id}" title="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
+                <button class="lane-control-btn move-down" data-lane-id="${lane.id}" title="Move down" ${isLast ? 'disabled' : ''}>↓</button>
+                <button class="lane-control-btn insert-before" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane before">+↑</button>
+                <button class="lane-control-btn insert-after" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane after">+↓</button>
+                <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane">×</button>
+            </div>
+        `;
+
+        container.appendChild(item);
+    });
+
+    // Add event listeners for lane name inputs
+    container.querySelectorAll('.lane-name-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            const laneId = parseInt(e.target.dataset.laneId, 10);
+            app.diagram.renameLane(laneId, e.target.value);
+            renderLanesCanvas();
+        });
+    });
+
+    // Add event listeners for delete buttons
+    container.querySelectorAll('.lane-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const laneId = parseInt(e.target.dataset.laneId, 10);
+            if (confirm('Delete this lane and all its boxes?')) {
+                app.diagram.removeLane(laneId);
+                renderLaneList();
+                renderLanesCanvas();
+                updateTotalDuration();
+            }
+        });
+    });
+
+    // Add event listeners for move up buttons
+    container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const laneId = parseInt(e.target.dataset.laneId, 10);
+            if (app.diagram.moveLane(laneId, 'up')) {
+                renderLaneList();
+                renderLanesCanvas();
+            }
+        });
+    });
+
+    // Add event listeners for move down buttons
+    container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const laneId = parseInt(e.target.dataset.laneId, 10);
+            if (app.diagram.moveLane(laneId, 'down')) {
+                renderLaneList();
+                renderLanesCanvas();
+            }
+        });
+    });
+
+    // Add event listeners for insert before buttons
+    container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(e.target.dataset.index, 10);
+            const name = `Lane ${app.diagram.nextLaneId}`;
+            app.diagram.insertLaneAt(index, name);
+            renderLaneList();
+            renderLanesCanvas();
+        });
+    });
+
+    // Add event listeners for insert after buttons
+    container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(e.target.dataset.index, 10);
+            const name = `Lane ${app.diagram.nextLaneId}`;
+            app.diagram.insertLaneAt(index + 1, name);
+            renderLaneList();
+            renderLanesCanvas();
+        });
+    });
+
+    // Add event listeners for lane color buttons
+    container.querySelectorAll('.lane-color-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const laneId = parseInt(e.target.dataset.laneId, 10);
+            showLanePropertiesPanel(laneId);
+        });
+    });
+
+    // Drag and drop for reordering
+    setupLaneDragAndDrop();
+}
+
+function setupLaneDragAndDrop() {
+    const container = app.elements.laneList;
+    let draggedItem = null;
+
+    container.querySelectorAll('.lane-item').forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            draggedItem = item;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        item.addEventListener('dragend', () => {
+            item.classList.remove('dragging');
+            draggedItem = null;
+        });
+
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!draggedItem || draggedItem === item) return;
+
+            const rect = item.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+
+            if (e.clientY < midY) {
+                item.classList.add('drag-over-top');
+                item.classList.remove('drag-over-bottom');
+            } else {
+                item.classList.add('drag-over-bottom');
+                item.classList.remove('drag-over-top');
+            }
+        });
+
+        item.addEventListener('dragleave', () => {
+            item.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+
+        item.addEventListener('drop', (e) => {
+            e.preventDefault();
+            item.classList.remove('drag-over-top', 'drag-over-bottom');
+
+            if (!draggedItem || draggedItem === item) return;
+
+            const draggedLaneId = parseInt(draggedItem.dataset.laneId, 10);
+            const targetLaneId = parseInt(item.dataset.laneId, 10);
+
+            const draggedIndex = app.diagram.lanes.findIndex(l => l.id === draggedLaneId);
+            let targetIndex = app.diagram.lanes.findIndex(l => l.id === targetLaneId);
+
+            if (draggedIndex === -1 || targetIndex === -1) return;
+
+            // Remove the dragged lane
+            const [draggedLane] = app.diagram.lanes.splice(draggedIndex, 1);
+
+            // Recalculate target index after removal
+            targetIndex = app.diagram.lanes.findIndex(l => l.id === targetLaneId);
+
+            const rect = item.getBoundingClientRect();
+            const insertAfter = e.clientY > rect.top + rect.height / 2;
+
+            if (insertAfter) {
+                app.diagram.lanes.splice(targetIndex + 1, 0, draggedLane);
+            } else {
+                app.diagram.lanes.splice(targetIndex, 0, draggedLane);
+            }
+
+            // Update order
+            app.diagram.lanes.forEach((l, i) => {
+                l.order = i;
+            });
+
+            renderLaneList();
+            renderLanesCanvas();
+        });
+    });
+}
+
+function renderTimelineRuler() {
+    const ruler = app.elements.timelineRuler;
+    const canvasWidth = app.elements.lanesCanvas.clientWidth -
+        getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width').replace('px', '');
+
+    ruler.innerHTML = '';
+
+    const totalDuration = Math.max(app.diagram.getTotalDuration(), 1000);
+    const visibleMs = pixelsToMs(canvasWidth - 160); // Subtract lane label width
+
+    // Calculate appropriate interval
+    let interval = 100; // Start with 100ms
+    const intervals = [100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000];
+
+    for (const int of intervals) {
+        const pixelsPerInterval = msToPixels(int);
+        if (pixelsPerInterval >= 60) {
+            interval = int;
+            break;
+        }
+    }
+
+    // Add 20% padding beyond total duration
+    const endTime = Math.max(totalDuration * 1.2, visibleMs);
+
+    for (let time = 0; time <= endTime; time += interval) {
+        const mark = document.createElement('div');
+        mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+        mark.style.left = `${msToPixels(time)}px`;
+        mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+        ruler.appendChild(mark);
+    }
+}
+
+function renderLanesCanvas() {
+    const canvas = app.elements.lanesCanvas;
+    canvas.innerHTML = '';
+
+    app.diagram.lanes.forEach(lane => {
+        const row = document.createElement('div');
+        row.className = 'lane-row';
+        row.dataset.laneId = lane.id;
+
+        const label = document.createElement('div');
+        label.className = 'lane-label';
+        label.textContent = lane.name;
+        label.title = lane.name;
+
+        const track = document.createElement('div');
+        track.className = 'lane-track';
+        track.dataset.laneId = lane.id;
+
+        // Render boxes for this lane
+        const boxes = app.diagram.getBoxesForLane(lane.id);
+        boxes.forEach(box => {
+            const boxEl = createBoxElement(box);
+            track.appendChild(boxEl);
+        });
+
+        row.appendChild(label);
+        row.appendChild(track);
+        canvas.appendChild(row);
+    });
+
+    // Add event listeners for box creation (click and drag on track)
+    canvas.querySelectorAll('.lane-track').forEach(track => {
+        track.addEventListener('mousedown', handleTrackMouseDown);
+    });
+
+    renderTimelineRuler();
+    renderAlignmentMarkers();
+    renderTimeMarkers();
+}
+
+function createBoxElement(box) {
+    const el = document.createElement('div');
+    el.className = 'timeline-box' + (box.id === app.selectedBoxId ? ' selected' : '');
+    el.dataset.boxId = box.id;
+
+    const left = msToPixels(box.startOffset);
+    const width = Math.max(msToPixels(box.duration), 20); // Minimum width of 20px
+
+    el.style.left = `${left}px`;
+    el.style.width = `${width}px`;
+    el.style.backgroundColor = box.color;
+    el.style.color = getContrastColor(box.color);
+
+    const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
+
+    el.innerHTML = `
+        <div class="box-resize-handle left"></div>
+        <span class="box-label">${escapeHtml(labelText)}</span>
+        <div class="box-resize-handle right"></div>
+    `;
+
+    // Floating tooltip on hover
+    el.addEventListener('mouseenter', (e) => {
+        showBoxTooltip(box, e);
+    });
+
+    el.addEventListener('mousemove', (e) => {
+        moveBoxTooltip(e);
+    });
+
+    el.addEventListener('mouseleave', () => {
+        hideBoxTooltip();
+    });
+
+    // Box click/selection
+    el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectBox(box.id);
+    });
+
+    // Box dragging (move)
+    el.addEventListener('mousedown', (e) => {
+        if (app.isPicking) {
+            e.stopPropagation();
+            e.preventDefault();
+            completePickStart(box.id);
+            return;
+        }
+
+        if (e.target.classList.contains('box-resize-handle')) {
+            handleResizeStart(e, box.id);
+        } else {
+            handleBoxDragStart(e, box.id);
+        }
+        hideBoxTooltip(); // Hide tooltip while dragging
+    });
+
+    return el;
+}
+
+function showBoxTooltip(box, e) {
+    const tooltip = app.elements.tooltip;
+    if (!tooltip) return;
+
+    const baseTime = parseTime(app.diagram.startTime);
+    const endOffset = box.startOffset + box.duration;
+
+    tooltip.innerHTML = `
+        <div class="tooltip-label">${escapeHtml(box.label || 'Untitled Box')}</div>
+        <div class="tooltip-row">
+            <span class="label">Start:</span>
+            <span class="value">+${formatDuration(box.startOffset)} (${formatTime(baseTime + box.startOffset)})</span>
+        </div>
+        <div class="tooltip-row">
+            <span class="label">Duration:</span>
+            <span class="value">${formatDuration(box.duration)}</span>
+        </div>
+        <div class="tooltip-row">
+            <span class="label">End:</span>
+            <span class="value">+${formatDuration(endOffset)} (${formatTime(baseTime + endOffset)})</span>
+        </div>
+    `;
+
+    tooltip.style.left = `${e.clientX + 15}px`;
+    tooltip.style.top = `${e.clientY + 15}px`;
+    tooltip.classList.add('visible');
+}
+
+function moveBoxTooltip(e) {
+    const tooltip = app.elements.tooltip;
+    if (!tooltip) return;
+
+    tooltip.style.left = `${e.clientX + 15}px`;
+    tooltip.style.top = `${e.clientY + 15}px`;
+}
+
+function hideBoxTooltip() {
+    const tooltip = app.elements.tooltip;
+    if (!tooltip) return;
+
+    tooltip.classList.remove('visible');
+}
+
+function renderAlignmentMarkers() {
+    const svg = app.elements.alignmentMarkers;
+    const canvas = app.elements.lanesCanvas;
+
+    svg.innerHTML = '';
+    svg.style.display = 'none';
+
+    // Check setting
+    if (!app.settings.showAlignmentLines) return;
+    if (app.diagram.boxes.length === 0) return;
+
+    // Collect all unique time points
+    const timePoints = new Set();
+    app.diagram.boxes.forEach(box => {
+        timePoints.add(box.startOffset);
+        timePoints.add(box.startOffset + box.duration);
+    });
+
+    svg.style.display = 'block';
+
+    // Get offset for lane label width
+    const laneLabelWidth = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--lane-label-width').replace('px', ''), 10) || 160;
+    const sidebarWidth = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--sidebar-width').replace('px', ''), 10) || 220;
+    const headerHeight = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--header-height').replace('px', ''), 10) || 60;
+    const rulerHeight = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
+
+    const offsetX = sidebarWidth + laneLabelWidth;
+    const offsetY = headerHeight + rulerHeight;
+    const canvasHeight = canvas.scrollHeight;
+
+    timePoints.forEach(time => {
+        const x = offsetX + msToPixels(time);
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'alignment-line');
+        line.setAttribute('x1', x);
+        line.setAttribute('y1', offsetY);
+        line.setAttribute('x2', x);
+        line.setAttribute('y2', offsetY + canvasHeight);
+
+        svg.appendChild(line);
+    });
+}
+
+function updateTotalDuration() {
+    const duration = app.diagram.getTotalDuration();
+    app.elements.totalDuration.textContent = formatDuration(duration);
+}
+
+function updatePropertiesPanel() {
+    const panel = app.elements.propertiesPanel;
+    const boxProps = document.getElementById('box-props');
+    const laneProps = document.getElementById('lane-props');
+    const settingsProps = document.getElementById('settings-props');
+    const propsTitle = document.getElementById('props-title');
+
+    if (!app.selectedBoxId) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+    if (!box) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    // Show box properties, hide others
+    if (boxProps) boxProps.classList.remove('hidden');
+    if (laneProps) laneProps.classList.add('hidden');
+    if (settingsProps) settingsProps.classList.add('hidden');
+    if (propsTitle) propsTitle.textContent = 'Box Properties';
+
+    panel.classList.remove('hidden');
+
+    app.elements.boxLabel.value = box.label;
+    app.elements.boxColor.value = box.color;
+    app.elements.boxStart.value = box.startOffset;
+    app.elements.boxDuration.value = box.duration;
+
+    // Show end time (start + duration)
+    if (app.elements.boxEnd) {
+        app.elements.boxEnd.value = box.startOffset + box.duration;
+    }
+
+    // Calculate absolute times
+    const baseTime = parseTime(app.diagram.startTime);
+    app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
+    app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+}
+
+function renderTimeMarkers() {
+    const container = app.elements.timeMarkers;
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (app.diagram.boxes.length === 0) return;
+
+    // Collect all time points
+    const markers = [];
+
+    app.diagram.boxes.forEach(box => {
+        markers.push({
+            time: box.startOffset,
+            type: 'start',
+            boxId: box.id,
+            color: box.color,
+            label: formatDuration(box.startOffset)
+        });
+        markers.push({
+            time: box.startOffset + box.duration,
+            type: 'end',
+            boxId: box.id,
+            color: box.color,
+            label: formatDuration(box.startOffset + box.duration)
+        });
+    });
+
+    // Sort by time
+    markers.sort((a, b) => a.time - b.time);
+
+    // Layout Logic: Horizontal text with vertical stacking for collisions
+    const levels = [];
+    const charWidth = 7;
+    const padding = 10;
+
+    markers.forEach(m => {
+        const x = msToPixels(m.time);
+        const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+        const width = text.length * charWidth + padding;
+        const startX = x - (width / 2);
+        const endX = startX + width;
+
+        let level = 0;
+        let placed = false;
+
+        while (!placed) {
+            if (!levels[level] || levels[level] < startX) {
+                levels[level] = endX;
+                m.level = level;
+                m.text = text;
+                placed = true;
+            } else {
+                level++;
+            }
+            if (level > 20) { m.level = level; m.text = text; placed = true; }
+        }
+    });
+
+    markers.forEach(m => {
+        const x = msToPixels(m.time);
+
+        const el = document.createElement('div');
+        el.className = 'time-marker-h';
+        el.style.left = `${x}px`;
+        el.style.bottom = `${4 + (m.level * 16)}px`;
+        el.style.color = m.color;
+
+        const tick = document.createElement('div');
+        tick.className = 'time-marker-tick';
+        tick.style.backgroundColor = m.color;
+
+        const label = document.createElement('span');
+        label.className = 'time-marker-text';
+        label.textContent = m.text;
+
+        el.appendChild(tick);
+        el.appendChild(label);
+        container.appendChild(el);
+    });
+}
+
+// =====================================================
+// Interaction Handlers
+// =====================================================
+function selectBox(boxId) {
+    // Deselect previous
+    document.querySelectorAll('.timeline-box.selected').forEach(el => {
+        el.classList.remove('selected');
+    });
+
+    app.selectedBoxId = boxId;
+
+    // Select new
+    const boxEl = document.querySelector(`.timeline-box[data-box-id="${boxId}"]`);
+    if (boxEl) {
+        boxEl.classList.add('selected');
+    }
+
+    updatePropertiesPanel();
+}
+
+function deselectBox() {
+    app.selectedBoxId = null;
+    document.querySelectorAll('.timeline-box.selected').forEach(el => {
+        el.classList.remove('selected');
+    });
+    app.elements.propertiesPanel.classList.add('hidden');
+}
+
+function handleTrackMouseDown(e) {
+    if (e.target.classList.contains('timeline-box') ||
+        e.target.closest('.timeline-box')) {
+        return; // Let box handle its own events
+    }
+
+    // If in picking mode, clicking empty space cancels it
+    if (app.isPicking) {
+        app.isPicking = false;
+        document.body.style.cursor = '';
+        const btn = document.getElementById('pick-start-btn');
+        if (btn) btn.classList.remove('active');
+        return;
+    }
+
+    const track = e.currentTarget;
+    const laneId = parseInt(track.dataset.laneId, 10);
+    const rect = track.getBoundingClientRect();
+    const startX = e.clientX - rect.left;
+    const startOffset = pixelsToMs(startX);
+
+    // Create temporary box for preview
+    const tempBox = document.createElement('div');
+    tempBox.className = 'timeline-box creating';
+    tempBox.style.left = `${startX}px`;
+    tempBox.style.width = '0px';
+    tempBox.style.backgroundColor = '#4CAF50';
+    track.appendChild(tempBox);
+
+    app.isDragging = true;
+    app.dragData = {
+        type: 'create',
+        laneId: laneId,
+        startX: startX,
+        startOffset: startOffset,
+        track: track,
+        tempBox: tempBox
+    };
+
+    e.preventDefault();
+}
+
+function handleBoxDragStart(e, boxId) {
+    e.stopPropagation();
+
+    const box = app.diagram.boxes.find(b => b.id === boxId);
+    if (!box) return;
+
+    const boxEl = e.currentTarget;
+    const rect = boxEl.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+
+    app.isDragging = true;
+    app.dragData = {
+        type: 'move',
+        boxId: boxId,
+        offsetX: offsetX,
+        originalStart: box.startOffset
+    };
+
+    selectBox(boxId);
+    e.preventDefault();
+}
+
+function handleResizeStart(e, boxId) {
+    e.stopPropagation();
+
+    const box = app.diagram.boxes.find(b => b.id === boxId);
+    if (!box) return;
+
+    const isLeft = e.target.classList.contains('left');
+
+    app.isDragging = true;
+    app.dragData = {
+        type: 'resize',
+        boxId: boxId,
+        side: isLeft ? 'left' : 'right',
+        originalStart: box.startOffset,
+        originalDuration: box.duration
+    };
+
+    selectBox(boxId);
+    e.preventDefault();
+}
+
+function handleMouseMove(e) {
+    if (!app.isDragging || !app.dragData) return;
+
+    if (app.dragData.type === 'create') {
+        const rect = app.dragData.track.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const width = Math.max(currentX - app.dragData.startX, 10);
+        app.dragData.tempBox.style.width = `${width}px`;
+    } else if (app.dragData.type === 'move') {
+        const box = app.diagram.boxes.find(b => b.id === app.dragData.boxId);
+        if (!box) return;
+
+        const track = document.querySelector(`.lane-track[data-lane-id="${box.laneId}"]`);
+        if (!track) return;
+
+        const rect = track.getBoundingClientRect();
+        const newX = e.clientX - rect.left - app.dragData.offsetX;
+        const newStart = Math.max(0, pixelsToMs(newX));
+
+        box.startOffset = Math.round(newStart);
+
+        const boxEl = document.querySelector(`.timeline-box[data-box-id="${box.id}"]`);
+        if (boxEl) {
+            boxEl.style.left = `${msToPixels(box.startOffset)}px`;
+        }
+        renderTimeMarkers();
+        updatePropertiesPanel();
+    } else if (app.dragData.type === 'resize') {
+        const box = app.diagram.boxes.find(b => b.id === app.dragData.boxId);
+        if (!box) return;
+
+        const track = document.querySelector(`.lane-track[data-lane-id="${box.laneId}"]`);
+        if (!track) return;
+
+        const rect = track.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseMs = pixelsToMs(mouseX);
+
+        if (app.dragData.side === 'right') {
+            const newDuration = Math.max(50, mouseMs - box.startOffset);
+            box.duration = Math.round(newDuration);
+        } else {
+            const endOffset = app.dragData.originalStart + app.dragData.originalDuration;
+            const newStart = Math.max(0, Math.min(mouseMs, endOffset - 50));
+            box.startOffset = Math.round(newStart);
+            box.duration = Math.round(endOffset - box.startOffset);
+        }
+
+        const boxEl = document.querySelector(`.timeline-box[data-box-id="${box.id}"]`);
+        if (boxEl) {
+            boxEl.style.left = `${msToPixels(box.startOffset)}px`;
+            boxEl.style.width = `${Math.max(msToPixels(box.duration), 20)}px`;
+
+            const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
+            const labelEl = boxEl.querySelector('.box-label');
+            if (labelEl) labelEl.textContent = labelText;
+        }
+        renderTimeMarkers();
+
+        updatePropertiesPanel();
+    }
+}
+
+function handleMouseUp(e) {
+    if (!app.isDragging || !app.dragData) return;
+
+    if (app.dragData.type === 'create') {
+        const rect = app.dragData.track.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const dist = Math.abs(endX - app.dragData.startX);
+
+        // Remove temp box
+        app.dragData.tempBox.remove();
+
+        // Create real box only if dragged enough (avoid single click creation)
+        if (dist > 5) {
+            const duration = pixelsToMs(Math.max(dist, 20));
+
+            const box = app.diagram.addBox(
+                app.dragData.laneId,
+                Math.round(app.dragData.startOffset),
+                Math.round(duration),
+                '',
+                getAutoBoxColor(app.dragData.laneId)
+            );
+
+            renderLanesCanvas();
+            renderTimeMarkers();
+            updateTotalDuration();
+            selectBox(box.id);
+        }
+    } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
+        renderTimelineRuler();
+        renderAlignmentMarkers();
+        updateTotalDuration();
+        updatePropertiesPanel();
+    }
+
+    app.isDragging = false;
+    app.dragData = null;
+}
+
+function handleZoom(direction) {
+    const factor = direction === 'in' ? 1.25 : 0.8;
+    app.pixelsPerMs = Math.max(app.minPixelsPerMs,
+        Math.min(app.maxPixelsPerMs, app.pixelsPerMs * factor));
+
+    const zoomPercent = Math.round((app.pixelsPerMs / 0.15) * 100);
+    app.elements.zoomLevel.textContent = `${zoomPercent}%`;
+
+    renderLanesCanvas();
+}
+
+function handleZoomFit() {
+    const totalDuration = app.diagram.getTotalDuration();
+    if (totalDuration === 0) return;
+
+    const canvasWidth = app.elements.lanesCanvas.clientWidth - 180; // Account for lane label
+    app.pixelsPerMs = Math.max(app.minPixelsPerMs,
+        Math.min(app.maxPixelsPerMs, canvasWidth / (totalDuration * 1.1)));
+
+    const zoomPercent = Math.round((app.pixelsPerMs / 0.15) * 100);
+    app.elements.zoomLevel.textContent = `${zoomPercent}%`;
+
+    renderLanesCanvas();
+}
+
+// =====================================================
+// Properties Panel Handlers
+// =====================================================
+function handleBoxPropertyChange() {
+    if (!app.selectedBoxId) return;
+
+    const updates = {
+        label: app.elements.boxLabel.value,
+        color: app.elements.boxColor.value,
+        startOffset: parseInt(app.elements.boxStart.value, 10) || 0,
+        duration: Math.max(1, parseInt(app.elements.boxDuration.value, 10) || 100)
+    };
+
+    app.diagram.updateBox(app.selectedBoxId, updates);
+    renderLanesCanvas();
+    updateTotalDuration();
+    updatePropertiesPanel();
+
+    // Re-select to keep selection visible
+    selectBox(app.selectedBoxId);
+}
+
+function handleDeleteBox() {
+    if (!app.selectedBoxId) return;
+
+    app.diagram.removeBox(app.selectedBoxId);
+    deselectBox();
+    renderLanesCanvas();
+    updateTotalDuration();
+}
+
+// =====================================================
+// Export/Import Functions
+// =====================================================
+function saveToJSON() {
+    const data = app.diagram.toJSON();
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${app.diagram.title.replace(/[^a-z0-9]/gi, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function loadFromJSON(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            app.diagram.fromJSON(data);
+
+            app.elements.diagramTitle.value = app.diagram.title;
+            app.elements.startTime.value = app.diagram.startTime;
+
+            deselectBox();
+            renderLaneList();
+            renderLanesCanvas();
+            updateTotalDuration();
+        } catch (err) {
+            alert('Error loading file: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+// Helper function to wrap text in canvas
+function wrapText(ctx, text, maxWidth, lineHeight) {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (let word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+    return lines;
+}
+
+function exportToPNG() {
+    // Use manual canvas rendering for full control
+    const lanes = app.diagram.lanes;
+    const boxes = app.diagram.boxes;
+
+    const scale = 2; // High DPI
+    const headerHeight = 50;
+    const laneHeight = 50;
+    const laneLabelWidth = 160;
+    const rulerHeight = 40;
+    const footerHeight = 40;
+    const totalDuration = Math.max(app.diagram.getTotalDuration() * 1.1, 1000);
+    const width = laneLabelWidth + msToPixels(totalDuration) + 50;
+    const lanesAreaHeight = lanes.length * laneHeight;
+    const lanesStartY = headerHeight + rulerHeight;
+
+    // Pre-calculate time markers layout to determine height
+    const markers = [];
+    boxes.forEach(box => {
+        markers.push({
+            time: box.startOffset,
+            type: 'start',
+            color: box.color,
+            label: formatDuration(box.startOffset)
+        });
+        markers.push({
+            time: box.startOffset + box.duration,
+            type: 'end',
+            color: box.color,
+            label: formatDuration(box.startOffset + box.duration)
+        });
+    });
+    markers.sort((a, b) => a.time - b.time);
+
+    // Pre-calculate marker levels
+    const levels = [];
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.font = '9px Monaco, monospace';
+
+    markers.forEach(m => {
+        const x = laneLabelWidth + msToPixels(m.time);
+        const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+        const textWidth = tempCtx.measureText(text).width + 10;
+        const startX = x - (textWidth / 2);
+        const endX = startX + textWidth;
+
+        let level = 0;
+        let placed = false;
+        while (!placed) {
+            if (!levels[level] || levels[level] < startX) {
+                levels[level] = endX;
+                m.level = level;
+                m.text = text;
+                m.x = x;
+                placed = true;
+            } else {
+                level++;
+            }
+            if (level > 10) { m.level = level; m.text = text; m.x = x; placed = true; }
+        }
+    });
+
+    const maxLevel = markers.length > 0 ? Math.max(...markers.map(m => m.level)) : 0;
+    const timeMarkersHeight = Math.max(30, (maxLevel + 1) * 14 + 10);
+    const timeMarkersY = lanesStartY + lanesAreaHeight;
+
+    // Now calculate total height
+    const height = headerHeight + rulerHeight + lanesAreaHeight + timeMarkersHeight + footerHeight;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
+    // Background
+    ctx.fillStyle = '#0f1419';
+    ctx.fillRect(0, 0, width, height);
+
+    // Header background
+    ctx.fillStyle = '#1a1f2e';
+    ctx.fillRect(0, 0, width, headerHeight);
+
+    // Header: Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 16px Inter, sans-serif';
+    ctx.fillText(app.diagram.title, 16, 32);
+
+    // Header: Start Time (right aligned)
+    ctx.fillStyle = '#a8b2c1';
+    ctx.font = '13px Monaco, monospace';
+    const startTimeText = `Start: ${app.diagram.startTime}`;
+    const startTimeWidth = ctx.measureText(startTimeText).width;
+    ctx.fillText(startTimeText, width - startTimeWidth - 16, 32);
+
+    // Header divider
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.moveTo(0, headerHeight);
+    ctx.lineTo(width, headerHeight);
+    ctx.stroke();
+
+    // Ruler background
+    const rulerY = headerHeight;
+    ctx.fillStyle = '#1a1f2e';
+    ctx.fillRect(0, rulerY, width, rulerHeight);
+
+    // Ruler marks
+    ctx.font = '11px Monaco, monospace';
+    ctx.fillStyle = '#a8b2c1';
+    for (let time = 0; time <= totalDuration; time += 500) {
+        const x = laneLabelWidth + msToPixels(time);
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.beginPath();
+        ctx.moveTo(x, rulerY);
+        ctx.lineTo(x, rulerY + rulerHeight);
+        ctx.stroke();
+        ctx.fillText(formatDuration(time), x + 4, rulerY + rulerHeight - 8);
+    }
+
+    // Draw lanes backgrounds first (so alignment lines can be drawn on top)
+    lanes.forEach((lane, index) => {
+        const y = lanesStartY + (index * laneHeight);
+        ctx.fillStyle = index % 2 === 0 ? '#0f1419' : '#101520';
+        ctx.fillRect(laneLabelWidth, y, width - laneLabelWidth, laneHeight);
+    });
+
+    // Draw alignment lines if enabled
+    if (app.settings.showAlignmentLines && boxes.length > 0) {
+        const timePoints = new Set();
+        boxes.forEach(box => {
+            timePoints.add(box.startOffset);
+            timePoints.add(box.startOffset + box.duration);
+        });
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+
+        timePoints.forEach(time => {
+            const x = laneLabelWidth + msToPixels(time);
+            ctx.beginPath();
+            ctx.moveTo(x, lanesStartY);
+            ctx.lineTo(x, lanesStartY + lanesAreaHeight);
+            ctx.stroke();
+        });
+
+        ctx.setLineDash([]);
+    }
+
+    // Draw lane labels and boxes
+    lanes.forEach((lane, index) => {
+        const y = lanesStartY + (index * laneHeight);
+
+        // Lane label background
+        ctx.fillStyle = '#1a1f2e';
+        ctx.fillRect(0, y, laneLabelWidth, laneHeight);
+
+        // Lane dividers
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(laneLabelWidth, y);
+        ctx.lineTo(laneLabelWidth, y + laneHeight);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, y + laneHeight);
+        ctx.lineTo(width, y + laneHeight);
+        ctx.stroke();
+
+        // Lane label text with word wrap
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '13px Inter, sans-serif';
+        const maxLabelWidth = laneLabelWidth - 24;
+        const lines = wrapText(ctx, lane.name, maxLabelWidth, 16);
+        const totalTextHeight = lines.length * 16;
+        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 12;
+        lines.forEach((line, lineIndex) => {
+            ctx.fillText(line, 12, startTextY + lineIndex * 16);
+        });
+
+        // Boxes for this lane
+        const laneBoxes = boxes.filter(b => b.laneId === lane.id);
+        laneBoxes.forEach(box => {
+            const bx = laneLabelWidth + msToPixels(box.startOffset);
+            const by = y + 6;
+            const bw = Math.max(msToPixels(box.duration), 20);
+            const bh = laneHeight - 12;
+
+            ctx.fillStyle = box.color;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 4);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
+            ctx.fillStyle = getContrastColor(box.color);
+            ctx.font = '500 12px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(labelText, bx + bw / 2, by + bh / 2 + 4, bw - 8);
+            ctx.textAlign = 'left';
+        });
+    });
+
+    // Time markers area background
+    ctx.fillStyle = '#0f1419';
+    ctx.fillRect(laneLabelWidth, timeMarkersY, width - laneLabelWidth, timeMarkersHeight);
+    ctx.fillStyle = '#1a1f2e';
+    ctx.fillRect(0, timeMarkersY, laneLabelWidth, timeMarkersHeight);
+
+    // Draw time markers
+    ctx.font = '9px Monaco, monospace';
+    markers.forEach(m => {
+        const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
+
+        // Draw tick line
+        ctx.strokeStyle = m.color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(m.x, timeMarkersY + 2);
+        ctx.lineTo(m.x, yPos - 6);
+        ctx.stroke();
+
+        // Draw label
+        ctx.fillStyle = m.color;
+        ctx.textAlign = 'center';
+        ctx.fillText(m.text, m.x, yPos);
+    });
+    ctx.textAlign = 'left';
+
+    // Footer
+    const footerY = timeMarkersY + timeMarkersHeight;
+    ctx.fillStyle = '#1a1f2e';
+    ctx.fillRect(0, footerY, laneLabelWidth, footerHeight);
+    ctx.fillStyle = '#252b3b';
+    ctx.fillRect(laneLabelWidth, footerY, width - laneLabelWidth, footerHeight);
+
+    ctx.fillStyle = '#a8b2c1';
+    ctx.font = '600 12px Monaco, monospace';
+    ctx.fillText('TOTAL DURATION:', laneLabelWidth + 16, footerY + 26);
+    ctx.fillStyle = '#6366f1';
+    ctx.fillText(formatDuration(app.diagram.getTotalDuration()), laneLabelWidth + 140, footerY + 26);
+
+    // Download
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${app.diagram.title.replace(/[^a-z0-9]/gi, '_')}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+// Helper function to wrap text for SVG (returns array of lines)
+function wrapTextSVG(text, maxWidth, charWidth) {
+    const maxChars = Math.floor(maxWidth / charWidth);
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (let word of words) {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        if (testLine.length > maxChars && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+    return lines;
+}
+
+function exportToSVG() {
+    const lanes = app.diagram.lanes;
+    const boxes = app.diagram.boxes;
+
+    const headerHeight = 50;
+    const laneHeight = 50;
+    const laneLabelWidth = 160;
+    const rulerHeight = 40;
+    const timeMarkersHeight = 30;
+    const footerHeight = 40;
+    const totalDuration = Math.max(app.diagram.getTotalDuration() * 1.1, 1000);
+    const width = Math.round(laneLabelWidth + msToPixels(totalDuration) + 50);
+    const lanesAreaHeight = lanes.length * laneHeight;
+    const height = headerHeight + rulerHeight + lanesAreaHeight + timeMarkersHeight + footerHeight;
+
+    let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <style>
+      .title-text { font-family: 'Inter', -apple-system, sans-serif; font-size: 16px; font-weight: 600; fill: #ffffff; }
+      .start-time-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 13px; fill: #a8b2c1; }
+      .lane-label { font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; fill: #ffffff; }
+      .ruler-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 11px; fill: #a8b2c1; }
+      .box-text { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; font-weight: 500; }
+      .time-marker { font-family: 'Monaco', 'Menlo', monospace; font-size: 10px; fill: #6366f1; }
+      .footer-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; font-weight: 600; fill: #a8b2c1; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#0f1419"/>
+
+  <!-- Header -->
+  <rect x="0" y="0" width="${width}" height="${headerHeight}" fill="#1a1f2e"/>
+  <text x="16" y="32" class="title-text">${escapeHtml(app.diagram.title)}</text>
+  <text x="${width - 16}" y="32" text-anchor="end" class="start-time-text">Start: ${escapeHtml(app.diagram.startTime)}</text>
+  <line x1="0" y1="${headerHeight}" x2="${width}" y2="${headerHeight}" stroke="rgba(255,255,255,0.1)"/>
+
+  <!-- Ruler -->
+  <rect x="0" y="${headerHeight}" width="${width}" height="${rulerHeight}" fill="#1a1f2e"/>
+`;
+
+    const rulerY = headerHeight;
+
+    // Ruler marks
+    let interval = 500;
+    for (let time = 0; time <= totalDuration; time += interval) {
+        const x = Math.round(laneLabelWidth + msToPixels(time));
+        svg += `  <line x1="${x}" y1="${rulerY}" x2="${x}" y2="${rulerY + rulerHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
+        svg += `  <text x="${x + 4}" y="${rulerY + rulerHeight - 8}" class="ruler-text">${formatDuration(time)}</text>\n`;
+    }
+
+    const lanesStartY = headerHeight + rulerHeight;
+
+    // Vertical Dashed Lines (Alignment Markers) - only if enabled
+    if (app.settings.showAlignmentLines && boxes.length > 0) {
+        const timePoints = new Set();
+        boxes.forEach(box => {
+            timePoints.add(box.startOffset);
+            timePoints.add(box.startOffset + box.duration);
+        });
+
+        svg += `  <!-- Alignment Lines -->\n`;
+        timePoints.forEach(time => {
+            const x = Math.round(laneLabelWidth + msToPixels(time));
+            svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="#ffffff" stroke-opacity="0.4" stroke-dasharray="4 4"/>\n`;
+        });
+    }
+
+    // Lanes
+    lanes.forEach((lane, index) => {
+        const y = lanesStartY + (index * laneHeight);
+
+        // Lane background
+        svg += `  <!-- Lane: ${escapeHtml(lane.name)} -->\n`;
+        svg += `  <rect x="0" y="${y}" width="${width}" height="${laneHeight}" fill="${index % 2 === 0 ? '#0f1419' : '#101520'}"/>\n`;
+        svg += `  <rect x="0" y="${y}" width="${laneLabelWidth}" height="${laneHeight}" fill="#1a1f2e"/>\n`;
+        svg += `  <line x1="${laneLabelWidth}" y1="${y}" x2="${laneLabelWidth}" y2="${y + laneHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
+        svg += `  <line x1="0" y1="${y + laneHeight}" x2="${width}" y2="${y + laneHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
+
+        // Lane label with word wrap (approximate char width ~8px for 13px font)
+        const labelLines = wrapTextSVG(lane.name, laneLabelWidth - 24, 8);
+        const lineHeight = 16;
+        const totalTextHeight = labelLines.length * lineHeight;
+        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 12;
+        labelLines.forEach((line, lineIndex) => {
+            svg += `  <text x="12" y="${startTextY + lineIndex * lineHeight}" class="lane-label">${escapeHtml(line)}</text>\n`;
+        });
+
+        // Boxes for this lane
+        const laneBoxes = boxes.filter(b => b.laneId === lane.id);
+        laneBoxes.forEach(box => {
+            const bx = Math.round(laneLabelWidth + msToPixels(box.startOffset));
+            const by = y + 6;
+            const bw = Math.max(Math.round(msToPixels(box.duration)), 20);
+            const bh = laneHeight - 12;
+            const textColor = getContrastColor(box.color);
+            const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
+
+            svg += `  <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="4" fill="${box.color}" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>\n`;
+            svg += `  <text x="${bx + bw / 2}" y="${by + bh / 2 + 4}" text-anchor="middle" class="box-text" fill="${textColor}">${escapeHtml(labelText)}</text>\n`;
+        });
+    });
+
+    // Time markers area
+    const timeMarkersY = lanesStartY + lanesAreaHeight;
+    svg += `  <!-- Time Markers -->\n`;
+    svg += `  <rect x="0" y="${timeMarkersY}" width="${width}" height="${timeMarkersHeight}" fill="#0f1419"/>\n`;
+    svg += `  <rect x="0" y="${timeMarkersY}" width="${laneLabelWidth}" height="${timeMarkersHeight}" fill="#1a1f2e"/>\n`;
+
+    // Draw time markers with smart multi-row layout
+    if (boxes.length > 0) {
+        const uniqueTimes = [...new Set(boxes.flatMap(box => [box.startOffset, box.startOffset + box.duration]))].sort((a, b) => a - b);
+        const minSpacing = 40;
+        const charWidth = 6; // Approximate character width for 9px monospace
+
+        // Assign each marker to a row to avoid overlaps
+        const rows = [[], []];
+        uniqueTimes.forEach(time => {
+            const x = laneLabelWidth + msToPixels(time);
+            const label = formatDuration(time);
+            const labelWidth = label.length * charWidth;
+
+            let placed = false;
+            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                const row = rows[rowIdx];
+                const lastInRow = row[row.length - 1];
+                if (!lastInRow || (x - lastInRow.x) > minSpacing) {
+                    row.push({ time, x, label, width: labelWidth });
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                const row0Last = rows[0][rows[0].length - 1];
+                const row1Last = rows[1][rows[1].length - 1];
+                const space0 = row0Last ? x - row0Last.x : Infinity;
+                const space1 = row1Last ? x - row1Last.x : Infinity;
+                if (space0 >= space1) {
+                    rows[0].push({ time, x, label, width: labelWidth });
+                } else {
+                    rows[1].push({ time, x, label, width: labelWidth });
+                }
+            }
+        });
+
+        // Draw markers with tick lines
+        rows.forEach((row, rowIdx) => {
+            const yOffset = rowIdx === 0 ? 12 : 24;
+            row.forEach(marker => {
+                // Tick line
+                svg += `  <line x1="${Math.round(marker.x)}" y1="${timeMarkersY}" x2="${Math.round(marker.x)}" y2="${timeMarkersY + 4}" stroke="#6366f1" stroke-opacity="0.5"/>\n`;
+                // Label
+                svg += `  <text x="${Math.round(marker.x)}" y="${timeMarkersY + yOffset}" text-anchor="middle" class="time-marker">${marker.label}</text>\n`;
+            });
+        });
+    }
+
+    // Footer
+    const footerY = timeMarkersY + timeMarkersHeight;
+    svg += `  <!-- Footer -->\n`;
+    svg += `  <rect x="0" y="${footerY}" width="${laneLabelWidth}" height="${footerHeight}" fill="#1a1f2e"/>\n`;
+    svg += `  <rect x="${laneLabelWidth}" y="${footerY}" width="${width - laneLabelWidth}" height="${footerHeight}" fill="#252b3b"/>\n`;
+    svg += `  <text x="${laneLabelWidth + 16}" y="${footerY + 26}" class="footer-text">TOTAL DURATION: <tspan fill="#6366f1">${formatDuration(app.diagram.getTotalDuration())}</tspan></text>\n`;
+    svg += `</svg>`;
+
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${app.diagram.title.replace(/[^a-z0-9]/gi, '_')}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// =====================================================
+// Lane Properties Panel Functions
+// =====================================================
+function showLanePropertiesPanel(laneId) {
+    const panel = app.elements.propertiesPanel;
+    const boxProps = document.getElementById('box-props');
+    const laneProps = document.getElementById('lane-props');
+    const settingsProps = document.getElementById('settings-props');
+    const propsTitle = document.getElementById('props-title');
+
+    const lane = app.diagram.lanes.find(l => l.id === parseInt(laneId));
+    if (!lane) return;
+
+    // Hide box and settings properties, show lane properties
+    if (boxProps) boxProps.classList.add('hidden');
+    if (laneProps) laneProps.classList.remove('hidden');
+    if (settingsProps) settingsProps.classList.add('hidden');
+    if (propsTitle) propsTitle.textContent = 'Lane Properties';
+
+    // Deselect any box
+    app.selectedBoxId = null;
+    app.selectedLaneId = laneId;
+    document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+
+    // Set current lane name
+    const laneNameInput = document.getElementById('lane-name');
+    if (laneNameInput) {
+        laneNameInput.value = lane.name;
+    }
+
+    // Generate lane palette swatches
+    const lanePalette = document.getElementById('lane-palette');
+    if (lanePalette) {
+        lanePalette.innerHTML = '';
+        PALETTE.forEach(color => {
+            const swatch = document.createElement('div');
+            swatch.className = 'palette-swatch';
+            swatch.style.backgroundColor = color;
+            swatch.title = color;
+            if (lane.baseColor === color) {
+                swatch.classList.add('selected');
+            }
+            swatch.addEventListener('click', () => {
+                setLaneColor(laneId, color);
+                // Update selected state
+                lanePalette.querySelectorAll('.palette-swatch').forEach(s => s.classList.remove('selected'));
+                swatch.classList.add('selected');
+            });
+            lanePalette.appendChild(swatch);
+        });
+    }
+
+    panel.classList.remove('hidden');
+}
+
+function handleLaneNameChange() {
+    if (!app.selectedLaneId) return;
+    const laneNameInput = document.getElementById('lane-name');
+    if (laneNameInput) {
+        app.diagram.renameLane(app.selectedLaneId, laneNameInput.value);
+        renderLaneList();
+        renderLanesCanvas();
+    }
+}
+
+// =====================================================
+// Settings Panel Functions
+// =====================================================
+function showSettingsPanel() {
+    const panel = app.elements.propertiesPanel;
+    const boxProps = document.getElementById('box-props');
+    const laneProps = document.getElementById('lane-props');
+    const settingsProps = document.getElementById('settings-props');
+    const propsTitle = document.getElementById('props-title');
+
+    // Hide box and lane properties, show settings
+    if (boxProps) boxProps.classList.add('hidden');
+    if (laneProps) laneProps.classList.add('hidden');
+    if (settingsProps) settingsProps.classList.remove('hidden');
+    if (propsTitle) propsTitle.textContent = 'Global Settings';
+
+    // Set current values
+    const pageTitleInput = document.getElementById('config-page-title');
+    if (pageTitleInput) {
+        pageTitleInput.value = app.diagram.title;
+    }
+
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    if (thresholdSelect) {
+        thresholdSelect.value = app.settings.timeFormatThreshold.toString();
+    }
+
+    const alignmentCheckbox = document.getElementById('config-show-alignment');
+    if (alignmentCheckbox) {
+        alignmentCheckbox.checked = app.settings.showAlignmentLines;
+    }
+
+    // Deselect any box/lane
+    app.selectedBoxId = null;
+    app.selectedLaneId = null;
+    document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+
+    panel.classList.remove('hidden');
+}
+
+function handleSettingsChange() {
+    // Page title
+    const pageTitleInput = document.getElementById('config-page-title');
+    if (pageTitleInput) {
+        app.diagram.title = pageTitleInput.value;
+        app.elements.diagramTitle.value = pageTitleInput.value;
+    }
+
+    // Time format threshold
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    if (thresholdSelect) {
+        app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+    }
+
+    // Alignment lines toggle
+    const alignmentCheckbox = document.getElementById('config-show-alignment');
+    if (alignmentCheckbox) {
+        app.settings.showAlignmentLines = alignmentCheckbox.checked;
+    }
+
+    // Re-render to apply changes
+    renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentMarkers();
+    updateTotalDuration();
+}
+
+// =====================================================
+// Initialization
+// =====================================================
+function enterPickMode() {
+    if (!app.selectedBoxId) return;
+    app.isPicking = true;
+    document.body.style.cursor = 'crosshair';
+    const btn = document.getElementById('pick-start-btn');
+    if (btn) btn.classList.add('active');
+}
+
+function completePickStart(targetBoxId) {
+    if (!app.selectedBoxId) {
+        app.isPicking = false;
+        document.body.style.cursor = '';
+        return;
+    }
+
+    const targetBox = app.diagram.boxes.find(b => b.id === targetBoxId);
+    const myBox = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+
+    if (targetBox && myBox) {
+        myBox.startOffset = targetBox.startOffset + targetBox.duration;
+
+        const boxEl = document.querySelector(`.timeline-box[data-box-id="${myBox.id}"]`);
+        if (boxEl) {
+            boxEl.style.left = `${msToPixels(myBox.startOffset)}px`;
+        }
+        updatePropertiesPanel();
+        renderTimeMarkers();
+    }
+
+    app.isPicking = false;
+    document.body.style.cursor = '';
+    const btn = document.getElementById('pick-start-btn');
+    if (btn) btn.classList.remove('active');
+}
+
+function init() {
+    // Create floating tooltip element
+    const tooltip = document.createElement('div');
+    tooltip.id = 'box-tooltip';
+    tooltip.className = 'box-tooltip';
+    document.body.appendChild(tooltip);
+
+    // Cache DOM elements
+    app.elements = {
+        diagramTitle: document.getElementById('diagram-title'),
+        startTime: document.getElementById('start-time'),
+        zoomLevel: document.getElementById('zoom-level'),
+        laneList: document.getElementById('lane-list'),
+        timelineRuler: document.getElementById('timeline-ruler'),
+        lanesCanvas: document.getElementById('lanes-canvas'),
+        timeMarkers: document.getElementById('time-markers'),
+        timeMarkersContainer: document.querySelector('.time-markers-container'),
+        totalDuration: document.getElementById('total-duration'),
+        propertiesPanel: document.getElementById('properties-panel'),
+        boxLabel: document.getElementById('box-label'),
+        boxColor: document.getElementById('box-color'),
+        boxStart: document.getElementById('box-start'),
+        boxDuration: document.getElementById('box-duration'),
+        boxEnd: document.getElementById('box-end'),
+        boxTimeStart: document.getElementById('box-time-start'),
+        boxTimeEnd: document.getElementById('box-time-end'),
+        alignmentMarkers: document.getElementById('alignment-markers'),
+        fileInput: document.getElementById('file-input'),
+        tooltip: tooltip
+    };
+
+    // Header event listeners
+    app.elements.diagramTitle.addEventListener('change', (e) => {
+        app.diagram.title = e.target.value;
+    });
+
+    app.elements.startTime.addEventListener('change', (e) => {
+        app.diagram.startTime = e.target.value;
+        updatePropertiesPanel();
+        renderTimeMarkers(); // Update markers as start time changes
+    });
+
+    // Synchronize scroll between canvas, ruler, and time markers
+    app.elements.lanesCanvas.addEventListener('scroll', (e) => {
+        app.elements.timelineRuler.scrollLeft = e.target.scrollLeft;
+        if (app.elements.timeMarkers) {
+            app.elements.timeMarkers.scrollLeft = e.target.scrollLeft;
+        }
+    });
+    // Settings button
+    document.getElementById('settings-btn').addEventListener('click', showSettingsPanel);
+
+    // Settings change handlers
+    const pageTitleInput = document.getElementById('config-page-title');
+    if (pageTitleInput) {
+        pageTitleInput.addEventListener('input', handleSettingsChange);
+    }
+
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    if (thresholdSelect) {
+        thresholdSelect.addEventListener('change', handleSettingsChange);
+    }
+
+    const alignmentCheckbox = document.getElementById('config-show-alignment');
+    if (alignmentCheckbox) {
+        alignmentCheckbox.addEventListener('change', handleSettingsChange);
+    }
+
+    // Also sync header title input changes to settings
+    app.elements.diagramTitle.addEventListener('input', (e) => {
+        app.diagram.title = e.target.value;
+    });
+
+    // Lane name change handler in properties panel
+    const laneNameInput = document.getElementById('lane-name');
+    if (laneNameInput) {
+        laneNameInput.addEventListener('change', handleLaneNameChange);
+    }
+
+    // Zoom controls
+    document.getElementById('zoom-in').addEventListener('click', () => handleZoom('in'));
+    document.getElementById('zoom-out').addEventListener('click', () => handleZoom('out'));
+    document.getElementById('zoom-fit').addEventListener('click', handleZoomFit);
+
+    // Export controls
+    document.getElementById('save-json').addEventListener('click', saveToJSON);
+    document.getElementById('load-json').addEventListener('click', () => app.elements.fileInput.click());
+    app.elements.fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            loadFromJSON(e.target.files[0]);
+        }
+    });
+    document.getElementById('export-png').addEventListener('click', exportToPNG);
+    document.getElementById('export-svg').addEventListener('click', exportToSVG);
+
+    // Lane management
+    document.getElementById('add-lane').addEventListener('click', () => {
+        const name = `Lane ${app.diagram.lanes.length + 1}`;
+        app.diagram.addLane(name);
+        renderLaneList();
+        renderLanesCanvas();
+    });
+
+    // Properties panel
+    app.elements.boxLabel.addEventListener('change', handleBoxPropertyChange);
+    app.elements.boxColor.addEventListener('input', handleBoxPropertyChange);
+    app.elements.boxStart.addEventListener('change', handleBoxPropertyChange);
+
+    // Pick start button
+    const pickBtn = document.getElementById('pick-start-btn');
+    if (pickBtn) {
+        pickBtn.addEventListener('click', enterPickMode);
+    }
+
+    // Generate Palette Swatches
+    const paletteContainer = document.getElementById('color-palette');
+    if (paletteContainer) {
+        PALETTE.forEach(color => {
+            const btn = document.createElement('div');
+            btn.className = 'palette-swatch';
+            btn.style.backgroundColor = color;
+            btn.title = color;
+            btn.addEventListener('click', () => {
+                app.elements.boxColor.value = color;
+                // Manually trigger property change
+                if (app.selectedBoxId) {
+                    // Since handleBoxPropertyChange expects an event with target
+                    const mockEvent = { target: { id: 'box-color', value: color } };
+                    handleBoxPropertyChange(mockEvent);
+                }
+            });
+            paletteContainer.appendChild(btn);
+        });
+    }
+
+    app.elements.boxDuration.addEventListener('change', handleBoxPropertyChange);
+
+    document.querySelectorAll('.color-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            app.elements.boxColor.value = e.target.dataset.color;
+            handleBoxPropertyChange();
+        });
+    });
+
+    document.getElementById('close-properties').addEventListener('click', deselectBox);
+    document.getElementById('delete-box').addEventListener('click', handleDeleteBox);
+
+    // Global mouse events for dragging
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // Click outside to deselect
+    app.elements.lanesCanvas.addEventListener('click', (e) => {
+        if (e.target === app.elements.lanesCanvas || e.target.classList.contains('lane-row')) {
+            deselectBox();
+        }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (app.selectedBoxId && document.activeElement.tagName !== 'INPUT') {
+                handleDeleteBox();
+            }
+        }
+        if (e.key === 'Escape') {
+            deselectBox();
+        }
+    });
+
+    // Window resize
+    window.addEventListener('resize', () => {
+        renderTimelineRuler();
+        renderAlignmentMarkers();
+    });
+
+    // Add default lane
+    app.diagram.addLane('Lane 1');
+
+    // Initial render
+    renderLaneList();
+    renderLanesCanvas();
+    updateTotalDuration();
+}
+
+// Start the app when DOM is ready
+document.addEventListener('DOMContentLoaded', init);
