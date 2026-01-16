@@ -1,0 +1,14 @@
+# Ignore everything
+*
+
+# Except these project files
+!index.html
+!app.js
+!styles.css
+!help.html
+!LICENSE
+!README.md
+!.gitignore
+!.github/
+!.github/workflows/
+!.github/workflows/deploy.yml
