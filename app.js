@@ -170,6 +170,7 @@ const app = {
     // Measurement tool state
     isMeasuring: false,
     measurePinned: false,
+    measureToolActive: false, // Toggle measurement mode without holding Ctrl/Cmd
     measureStart: null,
     measureEnd: null,
     pinnedMeasurementData: null, // Stored measurement from loaded diagram
@@ -544,6 +545,35 @@ function deleteDiagram(diagramId) {
     });
 }
 
+function toggleDiagramLock(diagramId) {
+    const diagrams = getAllDiagrams();
+    const diagram = diagrams.find(d => d.id === diagramId);
+    if (!diagram) return;
+
+    // Toggle lock state
+    if (!diagram.data) diagram.data = {};
+    diagram.data.locked = !diagram.data.locked;
+
+    // Save updated diagrams list
+    saveDiagramsList(diagrams);
+
+    // If this is the current diagram, update the UI
+    if (diagramId === currentDiagramId) {
+        app.diagram.locked = diagram.data.locked;
+        updateLockState();
+    }
+
+    // Re-render the list to show updated lock icon
+    renderDiagramsList();
+
+    showToast({
+        type: 'success',
+        title: diagram.data.locked ? 'Diagram Locked' : 'Diagram Unlocked',
+        message: diagram.data.locked ? 'Diagram is now protected from edits.' : 'Diagram can now be edited.',
+        duration: 2000
+    });
+}
+
 function resetDiagram(diagramId) {
     const diagrams = getAllDiagrams();
     const diagram = diagrams.find(d => d.id === diagramId);
@@ -660,10 +690,11 @@ function purgeApplication() {
 
                 app.elements.propertiesPanel.classList.add('hidden');
 
-                // Render diagrams list after a brief delay to ensure storage is synced
+                // Render diagrams list immediately and after delay to ensure update
+                renderDiagramsList();
                 setTimeout(() => {
                     renderDiagramsList();
-                }, 50);
+                }, 150);
 
                 showToast({ type: 'success', title: 'Purged', message: `${unlockedDiagrams.length} diagram(s) deleted. Locked diagrams preserved.`, duration: 3000 });
             } else {
@@ -716,6 +747,18 @@ function generateDiagramTitle() {
 }
 
 function createNewDiagram() {
+    // Check if we've reached the maximum number of diagrams
+    const diagrams = getAllDiagrams();
+    if (diagrams.length >= MAX_DIAGRAMS) {
+        showToast({
+            type: 'warning',
+            title: 'Maximum Diagrams Reached',
+            message: `You can only have ${MAX_DIAGRAMS} diagrams. Delete one to create a new diagram.`,
+            duration: 4000
+        });
+        return;
+    }
+
     currentDiagramId = generateDiagramId();
     app.diagram = new TimelineDiagram();
     app.diagram.title = generateDiagramTitle();
@@ -740,6 +783,13 @@ function createNewDiagram() {
 
     // Save the new empty diagram
     saveCurrentDiagram();
+
+    showToast({
+        type: 'success',
+        title: 'Diagram Created',
+        message: `"${app.diagram.title}" is ready to use.`,
+        duration: 2000
+    });
 }
 
 function loadMostRecentDiagram() {
@@ -770,49 +820,98 @@ function renderDiagramsList() {
 
     if (diagrams.length === 0) {
         container.innerHTML = '<div class="no-diagrams">No saved diagrams</div>';
-        return;
+    } else {
+        container.innerHTML = diagrams.map(d => {
+            const isLocked = d.data && d.data.locked;
+            return `
+            <div class="diagram-item ${d.id === currentDiagramId ? 'active' : ''}" data-diagram-id="${d.id}">
+                <div class="diagram-item-info">
+                    <div class="diagram-item-title">${isLocked ? '🔒 ' : ''}${escapeHtml(d.title || 'Untitled')}</div>
+                    <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
+                </div>
+                <div class="diagram-controls">
+                    <button class="diagram-control-btn diagram-lock-btn ${isLocked ? 'locked' : ''}" data-diagram-id="${d.id}" title="${isLocked ? 'Unlock' : 'Lock'} diagram">${isLocked ? '🔓' : '🔒'}</button>
+                    <button class="diagram-control-btn diagram-reset-btn" data-diagram-id="${d.id}" title="Reset diagram">↺</button>
+                    <button class="diagram-delete-btn" data-diagram-id="${d.id}" title="Delete diagram">×</button>
+                </div>
+            </div>`;
+        }).join('');
+
+        // Add click listeners
+        container.querySelectorAll('.diagram-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.diagram-controls')) return;
+                const id = item.dataset.diagramId;
+                if (id !== currentDiagramId) {
+                    loadDiagram(id);
+                }
+            });
+        });
+
+        container.querySelectorAll('.diagram-lock-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleDiagramLock(btn.dataset.diagramId);
+            });
+        });
+
+        container.querySelectorAll('.diagram-reset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                resetDiagram(btn.dataset.diagramId);
+            });
+        });
+
+        container.querySelectorAll('.diagram-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteDiagram(btn.dataset.diagramId);
+            });
+        });
     }
 
-    container.innerHTML = diagrams.map(d => {
-        const isLocked = d.data && d.data.locked;
-        return `
-        <div class="diagram-item ${d.id === currentDiagramId ? 'active' : ''}" data-diagram-id="${d.id}">
-            <div class="diagram-item-info">
-                <div class="diagram-item-title">${isLocked ? '🔒 ' : ''}${escapeHtml(d.title || 'Untitled')}</div>
-                <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
-            </div>
-            <div class="diagram-item-actions">
-                <button class="diagram-item-reset" data-diagram-id="${d.id}" title="Reset diagram">↺</button>
-                <button class="diagram-item-delete" data-diagram-id="${d.id}" title="Delete diagram">×</button>
-            </div>
-        </div>`;
-    }).join('');
+    // Update New Diagram button state
+    updateNewDiagramButton();
 
-    // Add click listeners
-    container.querySelectorAll('.diagram-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            if (e.target.classList.contains('diagram-item-delete') ||
-                e.target.classList.contains('diagram-item-reset')) return;
-            const id = item.dataset.diagramId;
-            if (id !== currentDiagramId) {
-                loadDiagram(id);
-            }
-        });
-    });
+    // Update Load button state
+    updateLoadButton();
+}
 
-    container.querySelectorAll('.diagram-item-reset').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            resetDiagram(btn.dataset.diagramId);
-        });
-    });
+function updateNewDiagramButton() {
+    const btn = document.getElementById('new-diagram-btn');
+    const btnText = document.getElementById('new-diagram-btn-text');
+    if (!btn || !btnText) return;
 
-    container.querySelectorAll('.diagram-item-delete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteDiagram(btn.dataset.diagramId);
-        });
-    });
+    const diagrams = getAllDiagrams();
+    const isAtMax = diagrams.length >= MAX_DIAGRAMS;
+
+    if (isAtMax) {
+        btn.disabled = true;
+        btnText.textContent = `Max ${MAX_DIAGRAMS} Diagrams`;
+        btn.title = `You've reached the maximum of ${MAX_DIAGRAMS} diagrams. Delete a diagram to create a new one.`;
+    } else {
+        btn.disabled = false;
+        btnText.textContent = '+ New Diagram';
+        btn.title = 'Create a new timeline diagram';
+    }
+}
+
+function updateLoadButton() {
+    const btn = document.getElementById('load-json');
+    if (!btn) return;
+
+    const diagrams = getAllDiagrams();
+    const isAtMax = diagrams.length >= MAX_DIAGRAMS;
+
+    if (isAtMax) {
+        btn.disabled = true;
+        btn.classList.add('btn-disabled-warn');
+        btn.title = `You've reached the maximum of ${MAX_DIAGRAMS} diagrams. Delete a diagram to load a new one.`;
+    } else {
+        btn.disabled = false;
+        btn.classList.remove('btn-disabled-warn');
+        btn.title = 'Load diagram from JSON file';
+    }
 }
 
 function toggleDiagramsPanel() {
@@ -1480,6 +1579,11 @@ function selectBox(boxId) {
     }
 
     updatePropertiesPanel();
+
+    // Glimpse the pick-start button to draw attention
+    setTimeout(() => {
+        glimpsePickStartButton();
+    }, 100);
 }
 
 function deselectBox() {
@@ -1488,11 +1592,15 @@ function deselectBox() {
         el.classList.remove('selected');
     });
     app.elements.propertiesPanel.classList.add('hidden');
+
+    // Remove active state from settings button
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) settingsBtn.classList.remove('active');
 }
 
 function handleTrackMouseDown(e) {
-    // Don't create boxes while measuring
-    if (app.isMeasuring || e.ctrlKey || e.metaKey) {
+    // Don't create boxes while measuring or in measurement mode
+    if (app.isMeasuring || app.measureToolActive || e.ctrlKey || e.metaKey) {
         return;
     }
 
@@ -1512,6 +1620,18 @@ function handleTrackMouseDown(e) {
         document.body.style.cursor = '';
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
+
+        // Remove helper text and visual feedback
+        hidePickHelperText();
+        document.querySelectorAll('.timeline-box').forEach(box => {
+            box.classList.remove('pickable');
+        });
+
+        showToast({
+            type: 'info',
+            title: 'Pick Mode Cancelled',
+            duration: 2000
+        });
         return;
     }
 
@@ -1837,6 +1957,26 @@ function closeMeasurement() {
     infoBox.classList.remove('pinned');
 }
 
+function toggleMeasurementTool() {
+    app.measureToolActive = !app.measureToolActive;
+    const btn = document.getElementById('measure-tool-btn');
+
+    if (app.measureToolActive) {
+        btn.classList.add('active');
+        document.body.style.cursor = 'crosshair';
+        showToast({
+            type: 'info',
+            title: 'Measurement Mode Active',
+            message: 'Click and drag on the timeline to measure durations',
+            duration: 2500
+        });
+    } else {
+        btn.classList.remove('active');
+        document.body.style.cursor = '';
+        closeMeasurement();
+    }
+}
+
 function restorePinnedMeasurement() {
     // First close any existing measurement
     closeMeasurement();
@@ -1936,9 +2076,55 @@ function updateMeasurementDisplay() {
         <div class="measure-row"><span>End:</span>${formatDuration(Math.max(0, Math.round(endTimeMs)))}</div>
     `;
 
-    // Position info box below the measurement line
-    infoBox.style.left = `${Math.min(endX, startX) + 20}px`;
-    infoBox.style.top = `${Math.max(endY, startY) + 20}px`;
+    // Position info box with accurate distance calculation for rectangular box
+    const boxWidth = 200;
+    const boxHeight = 150;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Calculate arrow angle in radians
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+    const arrowAngle = Math.atan2(deltaY, deltaX);
+
+    // Calculate opposite angle (arrow direction + 180 degrees)
+    const oppositeAngle = arrowAngle + Math.PI;
+
+    // Calculate distance from box center to edge in the opposite direction
+    // oppositeAngle already points opposite to arrow (arrow + 180°)
+    const dx = Math.cos(oppositeAngle);
+    const dy = Math.sin(oppositeAngle);
+
+    // Calculate intersection with box rectangle from center
+    const halfWidth = boxWidth / 2;
+    const halfHeight = boxHeight / 2;
+
+    // Distance to edge: min of distance to vertical and horizontal edges
+    const tX = dx !== 0 ? Math.abs(halfWidth / dx) : Infinity;
+    const tY = dy !== 0 ? Math.abs(halfHeight / dy) : Infinity;
+    const t = Math.min(tX, tY);
+
+    const distanceToEdge = t;
+
+    // Add clearance to ensure no overlap
+    const clearance = 25;
+    const totalDistance = distanceToEdge + clearance;
+
+    // Position box CENTER at this distance in opposite direction from arrow
+    const boxCenterX = startX + Math.cos(oppositeAngle) * totalDistance;
+    const boxCenterY = startY + Math.sin(oppositeAngle) * totalDistance;
+
+    // Convert center position to top-left corner for CSS positioning
+    const boxLeft = boxCenterX - halfWidth;
+    const boxTop = boxCenterY - halfHeight;
+
+    // Clamp to viewport boundaries
+    const padding = 20;
+    const clampedX = Math.max(padding, Math.min(boxLeft, viewportWidth - boxWidth - padding));
+    const clampedY = Math.max(padding, Math.min(boxTop, viewportHeight - boxHeight - padding));
+
+    infoBox.style.left = `${clampedX}px`;
+    infoBox.style.top = `${clampedY}px`;
 }
 
 function handleZoom(direction) {
@@ -2018,6 +2204,20 @@ function saveToJSON() {
 }
 
 function loadFromJSON(file) {
+    // Check if we've reached the maximum number of diagrams
+    const diagrams = getAllDiagrams();
+    if (diagrams.length >= MAX_DIAGRAMS) {
+        showToast({
+            type: 'warning',
+            title: 'Maximum Diagrams Reached',
+            message: `You can only have ${MAX_DIAGRAMS} diagrams. Delete one to load a new diagram.`,
+            duration: 4000
+        });
+        // Reset file input so the same file can be selected again
+        app.elements.fileInput.value = '';
+        return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
@@ -2057,6 +2257,8 @@ function loadFromJSON(file) {
                 message: err.message
             });
         }
+        // Reset file input
+        app.elements.fileInput.value = '';
     };
     reader.readAsText(file);
 }
@@ -2114,17 +2316,32 @@ function shareAsURL() {
 
     // Copy to clipboard
     navigator.clipboard.writeText(url).then(() => {
-        // Show brief success message
+        // Show enhanced success message
         const btn = document.getElementById('share-url');
         const originalText = btn.textContent;
-        btn.textContent = 'Copied!';
+        btn.textContent = '✓ Copied!';
         btn.style.background = 'var(--success)';
+
+        // Show instructive toast
+        showToast({
+            type: 'success',
+            title: 'Link Copied!',
+            message: 'Share this URL with collaborators to view your timeline diagram.',
+            duration: 3500
+        });
+
         setTimeout(() => {
             btn.textContent = originalText;
             btn.style.background = '';
-        }, 1500);
+        }, 2500);
     }).catch(err => {
         // Fallback: show URL in prompt
+        showToast({
+            type: 'warning',
+            title: 'Copy Failed',
+            message: 'Please copy the URL manually.',
+            duration: 3000
+        });
         prompt('Copy this URL to share:', url);
     });
 }
@@ -2851,9 +3068,19 @@ function handleLaneNameChange() {
 // =====================================================
 function showSettingsPanel() {
     const panel = app.elements.propertiesPanel;
+    const settingsProps = document.getElementById('settings-props');
+    const settingsBtn = document.getElementById('settings-btn');
+
+    // Toggle behavior: if settings panel is open, close it
+    if (panel.classList.contains('hidden') === false &&
+        settingsProps.classList.contains('hidden') === false) {
+        panel.classList.add('hidden');
+        if (settingsBtn) settingsBtn.classList.remove('active');
+        return;
+    }
+
     const boxProps = document.getElementById('box-props');
     const laneProps = document.getElementById('lane-props');
-    const settingsProps = document.getElementById('settings-props');
     const propsTitle = document.getElementById('props-title');
 
     // Hide box and lane properties, show settings
@@ -2883,17 +3110,13 @@ function showSettingsPanel() {
         labelsCheckbox.checked = app.settings.showBoxLabels;
     }
 
-    const lockCheckbox = document.getElementById('config-lock-diagram');
-    if (lockCheckbox) {
-        lockCheckbox.checked = app.diagram.locked;
-    }
-
     // Deselect any box/lane
     app.selectedBoxId = null;
     app.selectedLaneId = null;
     document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
 
     panel.classList.remove('hidden');
+    if (settingsBtn) settingsBtn.classList.add('active');
 }
 
 function handleSettingsChange() {
@@ -2939,14 +3162,6 @@ function updateBoxLabelsState() {
     }
 }
 
-function handleLockChange() {
-    const lockCheckbox = document.getElementById('config-lock-diagram');
-    if (lockCheckbox) {
-        app.diagram.locked = lockCheckbox.checked;
-        updateLockState();
-        autoSave();
-    }
-}
 
 function isEditingAllowed() {
     if (app.diagram.locked) {
@@ -2978,6 +3193,56 @@ function updateLockState() {
 }
 
 // =====================================================
+// Pick Mode Helper Functions
+// =====================================================
+function showPickHelperText() {
+    // Check if helper already exists
+    let helper = document.getElementById('pick-helper-text');
+    if (helper) {
+        helper.style.display = 'block';
+        return;
+    }
+
+    // Create helper text element
+    helper = document.createElement('div');
+    helper.id = 'pick-helper-text';
+    helper.className = 'pick-helper-text';
+    helper.innerHTML = `
+        <span class="pick-helper-icon">📍</span>
+        <span>Click any box to set start time to its end time</span>
+    `;
+
+    // Insert after the pick button's label
+    const pickBtn = document.getElementById('pick-start-btn');
+    if (pickBtn) {
+        const label = pickBtn.closest('label');
+        if (label) {
+            label.parentElement.appendChild(helper);
+        }
+    }
+}
+
+function hidePickHelperText() {
+    const helper = document.getElementById('pick-helper-text');
+    if (helper) {
+        helper.style.display = 'none';
+    }
+}
+
+function glimpsePickStartButton() {
+    const btn = document.getElementById('pick-start-btn');
+    if (!btn) return;
+
+    // Add glimpse class for animation
+    btn.classList.add('glimpse');
+
+    // Remove class after animation completes
+    setTimeout(() => {
+        btn.classList.remove('glimpse');
+    }, 1500);
+}
+
+// =====================================================
 // Initialization
 // =====================================================
 function enterPickMode() {
@@ -2987,6 +3252,14 @@ function enterPickMode() {
     document.body.style.cursor = 'crosshair';
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.add('active');
+
+    // Show helper text
+    showPickHelperText();
+
+    // Add visual feedback - highlight all boxes
+    document.querySelectorAll('.timeline-box').forEach(box => {
+        box.classList.add('pickable');
+    });
 }
 
 function completePickStart(targetBoxId) {
@@ -3002,6 +3275,12 @@ function completePickStart(targetBoxId) {
         document.body.style.cursor = '';
         const btn = document.getElementById('pick-start-btn');
         if (btn) btn.classList.remove('active');
+
+        // Remove helper text and visual feedback
+        hidePickHelperText();
+        document.querySelectorAll('.timeline-box').forEach(box => {
+            box.classList.remove('pickable');
+        });
         return;
     }
 
@@ -3024,6 +3303,12 @@ function completePickStart(targetBoxId) {
     document.body.style.cursor = '';
     const btn = document.getElementById('pick-start-btn');
     if (btn) btn.classList.remove('active');
+
+    // Remove helper text and visual feedback
+    hidePickHelperText();
+    document.querySelectorAll('.timeline-box').forEach(box => {
+        box.classList.remove('pickable');
+    });
 }
 
 function init() {
@@ -3100,11 +3385,6 @@ function init() {
     const labelsCheckbox = document.getElementById('config-show-labels');
     if (labelsCheckbox) {
         labelsCheckbox.addEventListener('change', handleSettingsChange);
-    }
-
-    const lockCheckbox = document.getElementById('config-lock-diagram');
-    if (lockCheckbox) {
-        lockCheckbox.addEventListener('change', handleLockChange);
     }
 
     // Also sync header title input changes to settings
@@ -3191,9 +3471,9 @@ function init() {
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
-    // Measurement tool - Cmd/Ctrl + Left Click
+    // Measurement tool - Cmd/Ctrl + Left Click or measurement tool button active
     app.elements.lanesCanvas.addEventListener('mousedown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.button === 0) {
+        if ((e.ctrlKey || e.metaKey || app.measureToolActive) && e.button === 0) {
             startMeasurement(e);
             e.preventDefault();
             e.stopPropagation();
@@ -3251,6 +3531,9 @@ function init() {
 
     // Purge Application button
     document.getElementById('purge-app-btn').addEventListener('click', purgeApplication);
+
+    // Measurement tool button
+    document.getElementById('measure-tool-btn').addEventListener('click', toggleMeasurementTool);
 
     // Diagrams panel toggle
     document.getElementById('diagrams-toggle').addEventListener('click', toggleDiagramsPanel);

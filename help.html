@@ -34,12 +34,91 @@
             color: var(--text-primary);
             line-height: 1.6;
             min-height: 100vh;
+            display: flex;
+        }
+
+        .nav-sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 240px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            padding: 24px 16px;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .nav-back-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            transition: all 0.2s;
+        }
+
+        .nav-back-link:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .nav-sidebar h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .nav-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .nav-list li {
+            margin-bottom: 4px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .nav-icon {
+            font-size: 1.1rem;
+            flex-shrink: 0;
         }
 
         .container {
             max-width: 900px;
-            margin: 0 auto;
+            margin-left: 260px;
             padding: 40px 24px 80px;
+            flex: 1;
         }
 
         header {
@@ -327,6 +406,25 @@
 </head>
 
 <body>
+    <!-- Navigation Sidebar -->
+    <nav class="nav-sidebar">
+        <a href="index.html" class="nav-back-link">← Back to Editor</a>
+        <h3>Contents</h3>
+        <ul class="nav-list">
+            <li><a href="#quick-start" class="nav-link"><span class="nav-icon">🚀</span> Quick Start</a></li>
+            <li><a href="#features" class="nav-link"><span class="nav-icon">✨</span> Features</a></li>
+            <li><a href="#lanes" class="nav-link"><span class="nav-icon">📊</span> Working with Lanes</a></li>
+            <li><a href="#boxes" class="nav-link"><span class="nav-icon">📦</span> Working with Boxes</a></li>
+            <li><a href="#time-display" class="nav-link"><span class="nav-icon">⏱️</span> Time & Display</a></li>
+            <li><a href="#auto-save" class="nav-link"><span class="nav-icon">💾</span> Auto-Save & My Diagrams</a></li>
+            <li><a href="#sharing-export" class="nav-link"><span class="nav-icon">🔗</span> Sharing & Export</a></li>
+            <li><a href="#settings" class="nav-link"><span class="nav-icon">⚙️</span> Settings</a></li>
+            <li><a href="#measurement" class="nav-link"><span class="nav-icon">📏</span> Measurement Tool</a></li>
+            <li><a href="#keyboard" class="nav-link"><span class="nav-icon">⌨️</span> Keyboard Shortcuts</a></li>
+            <li><a href="#use-cases" class="nav-link"><span class="nav-icon">💼</span> Common Use Cases</a></li>
+        </ul>
+    </nav>
+
     <div class="container">
         <a href="index.html" class="back-link">← Back to Editor</a>
 
@@ -336,7 +434,7 @@
         </header>
 
         <!-- Quick Start -->
-        <section>
+        <section id="quick-start">
             <h2><span class="icon">🚀</span> Quick Start</h2>
             <p>Get your first diagram ready in under a minute:</p>
 
@@ -369,7 +467,7 @@
         </section>
 
         <!-- Features Overview -->
-        <section>
+        <section id="features">
             <h2><span class="icon">✨</span> Features</h2>
 
             <div class="feature-grid">
@@ -407,7 +505,7 @@
         </section>
 
         <!-- Working with Lanes -->
-        <section>
+        <section id="lanes">
             <h2><span class="icon">📊</span> Working with Lanes</h2>
 
             <h3>Adding & Naming Lanes</h3>
@@ -426,7 +524,7 @@
         </section>
 
         <!-- Working with Boxes -->
-        <section>
+        <section id="boxes">
             <h2><span class="icon">📦</span> Working with Boxes</h2>
 
             <h3>Creating Boxes</h3>
@@ -454,7 +552,7 @@
         </section>
 
         <!-- Time & Display -->
-        <section>
+        <section id="time-display">
             <h2><span class="icon">⏱️</span> Time & Display</h2>
 
             <h3>Start Time</h3>
@@ -471,7 +569,7 @@
         </section>
 
         <!-- Auto-Save & Diagrams -->
-        <section>
+        <section id="auto-save">
             <h2><span class="icon">💾</span> Auto-Save & My Diagrams</h2>
 
             <h3>Automatic Saving</h3>
@@ -487,16 +585,20 @@
             <ul>
                 <li><strong>Switch diagrams</strong> — Click any diagram to load it</li>
                 <li><strong>Create new</strong> — Click "+ New Diagram" to start fresh</li>
+                <li><strong>Lock/Unlock</strong> — Hover over a diagram's control menu (⋮) and click the lock icon (🔒/🔓) to protect it from edits or purging</li>
+                <li><strong>Reset</strong> — Hover and click ↺ to clear all lanes and boxes but keep the diagram slot</li>
                 <li><strong>Delete</strong> — Hover and click × to remove a diagram</li>
             </ul>
-            <p>The currently active diagram is highlighted. Each entry shows the title and when it was last modified.</p>
+            <p>The currently active diagram is highlighted. Each entry shows the title and when it was last modified. Locked diagrams display a 🔒 icon next to their title.</p>
 
-            <h3>Reset</h3>
-            <p>Click the <kbd>Reset</kbd> button at the bottom of the sidebar to clear the current diagram and start fresh. This keeps the same diagram slot but removes all lanes and boxes.</p>
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>Lock important diagrams to prevent accidental edits or deletion. Locked diagrams cannot be modified and are skipped during the purge operation.</p>
+            </div>
         </section>
 
         <!-- Sharing & Export -->
-        <section>
+        <section id="sharing-export">
             <h2><span class="icon">🔗</span> Sharing & Export</h2>
 
             <h3>URL Sharing</h3>
@@ -536,7 +638,7 @@
         </section>
 
         <!-- Settings -->
-        <section>
+        <section id="settings">
             <h2><span class="icon">⚙️</span> Settings</h2>
             <p>Click the ⚙️ button in the header to access global settings:</p>
 
@@ -557,11 +659,19 @@
                     <td>Show Alignment Lines</td>
                     <td>Toggle vertical dashed lines at box start/end times</td>
                 </tr>
+                <tr>
+                    <td>Show Box Labels</td>
+                    <td>Display persistent labels above narrow boxes for better readability</td>
+                </tr>
+                <tr>
+                    <td>Purge Application</td>
+                    <td>Delete all unlocked diagrams and reset settings (locked diagrams are preserved)</td>
+                </tr>
             </table>
         </section>
 
         <!-- Measurement Tool -->
-        <section style="border: 2px solid #39FF14; box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);">
+        <section id="measurement" style="border: 2px solid #39FF14; box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);">
             <h2><span class="icon">📏</span> Measurement Tool</h2>
 
             <p>The measurement tool lets you precisely measure time distances between any two points on your diagram. It features <strong style="color: #39FF14;">smart snapping</strong> to box edges, <strong style="color: #39FF14;">pinning</strong> for persistent display, and <strong style="color: #39FF14;">export support</strong>.</p>
@@ -618,7 +728,7 @@
         </section>
 
         <!-- Keyboard Shortcuts -->
-        <section>
+        <section id="keyboard">
             <h2><span class="icon">⌨️</span> Keyboard Shortcuts</h2>
 
             <table class="shortcut-table">
@@ -646,7 +756,7 @@
         </section>
 
         <!-- Use Cases -->
-        <section>
+        <section id="use-cases">
             <h2><span class="icon">💼</span> Common Use Cases</h2>
 
             <h3>API Call Flows</h3>
@@ -679,6 +789,48 @@
             </p>
         </footer>
     </div>
+
+    <script>
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = link.getAttribute('href').substring(1);
+                const targetSection = document.getElementById(targetId);
+                if (targetSection) {
+                    targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    // Update active link
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        // Highlight active section on scroll
+        const sections = document.querySelectorAll('section[id]');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        function highlightNav() {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (window.pageYOffset >= sectionTop - 100) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === `#${current}`) {
+                    link.classList.add('active');
+                }
+            });
+        }
+
+        window.addEventListener('scroll', highlightNav);
+        highlightNav(); // Initial highlight
+    </script>
 </body>
 
 </html>
