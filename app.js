@@ -148,6 +148,12 @@ const app = {
     dragData: null,
     boxGap: 4, // Gap between boxes in pixels
 
+    // Measurement tool state
+    isMeasuring: false,
+    measurePinned: false,
+    measureStart: null,
+    measureEnd: null,
+
     // Global settings
     settings: {
         timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
@@ -282,6 +288,307 @@ function setLaneColor(laneId, color) {
 }
 
 // =====================================================
+// Toast Notification System
+// =====================================================
+const TOAST_ICONS = {
+    warning: '⚠️',
+    error: '❌',
+    success: '✓',
+    info: 'ℹ️'
+};
+
+function showToast(options) {
+    const {
+        type = 'info',
+        title,
+        message,
+        duration = 4000,
+        actions = null
+    } = options;
+
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    let html = `
+        <span class="toast-icon">${TOAST_ICONS[type]}</span>
+        <div class="toast-content">
+            ${title ? `<div class="toast-title">${title}</div>` : ''}
+            ${message ? `<div class="toast-message">${message}</div>` : ''}
+        </div>
+    `;
+
+    if (actions) {
+        html += `<div class="toast-actions"></div>`;
+    } else {
+        html += `<button class="toast-close">×</button>`;
+    }
+
+    toast.innerHTML = html;
+
+    // Add action buttons if provided
+    if (actions) {
+        const actionsContainer = toast.querySelector('.toast-actions');
+        actions.forEach(action => {
+            const btn = document.createElement('button');
+            btn.className = `toast-btn toast-btn-${action.type || 'cancel'}`;
+            btn.textContent = action.label;
+            btn.addEventListener('click', () => {
+                hideToast(toast);
+                if (action.onClick) action.onClick();
+            });
+            actionsContainer.appendChild(btn);
+        });
+    } else {
+        // Close button
+        toast.querySelector('.toast-close').addEventListener('click', () => hideToast(toast));
+    }
+
+    container.appendChild(toast);
+
+    // Auto dismiss if no actions and duration > 0
+    if (!actions && duration > 0) {
+        setTimeout(() => hideToast(toast), duration);
+    }
+
+    return toast;
+}
+
+function hideToast(toast) {
+    if (!toast || toast.classList.contains('hiding')) return;
+    toast.classList.add('hiding');
+    setTimeout(() => toast.remove(), 200);
+}
+
+function showConfirmToast(options) {
+    const { title, message, onConfirm, onCancel, confirmLabel = 'Delete', cancelLabel = 'Cancel' } = options;
+    return showToast({
+        type: 'warning',
+        title,
+        message,
+        duration: 0,
+        actions: [
+            { label: confirmLabel, type: 'confirm', onClick: onConfirm },
+            { label: cancelLabel, type: 'cancel', onClick: onCancel }
+        ]
+    });
+}
+
+// =====================================================
+// Diagram Storage (localStorage)
+// =====================================================
+const STORAGE_KEY = 'timeline_diagrams';
+const MAX_DIAGRAMS = 10;
+let currentDiagramId = null;
+let autoSaveTimeout = null;
+
+function generateDiagramId() {
+    return 'diag_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function getAllDiagrams() {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.error('Failed to load diagrams from storage:', e);
+        return [];
+    }
+}
+
+function saveDiagramsList(diagrams) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(diagrams));
+    } catch (e) {
+        console.error('Failed to save diagrams to storage:', e);
+        showToast({
+            type: 'error',
+            title: 'Storage Error',
+            message: 'Could not save to browser storage.'
+        });
+    }
+}
+
+function saveCurrentDiagram() {
+    if (!currentDiagramId) {
+        currentDiagramId = generateDiagramId();
+    }
+
+    const diagrams = getAllDiagrams();
+    const diagramData = {
+        id: currentDiagramId,
+        title: app.diagram.title,
+        updatedAt: Date.now(),
+        data: app.diagram.toJSON()
+    };
+
+    // Find existing or add new
+    const existingIndex = diagrams.findIndex(d => d.id === currentDiagramId);
+    if (existingIndex >= 0) {
+        diagrams[existingIndex] = diagramData;
+    } else {
+        diagrams.unshift(diagramData);
+    }
+
+    // Sort by updatedAt (most recent first) and limit to MAX_DIAGRAMS
+    diagrams.sort((a, b) => b.updatedAt - a.updatedAt);
+    const trimmedDiagrams = diagrams.slice(0, MAX_DIAGRAMS);
+
+    saveDiagramsList(trimmedDiagrams);
+    renderDiagramsList();
+}
+
+function autoSave() {
+    // Debounce auto-save
+    if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+    }
+    autoSaveTimeout = setTimeout(() => {
+        saveCurrentDiagram();
+    }, 1000);
+}
+
+function loadDiagram(diagramId) {
+    const diagrams = getAllDiagrams();
+    const diagram = diagrams.find(d => d.id === diagramId);
+    if (!diagram) {
+        showToast({ type: 'error', title: 'Not Found', message: 'Diagram not found in storage.' });
+        return false;
+    }
+
+    currentDiagramId = diagramId;
+    app.diagram.fromJSON(diagram.data);
+    app.elements.diagramTitle.value = app.diagram.title;
+    app.elements.startTime.value = app.diagram.startTime;
+
+    deselectBox();
+    renderLaneList();
+    renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentMarkers();
+    updateTotalDuration();
+    renderDiagramsList();
+
+    showToast({ type: 'success', title: 'Loaded', message: `"${diagram.title}" restored.`, duration: 2000 });
+    return true;
+}
+
+function deleteDiagram(diagramId) {
+    const diagrams = getAllDiagrams();
+    const diagram = diagrams.find(d => d.id === diagramId);
+    if (!diagram) return;
+
+    showConfirmToast({
+        title: 'Delete Diagram?',
+        message: `"${diagram.title}" will be permanently removed.`,
+        onConfirm: () => {
+            const filtered = diagrams.filter(d => d.id !== diagramId);
+            saveDiagramsList(filtered);
+
+            // If deleting current diagram, start fresh
+            if (diagramId === currentDiagramId) {
+                createNewDiagram();
+            } else {
+                renderDiagramsList();
+            }
+
+            showToast({ type: 'success', title: 'Deleted', message: 'Diagram removed.', duration: 2000 });
+        }
+    });
+}
+
+function createNewDiagram() {
+    currentDiagramId = generateDiagramId();
+    app.diagram = new TimelineDiagram();
+    app.diagram.addLane('Lane 1');
+    app.selectedBoxId = null;
+    app.selectedLaneId = null;
+
+    app.elements.diagramTitle.value = app.diagram.title;
+    app.elements.startTime.value = app.diagram.startTime;
+
+    deselectBox();
+    renderLaneList();
+    renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentMarkers();
+    updateTotalDuration();
+    renderDiagramsList();
+
+    // Save the new empty diagram
+    saveCurrentDiagram();
+}
+
+function loadMostRecentDiagram() {
+    const diagrams = getAllDiagrams();
+    if (diagrams.length > 0) {
+        return loadDiagram(diagrams[0].id);
+    }
+    return false;
+}
+
+function formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(timestamp).toLocaleDateString();
+}
+
+function renderDiagramsList() {
+    const container = document.getElementById('diagrams-list');
+    if (!container) return;
+
+    const diagrams = getAllDiagrams();
+
+    if (diagrams.length === 0) {
+        container.innerHTML = '<div class="no-diagrams">No saved diagrams</div>';
+        return;
+    }
+
+    container.innerHTML = diagrams.map(d => `
+        <div class="diagram-item ${d.id === currentDiagramId ? 'active' : ''}" data-diagram-id="${d.id}">
+            <div class="diagram-item-info">
+                <div class="diagram-item-title">${escapeHtml(d.title || 'Untitled')}</div>
+                <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
+            </div>
+            <button class="diagram-item-delete" data-diagram-id="${d.id}" title="Delete">×</button>
+        </div>
+    `).join('');
+
+    // Add click listeners
+    container.querySelectorAll('.diagram-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (e.target.classList.contains('diagram-item-delete')) return;
+            const id = item.dataset.diagramId;
+            if (id !== currentDiagramId) {
+                loadDiagram(id);
+            }
+        });
+    });
+
+    container.querySelectorAll('.diagram-item-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteDiagram(btn.dataset.diagramId);
+        });
+    });
+}
+
+function toggleDiagramsPanel() {
+    const panel = document.getElementById('diagrams-panel');
+    if (panel) {
+        panel.classList.toggle('open');
+    }
+}
+
+// =====================================================
 // Utility Functions
 // =====================================================
 function parseTime(timeStr) {
@@ -396,12 +703,19 @@ function renderLaneList() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const laneId = parseInt(e.target.dataset.laneId, 10);
-            if (confirm('Delete this lane and all its boxes?')) {
-                app.diagram.removeLane(laneId);
-                renderLaneList();
-                renderLanesCanvas();
-                updateTotalDuration();
-            }
+            const lane = app.diagram.lanes.find(l => l.id === laneId);
+            const boxCount = app.diagram.getBoxesForLane(laneId).length;
+
+            showConfirmToast({
+                title: 'Delete Lane?',
+                message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
+                onConfirm: () => {
+                    app.diagram.removeLane(laneId);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    updateTotalDuration();
+                }
+            });
         });
     });
 
@@ -770,6 +1084,8 @@ function renderAlignmentMarkers() {
 function updateTotalDuration() {
     const duration = app.diagram.getTotalDuration();
     app.elements.totalDuration.textContent = formatDuration(duration);
+    // Auto-save on any change that updates duration
+    autoSave();
 }
 
 function updatePropertiesPanel() {
@@ -925,6 +1241,11 @@ function deselectBox() {
 }
 
 function handleTrackMouseDown(e) {
+    // Don't create boxes while measuring
+    if (app.isMeasuring || e.ctrlKey || e.metaKey) {
+        return;
+    }
+
     if (e.target.classList.contains('timeline-box') ||
         e.target.closest('.timeline-box')) {
         return; // Let box handle its own events
@@ -1015,7 +1336,10 @@ function handleMouseMove(e) {
     if (app.dragData.type === 'create') {
         const rect = app.dragData.track.getBoundingClientRect();
         const currentX = e.clientX - rect.left;
-        const width = Math.max(currentX - app.dragData.startX, 10);
+        // Support dragging in both directions
+        const left = Math.min(currentX, app.dragData.startX);
+        const width = Math.max(Math.abs(currentX - app.dragData.startX), 10);
+        app.dragData.tempBox.style.left = `${left}px`;
         app.dragData.tempBox.style.width = `${width}px`;
     } else if (app.dragData.type === 'move') {
         const box = app.diagram.boxes.find(b => b.id === app.dragData.boxId);
@@ -1085,11 +1409,14 @@ function handleMouseUp(e) {
 
         // Create real box only if dragged enough (avoid single click creation)
         if (dist > 5) {
+            // Use the leftmost point as start (support right-to-left drag)
+            const leftX = Math.min(endX, app.dragData.startX);
+            const startOffset = pixelsToMs(Math.max(0, leftX));
             const duration = pixelsToMs(Math.max(dist, 20));
 
             const box = app.diagram.addBox(
                 app.dragData.laneId,
-                Math.round(app.dragData.startOffset),
+                Math.round(startOffset),
                 Math.round(duration),
                 '',
                 getAutoBoxColor(app.dragData.laneId)
@@ -1109,6 +1436,205 @@ function handleMouseUp(e) {
 
     app.isDragging = false;
     app.dragData = null;
+}
+
+// =====================================================
+// Measurement Tool
+// =====================================================
+const SNAP_THRESHOLD = 8; // pixels
+
+function getSnapPoints() {
+    // Get lane label width for offset calculation
+    const laneLabelWidth = parseInt(getComputedStyle(document.documentElement)
+        .getPropertyValue('--lane-label-width').replace('px', ''), 10) || 160;
+
+    // Collect all unique time points from boxes
+    const snapPoints = [];
+    app.diagram.boxes.forEach(box => {
+        const startX = msToPixels(box.startOffset) + laneLabelWidth;
+        const endX = msToPixels(box.startOffset + box.duration) + laneLabelWidth;
+        snapPoints.push({ x: startX, time: box.startOffset });
+        snapPoints.push({ x: endX, time: box.startOffset + box.duration });
+    });
+
+    return snapPoints;
+}
+
+function snapToAlignmentLine(x) {
+    const snapPoints = getSnapPoints();
+    let closestPoint = null;
+    let closestDist = SNAP_THRESHOLD;
+
+    for (const point of snapPoints) {
+        const dist = Math.abs(point.x - x);
+        if (dist < closestDist) {
+            closestDist = dist;
+            closestPoint = point;
+        }
+    }
+
+    return closestPoint;
+}
+
+function startMeasurement(e) {
+    const canvas = app.elements.lanesCanvas;
+    const rect = canvas.getBoundingClientRect();
+    let x = e.clientX - rect.left + canvas.scrollLeft;
+    const y = e.clientY - rect.top + canvas.scrollTop;
+    let clientX = e.clientX;
+
+    // Try to snap to alignment line
+    const snapPoint = snapToAlignmentLine(x);
+    if (snapPoint) {
+        x = snapPoint.x;
+        clientX = rect.left + snapPoint.x - canvas.scrollLeft;
+    }
+
+    app.isMeasuring = true;
+    app.measureStart = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
+    app.measureEnd = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
+
+    // Show measurement overlay
+    const overlay = document.getElementById('measurement-overlay');
+    overlay.classList.add('active');
+
+    updateMeasurementDisplay();
+    e.preventDefault();
+}
+
+function updateMeasurement(e) {
+    if (!app.isMeasuring) return;
+
+    const canvas = app.elements.lanesCanvas;
+    const rect = canvas.getBoundingClientRect();
+    let x = e.clientX - rect.left + canvas.scrollLeft;
+    const y = e.clientY - rect.top + canvas.scrollTop;
+    let clientX = e.clientX;
+
+    // Try to snap to alignment line
+    const snapPoint = snapToAlignmentLine(x);
+    if (snapPoint) {
+        x = snapPoint.x;
+        clientX = rect.left + snapPoint.x - canvas.scrollLeft;
+    }
+
+    app.measureEnd = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
+    updateMeasurementDisplay();
+}
+
+function endMeasurement() {
+    if (!app.isMeasuring) return;
+
+    app.isMeasuring = false;
+
+    // If pinned, keep visible; otherwise fade after delay
+    if (!app.measurePinned) {
+        setTimeout(() => {
+            if (!app.isMeasuring && !app.measurePinned) {
+                const overlay = document.getElementById('measurement-overlay');
+                overlay.classList.remove('active');
+            }
+        }, 2000);
+    }
+}
+
+function toggleMeasurementPin() {
+    app.measurePinned = !app.measurePinned;
+    const overlay = document.getElementById('measurement-overlay');
+    const infoBox = document.getElementById('measurement-info');
+
+    if (app.measurePinned) {
+        overlay.classList.add('pinned');
+        infoBox.classList.add('pinned');
+    } else {
+        overlay.classList.remove('pinned');
+        infoBox.classList.remove('pinned');
+        // Fade out after unpinning
+        setTimeout(() => {
+            if (!app.isMeasuring && !app.measurePinned) {
+                overlay.classList.remove('active');
+            }
+        }, 2000);
+    }
+
+    // Update pin button state
+    const pinBtn = infoBox.querySelector('.measure-pin-btn');
+    if (pinBtn) {
+        pinBtn.classList.toggle('active', app.measurePinned);
+        pinBtn.title = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
+    }
+}
+
+function closeMeasurement() {
+    app.isMeasuring = false;
+    app.measurePinned = false;
+    const overlay = document.getElementById('measurement-overlay');
+    const infoBox = document.getElementById('measurement-info');
+    overlay.classList.remove('active', 'pinned');
+    infoBox.classList.remove('pinned');
+}
+
+function updateMeasurementDisplay() {
+    const overlay = document.getElementById('measurement-overlay');
+    const line = document.getElementById('measurement-line');
+    const label = document.getElementById('measurement-label');
+
+    if (!app.measureStart || !app.measureEnd) return;
+
+    const startX = app.measureStart.clientX;
+    const startY = app.measureStart.clientY;
+    const endX = app.measureEnd.clientX;
+    const endY = app.measureEnd.clientY;
+
+    // Calculate distance in pixels and time
+    const pixelDistX = Math.abs(endX - startX);
+    const pixelDistY = Math.abs(endY - startY);
+    const timeDistance = pixelsToMs(pixelDistX);
+
+    // Update SVG line
+    const svgRect = overlay.getBoundingClientRect();
+    const x1 = startX - svgRect.left;
+    const y1 = startY - svgRect.top;
+    const x2 = endX - svgRect.left;
+    const y2 = endY - svgRect.top;
+
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+
+    // Update label position and content
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+
+    label.setAttribute('x', midX);
+    label.setAttribute('y', midY - 10);
+
+    // Format the measurement text
+    const timeText = formatDuration(Math.round(timeDistance));
+    label.textContent = timeText;
+
+    // Update info box
+    const infoBox = document.getElementById('measurement-info');
+    const startTimeMs = pixelsToMs(Math.min(app.measureStart.x, app.measureEnd.x) - 160); // Subtract lane label width
+    const endTimeMs = startTimeMs + timeDistance;
+
+    const pinBtnClass = app.measurePinned ? 'measure-pin-btn active' : 'measure-pin-btn';
+    const pinTitle = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
+
+    infoBox.innerHTML = `
+        <div class="measure-header">
+            <button class="${pinBtnClass}" onclick="toggleMeasurementPin()" title="${pinTitle}">📌</button>
+            <button class="measure-close-btn" onclick="closeMeasurement()" title="Close measurement">×</button>
+        </div>
+        <div class="measure-row"><span>Duration:</span><strong>${timeText}</strong></div>
+        <div class="measure-row"><span>Start:</span>${formatDuration(Math.max(0, Math.round(startTimeMs)))}</div>
+        <div class="measure-row"><span>End:</span>${formatDuration(Math.max(0, Math.round(endTimeMs)))}</div>
+    `;
+
+    // Position info box below the measurement line
+    infoBox.style.left = `${Math.min(endX, startX) + 20}px`;
+    infoBox.style.top = `${Math.max(endY, startY) + 20}px`;
 }
 
 function handleZoom(direction) {
@@ -1190,6 +1716,10 @@ function loadFromJSON(file) {
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
+
+            // Create a new diagram instead of overwriting current
+            currentDiagramId = generateDiagramId();
+            app.diagram = new TimelineDiagram();
             app.diagram.fromJSON(data);
 
             app.elements.diagramTitle.value = app.diagram.title;
@@ -1198,12 +1728,94 @@ function loadFromJSON(file) {
             deselectBox();
             renderLaneList();
             renderLanesCanvas();
+            renderTimelineRuler();
+            renderTimeMarkers();
+            renderAlignmentMarkers();
             updateTotalDuration();
+            saveCurrentDiagram();
+            renderDiagramsList();
+
+            showToast({
+                type: 'success',
+                title: 'Loaded',
+                message: `"${app.diagram.title}" imported as new diagram.`,
+                duration: 2500
+            });
         } catch (err) {
-            alert('Error loading file: ' + err.message);
+            showToast({
+                type: 'error',
+                title: 'Load Failed',
+                message: err.message
+            });
         }
     };
     reader.readAsText(file);
+}
+
+// =====================================================
+// URL Sharing Functions
+// =====================================================
+function encodeToURL() {
+    const data = app.diagram.toJSON();
+    const json = JSON.stringify(data);
+    // Use base64 encoding, then make it URL-safe
+    const base64 = btoa(unescape(encodeURIComponent(json)));
+    return base64;
+}
+
+function decodeFromURL(encoded) {
+    try {
+        // Decode URL-safe base64
+        const json = decodeURIComponent(escape(atob(encoded)));
+        return JSON.parse(json);
+    } catch (err) {
+        console.error('Failed to decode URL data:', err);
+        return null;
+    }
+}
+
+function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get('d');
+    if (encoded) {
+        const data = decodeFromURL(encoded);
+        if (data) {
+            app.diagram.fromJSON(data);
+            return true;
+        }
+    }
+    return false;
+}
+
+function shareAsURL() {
+    const encoded = encodeToURL();
+    const url = `${window.location.origin}${window.location.pathname}?d=${encoded}`;
+
+    // Check URL length (browsers have limits, typically ~2000 chars)
+    if (url.length > 8000) {
+        showToast({
+            type: 'warning',
+            title: 'Diagram Too Large',
+            message: 'Use Save/Load to share large diagrams.'
+        });
+        return;
+    }
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(url).then(() => {
+        // Show brief success message
+        const btn = document.getElementById('share-url');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = 'var(--success)';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '';
+        }, 1500);
+    }).catch(err => {
+        // Fallback: show URL in prompt
+        prompt('Copy this URL to share:', url);
+    });
 }
 
 // Helper function to wrap text in canvas
@@ -1463,6 +2075,69 @@ function exportToPNG() {
     });
     ctx.textAlign = 'left';
 
+    // Draw pinned measurement if active
+    if (app.measurePinned && app.measureStart && app.measureEnd) {
+        const measureColor = '#39FF14';
+        const canvas_rect = app.elements.lanesCanvas.getBoundingClientRect();
+
+        // Convert client coordinates to export coordinates
+        const startXCanvas = app.measureStart.x;
+        const endXCanvas = app.measureEnd.x;
+
+        // Map canvas X to export X (accounting for lane label width difference)
+        const exportStartX = laneLabelWidth + (startXCanvas - 160); // 160 is the lane label width in app
+        const exportEndX = laneLabelWidth + (endXCanvas - 160);
+
+        // Y position - center in lanes area
+        const measureY = lanesStartY + lanesAreaHeight / 2;
+
+        // Draw measurement line
+        ctx.strokeStyle = measureColor;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(exportStartX, measureY);
+        ctx.lineTo(exportEndX, measureY);
+        ctx.stroke();
+
+        // Draw start marker (vertical line)
+        ctx.beginPath();
+        ctx.moveTo(exportStartX, measureY - 5);
+        ctx.lineTo(exportStartX, measureY + 5);
+        ctx.stroke();
+
+        // Draw end marker (arrow + vertical line)
+        const arrowDir = exportEndX > exportStartX ? -1 : 1;
+        ctx.beginPath();
+        ctx.moveTo(exportEndX + arrowDir * 6, measureY - 3);
+        ctx.lineTo(exportEndX, measureY);
+        ctx.lineTo(exportEndX + arrowDir * 6, measureY + 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(exportEndX, measureY - 5);
+        ctx.lineTo(exportEndX, measureY + 5);
+        ctx.stroke();
+
+        // Draw measurement label
+        const pixelDistX = Math.abs(exportEndX - exportStartX);
+        const timeDistance = pixelsToMs(Math.abs(endXCanvas - startXCanvas));
+        const measureText = formatDuration(Math.round(timeDistance));
+        const midX = (exportStartX + exportEndX) / 2;
+
+        ctx.fillStyle = measureColor;
+        ctx.font = '600 14px Monaco, monospace';
+        ctx.textAlign = 'center';
+
+        // Draw text background
+        const textWidth = ctx.measureText(measureText).width + 8;
+        ctx.fillStyle = '#0f1419';
+        ctx.fillRect(midX - textWidth / 2, measureY - 22, textWidth, 16);
+
+        ctx.fillStyle = measureColor;
+        ctx.fillText(measureText, midX, measureY - 10);
+        ctx.textAlign = 'left';
+    }
+
     // Footer
     const footerY = timeMarkersY + timeMarkersHeight;
     ctx.fillStyle = '#1a1f2e';
@@ -1475,6 +2150,13 @@ function exportToPNG() {
     ctx.fillText('TOTAL DURATION:', laneLabelWidth + 16, footerY + 26);
     ctx.fillStyle = '#6366f1';
     ctx.fillText(formatDuration(app.diagram.getTotalDuration()), laneLabelWidth + 140, footerY + 26);
+
+    // UCS branding
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Made by UCS with 💙', width - 16, footerY + 26);
+    ctx.textAlign = 'left';
 
     // Download
     const url = canvas.toDataURL('image/png');
@@ -1516,11 +2198,59 @@ function exportToSVG() {
     const laneHeight = 50;
     const laneLabelWidth = 160;
     const rulerHeight = 40;
-    const timeMarkersHeight = 30;
     const footerHeight = 40;
     const totalDuration = Math.max(app.diagram.getTotalDuration() * 1.1, 1000);
     const width = Math.round(laneLabelWidth + msToPixels(totalDuration) + 50);
     const lanesAreaHeight = lanes.length * laneHeight;
+    const lanesStartY = headerHeight + rulerHeight;
+
+    // Pre-calculate time markers layout (same as PNG)
+    const markers = [];
+    boxes.forEach(box => {
+        markers.push({
+            time: box.startOffset,
+            type: 'start',
+            color: box.color,
+            label: formatDuration(box.startOffset)
+        });
+        markers.push({
+            time: box.startOffset + box.duration,
+            type: 'end',
+            color: box.color,
+            label: formatDuration(box.startOffset + box.duration)
+        });
+    });
+    markers.sort((a, b) => a.time - b.time);
+
+    // Calculate marker levels
+    const levels = [];
+    const charWidth = 6;
+    markers.forEach(m => {
+        const x = laneLabelWidth + msToPixels(m.time);
+        const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+        const textWidth = text.length * charWidth + 10;
+        const startX = x - (textWidth / 2);
+        const endX = startX + textWidth;
+
+        let level = 0;
+        let placed = false;
+        while (!placed) {
+            if (!levels[level] || levels[level] < startX) {
+                levels[level] = endX;
+                m.level = level;
+                m.text = text;
+                m.x = x;
+                placed = true;
+            } else {
+                level++;
+            }
+            if (level > 10) { m.level = level; m.text = text; m.x = x; placed = true; }
+        }
+    });
+
+    const maxLevel = markers.length > 0 ? Math.max(...markers.map(m => m.level)) : 0;
+    const timeMarkersHeight = Math.max(30, (maxLevel + 1) * 14 + 10);
+    const timeMarkersY = lanesStartY + lanesAreaHeight;
     const height = headerHeight + rulerHeight + lanesAreaHeight + timeMarkersHeight + footerHeight;
 
     let svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1532,7 +2262,7 @@ function exportToSVG() {
       .lane-label { font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; fill: #ffffff; }
       .ruler-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 11px; fill: #a8b2c1; }
       .box-text { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; font-weight: 500; }
-      .time-marker { font-family: 'Monaco', 'Menlo', monospace; font-size: 10px; fill: #6366f1; }
+      .time-marker { font-family: 'Monaco', 'Menlo', monospace; font-size: 9px; }
       .footer-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; font-weight: 600; fill: #a8b2c1; }
     </style>
   </defs>
@@ -1553,16 +2283,19 @@ function exportToSVG() {
     const rulerY = headerHeight;
 
     // Ruler marks
-    let interval = 500;
-    for (let time = 0; time <= totalDuration; time += interval) {
+    for (let time = 0; time <= totalDuration; time += 500) {
         const x = Math.round(laneLabelWidth + msToPixels(time));
         svg += `  <line x1="${x}" y1="${rulerY}" x2="${x}" y2="${rulerY + rulerHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
         svg += `  <text x="${x + 4}" y="${rulerY + rulerHeight - 8}" class="ruler-text">${formatDuration(time)}</text>\n`;
     }
 
-    const lanesStartY = headerHeight + rulerHeight;
+    // Lane backgrounds first
+    lanes.forEach((lane, index) => {
+        const y = lanesStartY + (index * laneHeight);
+        svg += `  <rect x="${laneLabelWidth}" y="${y}" width="${width - laneLabelWidth}" height="${laneHeight}" fill="${index % 2 === 0 ? '#0f1419' : '#101520'}"/>\n`;
+    });
 
-    // Vertical Dashed Lines (Alignment Markers) - only if enabled
+    // Alignment lines if enabled
     if (app.settings.showAlignmentLines && boxes.length > 0) {
         const timePoints = new Set();
         boxes.forEach(box => {
@@ -1577,18 +2310,16 @@ function exportToSVG() {
         });
     }
 
-    // Lanes
+    // Lane labels and boxes
     lanes.forEach((lane, index) => {
         const y = lanesStartY + (index * laneHeight);
 
-        // Lane background
         svg += `  <!-- Lane: ${escapeHtml(lane.name)} -->\n`;
-        svg += `  <rect x="0" y="${y}" width="${width}" height="${laneHeight}" fill="${index % 2 === 0 ? '#0f1419' : '#101520'}"/>\n`;
         svg += `  <rect x="0" y="${y}" width="${laneLabelWidth}" height="${laneHeight}" fill="#1a1f2e"/>\n`;
         svg += `  <line x1="${laneLabelWidth}" y1="${y}" x2="${laneLabelWidth}" y2="${y + laneHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
         svg += `  <line x1="0" y1="${y + laneHeight}" x2="${width}" y2="${y + laneHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
 
-        // Lane label with word wrap (approximate char width ~8px for 13px font)
+        // Lane label with word wrap
         const labelLines = wrapTextSVG(lane.name, laneLabelWidth - 24, 8);
         const lineHeight = 16;
         const totalTextHeight = labelLines.length * lineHeight;
@@ -1613,57 +2344,57 @@ function exportToSVG() {
     });
 
     // Time markers area
-    const timeMarkersY = lanesStartY + lanesAreaHeight;
     svg += `  <!-- Time Markers -->\n`;
-    svg += `  <rect x="0" y="${timeMarkersY}" width="${width}" height="${timeMarkersHeight}" fill="#0f1419"/>\n`;
+    svg += `  <rect x="${laneLabelWidth}" y="${timeMarkersY}" width="${width - laneLabelWidth}" height="${timeMarkersHeight}" fill="#0f1419"/>\n`;
     svg += `  <rect x="0" y="${timeMarkersY}" width="${laneLabelWidth}" height="${timeMarkersHeight}" fill="#1a1f2e"/>\n`;
 
-    // Draw time markers with smart multi-row layout
-    if (boxes.length > 0) {
-        const uniqueTimes = [...new Set(boxes.flatMap(box => [box.startOffset, box.startOffset + box.duration]))].sort((a, b) => a - b);
-        const minSpacing = 40;
-        const charWidth = 6; // Approximate character width for 9px monospace
+    // Draw time markers with colored labels (same as PNG)
+    markers.forEach(m => {
+        const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
+        // Tick line
+        svg += `  <line x1="${Math.round(m.x)}" y1="${timeMarkersY + 2}" x2="${Math.round(m.x)}" y2="${yPos - 6}" stroke="${m.color}"/>\n`;
+        // Label
+        svg += `  <text x="${Math.round(m.x)}" y="${yPos}" text-anchor="middle" class="time-marker" fill="${m.color}">${m.text}</text>\n`;
+    });
 
-        // Assign each marker to a row to avoid overlaps
-        const rows = [[], []];
-        uniqueTimes.forEach(time => {
-            const x = laneLabelWidth + msToPixels(time);
-            const label = formatDuration(time);
-            const labelWidth = label.length * charWidth;
+    // Draw pinned measurement if active
+    if (app.measurePinned && app.measureStart && app.measureEnd) {
+        const measureColor = '#39FF14';
 
-            let placed = false;
-            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-                const row = rows[rowIdx];
-                const lastInRow = row[row.length - 1];
-                if (!lastInRow || (x - lastInRow.x) > minSpacing) {
-                    row.push({ time, x, label, width: labelWidth });
-                    placed = true;
-                    break;
-                }
-            }
-            if (!placed) {
-                const row0Last = rows[0][rows[0].length - 1];
-                const row1Last = rows[1][rows[1].length - 1];
-                const space0 = row0Last ? x - row0Last.x : Infinity;
-                const space1 = row1Last ? x - row1Last.x : Infinity;
-                if (space0 >= space1) {
-                    rows[0].push({ time, x, label, width: labelWidth });
-                } else {
-                    rows[1].push({ time, x, label, width: labelWidth });
-                }
-            }
-        });
+        // Convert canvas coordinates to export coordinates
+        const startXCanvas = app.measureStart.x;
+        const endXCanvas = app.measureEnd.x;
 
-        // Draw markers with tick lines
-        rows.forEach((row, rowIdx) => {
-            const yOffset = rowIdx === 0 ? 12 : 24;
-            row.forEach(marker => {
-                // Tick line
-                svg += `  <line x1="${Math.round(marker.x)}" y1="${timeMarkersY}" x2="${Math.round(marker.x)}" y2="${timeMarkersY + 4}" stroke="#6366f1" stroke-opacity="0.5"/>\n`;
-                // Label
-                svg += `  <text x="${Math.round(marker.x)}" y="${timeMarkersY + yOffset}" text-anchor="middle" class="time-marker">${marker.label}</text>\n`;
-            });
-        });
+        // Map canvas X to export X
+        const exportStartX = Math.round(laneLabelWidth + (startXCanvas - 160));
+        const exportEndX = Math.round(laneLabelWidth + (endXCanvas - 160));
+
+        // Y position - center in lanes area
+        const measureY = lanesStartY + lanesAreaHeight / 2;
+
+        svg += `  <!-- Pinned Measurement -->\n`;
+
+        // Measurement line
+        svg += `  <line x1="${exportStartX}" y1="${measureY}" x2="${exportEndX}" y2="${measureY}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+
+        // Start marker (vertical line)
+        svg += `  <line x1="${exportStartX}" y1="${measureY - 5}" x2="${exportStartX}" y2="${measureY + 5}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+
+        // End marker (arrow + vertical line)
+        const arrowDir = exportEndX > exportStartX ? -1 : 1;
+        svg += `  <path d="M${exportEndX + arrowDir * 6},${measureY - 3} L${exportEndX},${measureY} L${exportEndX + arrowDir * 6},${measureY + 3}" fill="none" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+        svg += `  <line x1="${exportEndX}" y1="${measureY - 5}" x2="${exportEndX}" y2="${measureY + 5}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+
+        // Measurement label
+        const timeDistance = pixelsToMs(Math.abs(endXCanvas - startXCanvas));
+        const measureText = formatDuration(Math.round(timeDistance));
+        const midX = (exportStartX + exportEndX) / 2;
+        const textWidth = measureText.length * 8 + 8;
+
+        // Text background
+        svg += `  <rect x="${midX - textWidth / 2}" y="${measureY - 22}" width="${textWidth}" height="16" fill="#0f1419"/>\n`;
+        // Text
+        svg += `  <text x="${midX}" y="${measureY - 10}" text-anchor="middle" style="font-family: 'Monaco', 'Menlo', monospace; font-size: 14px; font-weight: 600; fill: ${measureColor};">${measureText}</text>\n`;
     }
 
     // Footer
@@ -1672,6 +2403,7 @@ function exportToSVG() {
     svg += `  <rect x="0" y="${footerY}" width="${laneLabelWidth}" height="${footerHeight}" fill="#1a1f2e"/>\n`;
     svg += `  <rect x="${laneLabelWidth}" y="${footerY}" width="${width - laneLabelWidth}" height="${footerHeight}" fill="#252b3b"/>\n`;
     svg += `  <text x="${laneLabelWidth + 16}" y="${footerY + 26}" class="footer-text">TOTAL DURATION: <tspan fill="#6366f1">${formatDuration(app.diagram.getTotalDuration())}</tspan></text>\n`;
+    svg += `  <text x="${width - 16}" y="${footerY + 26}" text-anchor="end" style="font-family: 'Inter', sans-serif; font-size: 11px; fill: #6b7280;">Made by UCS with 💙</text>\n`;
     svg += `</svg>`;
 
     const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -1897,12 +2629,15 @@ function init() {
     // Header event listeners
     app.elements.diagramTitle.addEventListener('change', (e) => {
         app.diagram.title = e.target.value;
+        autoSave();
+        renderDiagramsList(); // Update title in list
     });
 
     app.elements.startTime.addEventListener('change', (e) => {
         app.diagram.startTime = e.target.value;
         updatePropertiesPanel();
         renderTimeMarkers(); // Update markers as start time changes
+        autoSave();
     });
 
     // Synchronize scroll between canvas, ruler, and time markers
@@ -2014,6 +2749,36 @@ function init() {
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
+    // Measurement tool - Cmd/Ctrl + Left Click
+    app.elements.lanesCanvas.addEventListener('mousedown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.button === 0) {
+            startMeasurement(e);
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (app.isMeasuring) {
+            updateMeasurement(e);
+        }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (app.isMeasuring && e.button === 0) {
+            endMeasurement();
+        }
+    });
+
+    // Cancel measurement on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && app.isMeasuring) {
+            app.isMeasuring = false;
+            const overlay = document.getElementById('measurement-overlay');
+            overlay.classList.remove('active');
+        }
+    });
+
     // Click outside to deselect
     app.elements.lanesCanvas.addEventListener('click', (e) => {
         if (e.target === app.elements.lanesCanvas || e.target.classList.contains('lane-row')) {
@@ -2039,13 +2804,70 @@ function init() {
         renderAlignmentMarkers();
     });
 
-    // Add default lane
-    app.diagram.addLane('Lane 1');
+    // Share button
+    document.getElementById('share-url').addEventListener('click', shareAsURL);
+
+    // Reset button - now resets current diagram
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        showConfirmToast({
+            title: 'Reset Diagram?',
+            message: 'All lanes and boxes will be cleared.',
+            confirmLabel: 'Reset',
+            onConfirm: () => {
+                // Reset current diagram without changing ID
+                app.diagram = new TimelineDiagram();
+                app.diagram.addLane('Lane 1');
+                app.selectedBoxId = null;
+                app.selectedLaneId = null;
+
+                app.elements.diagramTitle.value = app.diagram.title;
+                app.elements.startTime.value = app.diagram.startTime;
+
+                deselectBox();
+                renderLaneList();
+                renderLanesCanvas();
+                renderTimelineRuler();
+                renderTimeMarkers();
+                renderAlignmentMarkers();
+                updateTotalDuration();
+                autoSave();
+            }
+        });
+    });
+
+    // Diagrams panel toggle
+    document.getElementById('diagrams-toggle').addEventListener('click', toggleDiagramsPanel);
+
+    // New diagram button
+    document.getElementById('new-diagram-btn').addEventListener('click', createNewDiagram);
+
+    // Try to load from URL first
+    const loadedFromURL = loadFromURL();
+
+    if (loadedFromURL) {
+        // URL loaded - create new diagram ID for this shared diagram
+        currentDiagramId = generateDiagramId();
+        app.elements.diagramTitle.value = app.diagram.title;
+        app.elements.startTime.value = app.diagram.startTime;
+        saveCurrentDiagram();
+    } else if (!loadMostRecentDiagram()) {
+        // No saved diagrams - create new one
+        currentDiagramId = generateDiagramId();
+        app.diagram.addLane('Lane 1');
+        saveCurrentDiagram();
+    }
 
     // Initial render
     renderLaneList();
     renderLanesCanvas();
+    renderDiagramsList();
     updateTotalDuration();
+
+    // Open diagrams panel by default if there are saved diagrams
+    const diagrams = getAllDiagrams();
+    if (diagrams.length > 0) {
+        document.getElementById('diagrams-panel').classList.add('open');
+    }
 }
 
 // Start the app when DOM is ready

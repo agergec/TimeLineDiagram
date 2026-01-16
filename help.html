@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Diagram Editor - Tutorial</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f1419;
+            --bg-secondary: #1a1f2e;
+            --bg-tertiary: #252b3b;
+            --bg-card: rgba(30, 37, 52, 0.9);
+            --text-primary: #ffffff;
+            --text-secondary: #a8b2c1;
+            --text-muted: #6b7280;
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 48px;
+            padding-bottom: 32px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 24px;
+            transition: opacity 0.2s;
+        }
+
+        .back-link:hover {
+            opacity: 0.8;
+        }
+
+        section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h2 .icon {
+            font-size: 1.5rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 20px 0 12px;
+        }
+
+        p {
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        ul, ol {
+            color: var(--text-secondary);
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .step-list {
+            list-style: none;
+            margin-left: 0;
+            counter-reset: step;
+        }
+
+        .step-list li {
+            counter-increment: step;
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            align-items: flex-start;
+        }
+
+        .step-list li::before {
+            content: counter(step);
+            min-width: 28px;
+            height: 28px;
+            background: var(--accent-primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-content strong {
+            color: var(--text-primary);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .kbd {
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+
+        .tip {
+            background: rgba(99, 102, 241, 0.1);
+            border-left: 3px solid var(--accent-primary);
+            padding: 16px;
+            border-radius: 0 8px 8px 0;
+            margin: 16px 0;
+        }
+
+        .tip-title {
+            color: var(--accent-primary);
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tip p {
+            margin-bottom: 0;
+            color: var(--text-secondary);
+        }
+
+        .warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-left: 3px solid var(--warning);
+        }
+
+        .warning .tip-title {
+            color: var(--warning);
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .feature-card {
+            background: var(--bg-tertiary);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .feature-card .icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+        }
+
+        .feature-card h4 {
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            font-size: 13px;
+            margin-bottom: 0;
+        }
+
+        .shortcut-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .shortcut-table th,
+        .shortcut-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .shortcut-table th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .shortcut-table td:first-child {
+            color: var(--text-primary);
+        }
+
+        .shortcut-table td:last-child {
+            color: var(--text-secondary);
+        }
+
+        .cta-section {
+            text-align: center;
+            padding: 40px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+        }
+
+        .cta-section h2 {
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .cta-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .cta-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+        }
+
+        footer {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        footer a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 24px 16px 60px;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            section {
+                padding: 20px;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to Editor</a>
+
+        <header>
+            <h1>Timeline Diagram Editor</h1>
+            <p class="subtitle">Create beautiful timeline diagrams to visualize processes, API calls, and sequences</p>
+        </header>
+
+        <!-- Quick Start -->
+        <section>
+            <h2><span class="icon">🚀</span> Quick Start</h2>
+            <p>Get your first diagram ready in under a minute:</p>
+
+            <ol class="step-list">
+                <li>
+                    <div class="step-content">
+                        <strong>Add Lanes</strong>
+                        Click the <kbd>+ Add</kbd> button in the sidebar to create lanes. Each lane represents a component, service, or actor in your diagram.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Create Boxes</strong>
+                        Click and drag on any lane track to create a time box. This represents an activity or event with a specific duration.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Customize</strong>
+                        Click on any box to select it and edit its properties: label, color, start time, and duration.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Share or Export</strong>
+                        Click <kbd>Share</kbd> to copy a URL, or export as PNG/SVG for presentations and documentation.
+                    </div>
+                </li>
+            </ol>
+        </section>
+
+        <!-- Features Overview -->
+        <section>
+            <h2><span class="icon">✨</span> Features</h2>
+
+            <div class="feature-grid">
+                <div class="feature-card" style="border: 2px solid #39FF14; background: rgba(57, 255, 20, 0.1);">
+                    <div class="icon">📏</div>
+                    <h4 style="color: #39FF14;">Measurement Tool</h4>
+                    <p>Measure time distances with snapping, pinning & export support</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🎨</div>
+                    <h4>Smart Colors</h4>
+                    <p>Auto-assigned colors that contrast well between lanes and boxes</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">📐</div>
+                    <h4>Alignment Lines</h4>
+                    <p>Vertical guides show where events start and end across lanes</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔗</div>
+                    <h4>URL Sharing</h4>
+                    <p>Share diagrams instantly with a single URL link</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">📤</div>
+                    <h4>Export</h4>
+                    <p>Download as PNG or SVG for use anywhere</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">💾</div>
+                    <h4>Auto-Save</h4>
+                    <p>Never lose work—diagrams save automatically to browser storage</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Working with Lanes -->
+        <section>
+            <h2><span class="icon">📊</span> Working with Lanes</h2>
+
+            <h3>Adding & Naming Lanes</h3>
+            <p>Lanes represent different components in your system—services, users, databases, or any logical grouping. Click <kbd>+ Add</kbd> to create a new lane, then click on its name in the sidebar to edit it.</p>
+
+            <h3>Reordering Lanes</h3>
+            <p>Use the up/down arrows that appear when hovering over a lane in the sidebar to change the order. You can also drag lanes to reorder them.</p>
+
+            <h3>Lane Colors</h3>
+            <p>Click on the colored square next to a lane name to open the color picker. All boxes in that lane will use variations of this base color.</p>
+
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>Use contrasting colors for adjacent lanes to make your diagram easier to read at a glance.</p>
+            </div>
+        </section>
+
+        <!-- Working with Boxes -->
+        <section>
+            <h2><span class="icon">📦</span> Working with Boxes</h2>
+
+            <h3>Creating Boxes</h3>
+            <p>Click and drag horizontally on any lane track to create a new box. You can drag in either direction—left-to-right or right-to-left—and the box will be created correctly. The leftmost point becomes the start time, and the drag distance determines the duration.</p>
+
+            <h3>Editing Boxes</h3>
+            <p>Click on any box to select it and open the properties panel. You can edit:</p>
+            <ul>
+                <li><strong>Label</strong> — A name or description for the activity</li>
+                <li><strong>Color</strong> — Pick from the palette or use the color picker</li>
+                <li><strong>Start Time</strong> — When the activity begins (in milliseconds)</li>
+                <li><strong>Duration</strong> — How long the activity lasts</li>
+            </ul>
+
+            <h3>Resizing Boxes</h3>
+            <p>Hover over the left or right edge of a box until you see the resize cursor, then drag to adjust the start time or duration.</p>
+
+            <h3>Moving Boxes</h3>
+            <p>Drag a box horizontally to change its start time. The box will stay in its lane.</p>
+
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>Use the "📍" button next to Start Time to pick the end time of another box—perfect for showing sequential activities.</p>
+            </div>
+        </section>
+
+        <!-- Time & Display -->
+        <section>
+            <h2><span class="icon">⏱️</span> Time & Display</h2>
+
+            <h3>Start Time</h3>
+            <p>The "Start Time" in the header sets the absolute time reference. All box times are offsets from this point. Use format: <kbd>HH:MM:SS sss</kbd> (e.g., "14:30:00 000").</p>
+
+            <h3>Zoom Controls</h3>
+            <p>Use the <kbd>−</kbd> and <kbd>+</kbd> buttons to zoom in/out. Click <kbd>Fit</kbd> to automatically fit the entire diagram in view.</p>
+
+            <h3>Time Markers</h3>
+            <p>The bottom area shows time markers for all box start (S:) and end (E:) points, color-coded to match their boxes.</p>
+
+            <h3>Time Format</h3>
+            <p>Open Settings (⚙️) to configure when times switch from milliseconds to seconds/minutes display.</p>
+        </section>
+
+        <!-- Auto-Save & Diagrams -->
+        <section>
+            <h2><span class="icon">💾</span> Auto-Save & My Diagrams</h2>
+
+            <h3>Automatic Saving</h3>
+            <p>Your work is automatically saved to your browser's local storage as you make changes. You'll never lose work due to accidental page refresh or browser closure.</p>
+
+            <div class="tip">
+                <div class="tip-title">💡 Good to Know</div>
+                <p>Auto-save happens within 1 second of any change. The most recent 10 diagrams are kept in storage.</p>
+            </div>
+
+            <h3>My Diagrams Panel</h3>
+            <p>Click the "📁 My Diagrams" header in the sidebar to expand the panel. Here you can:</p>
+            <ul>
+                <li><strong>Switch diagrams</strong> — Click any diagram to load it</li>
+                <li><strong>Create new</strong> — Click "+ New Diagram" to start fresh</li>
+                <li><strong>Delete</strong> — Hover and click × to remove a diagram</li>
+            </ul>
+            <p>The currently active diagram is highlighted. Each entry shows the title and when it was last modified.</p>
+
+            <h3>Reset</h3>
+            <p>Click the <kbd>Reset</kbd> button at the bottom of the sidebar to clear the current diagram and start fresh. This keeps the same diagram slot but removes all lanes and boxes.</p>
+        </section>
+
+        <!-- Sharing & Export -->
+        <section>
+            <h2><span class="icon">🔗</span> Sharing & Export</h2>
+
+            <h3>URL Sharing</h3>
+            <p>Click <kbd>Share</kbd> to copy a URL that contains your entire diagram. Anyone with this link can view and edit a copy of your diagram. Perfect for:</p>
+            <ul>
+                <li>Sharing with teammates via Slack, email, or documentation</li>
+                <li>Embedding in wikis or issue trackers</li>
+                <li>Saving bookmarks of different diagram versions</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>When you open a shared URL, the diagram is automatically saved as a new entry in your "My Diagrams" list.</p>
+            </div>
+
+            <div class="warning tip">
+                <div class="tip-title">⚠️ Note</div>
+                <p>Very large diagrams may exceed URL length limits. Use Save/Load for complex diagrams.</p>
+            </div>
+
+            <h3>Save & Load (JSON)</h3>
+            <p>Click <kbd>Save</kbd> to download your diagram as a JSON file. Use <kbd>Load</kbd> to import from a saved file. This is best for:</p>
+            <ul>
+                <li>Backing up your work externally</li>
+                <li>Storing diagrams in version control</li>
+                <li>Large diagrams that exceed URL limits</li>
+                <li>Transferring diagrams between browsers/devices</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>Loading a JSON file always creates a new diagram—your current work is never overwritten. The imported diagram appears as a new entry in "My Diagrams".</p>
+            </div>
+
+            <h3>Export as Image</h3>
+            <p><kbd>PNG</kbd> creates a high-quality raster image. <kbd>SVG</kbd> creates a scalable vector image. Both include the full diagram with title, time markers, and branding.</p>
+        </section>
+
+        <!-- Settings -->
+        <section>
+            <h2><span class="icon">⚙️</span> Settings</h2>
+            <p>Click the ⚙️ button in the header to access global settings:</p>
+
+            <table class="shortcut-table">
+                <tr>
+                    <th>Setting</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>Page Title</td>
+                    <td>The diagram title shown in header and exports</td>
+                </tr>
+                <tr>
+                    <td>Time Format Threshold</td>
+                    <td>When to switch from "ms" to "s" or "m" display</td>
+                </tr>
+                <tr>
+                    <td>Show Alignment Lines</td>
+                    <td>Toggle vertical dashed lines at box start/end times</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- Measurement Tool -->
+        <section style="border: 2px solid #39FF14; box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);">
+            <h2><span class="icon">📏</span> Measurement Tool</h2>
+
+            <p>The measurement tool lets you precisely measure time distances between any two points on your diagram. It features <strong style="color: #39FF14;">smart snapping</strong> to box edges, <strong style="color: #39FF14;">pinning</strong> for persistent display, and <strong style="color: #39FF14;">export support</strong>.</p>
+
+            <h3>How to Use</h3>
+            <ol class="step-list">
+                <li>
+                    <div class="step-content">
+                        <strong>Activate</strong>
+                        Hold <kbd>Cmd</kbd> (Mac) or <kbd>Ctrl</kbd> (Windows/Linux) and left-click on the diagram canvas.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Drag to Measure</strong>
+                        While holding the mouse button, drag to your second point. A <span style="color: #39FF14; font-weight: 600;">phosphorus green</span> line shows the measurement with elegant <code>|------>|</code> markers.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Read Results</strong>
+                        The info box displays duration, start time, and end time of the measured range.
+                    </div>
+                </li>
+                <li>
+                    <div class="step-content">
+                        <strong>Pin or Close</strong>
+                        Click 📌 to pin the measurement and keep it visible, or × to close immediately. Unpinned measurements fade after 2 seconds.
+                    </div>
+                </li>
+            </ol>
+
+            <h3 style="color: #39FF14;">✨ Smart Snapping</h3>
+            <p>The measurement tool automatically <strong>snaps to vertical alignment lines</strong>—the start and end points of boxes. When your cursor is within 8 pixels of a box edge, it snaps to that exact position, making it easy to measure precise distances between events.</p>
+
+            <h3 style="color: #39FF14;">📌 Pin & Export</h3>
+            <p>When you pin a measurement:</p>
+            <ul>
+                <li>The measurement stays visible until you unpin or close it</li>
+                <li>The info box gets a glowing green border</li>
+                <li><strong>Pinned measurements are included in PNG and SVG exports!</strong></li>
+            </ul>
+            <p>This is perfect for highlighting specific time intervals in your exported diagrams or presentations.</p>
+
+            <div class="tip">
+                <div class="tip-title">💡 Pro Tip</div>
+                <p>Use pinned measurements to annotate your exports—show the gap between API call and response, highlight a critical time window, or compare durations across lanes.</p>
+            </div>
+
+            <div class="tip warning">
+                <div class="tip-title">⚠️ Note</div>
+                <p>Creating boxes is disabled while measuring. Release the mouse and ensure you're not holding Cmd/Ctrl to resume normal editing.</p>
+            </div>
+        </section>
+
+        <!-- Keyboard Shortcuts -->
+        <section>
+            <h2><span class="icon">⌨️</span> Keyboard Shortcuts</h2>
+
+            <table class="shortcut-table">
+                <tr>
+                    <th>Key / Action</th>
+                    <th>Description</th>
+                </tr>
+                <tr style="background: rgba(57, 255, 20, 0.1);">
+                    <td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + Left Click + Drag</td>
+                    <td>Activate measurement tool and measure distance</td>
+                </tr>
+                <tr>
+                    <td>📌 button (in measurement info box)</td>
+                    <td>Pin measurement to keep visible and include in exports</td>
+                </tr>
+                <tr>
+                    <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+                    <td>Delete selected box</td>
+                </tr>
+                <tr>
+                    <td><kbd>Escape</kbd></td>
+                    <td>Deselect box / Cancel measurement / Close panel</td>
+                </tr>
+            </table>
+        </section>
+
+        <!-- Use Cases -->
+        <section>
+            <h2><span class="icon">💼</span> Common Use Cases</h2>
+
+            <h3>API Call Flows</h3>
+            <p>Visualize the timing of requests between frontend, backend, databases, and external services. Great for debugging latency issues.</p>
+
+            <h3>Process Documentation</h3>
+            <p>Document business processes showing which departments or systems are involved at each stage.</p>
+
+            <h3>Performance Analysis</h3>
+            <p>Map out where time is spent in a request lifecycle to identify bottlenecks.</p>
+
+            <h3>System Architecture</h3>
+            <p>Show the sequence of operations in distributed systems, microservices, or event-driven architectures.</p>
+        </section>
+
+        <!-- CTA -->
+        <section class="cta-section">
+            <h2>Ready to Create?</h2>
+            <p style="margin-bottom: 24px;">Start building your timeline diagram now!</p>
+            <a href="index.html" class="cta-btn">
+                Open Editor →
+            </a>
+        </section>
+
+        <footer>
+            <p>Made by UCS with 💙</p>
+            <p style="margin-top: 8px;">
+                <a href="index.html">Editor</a> ·
+                <a href="help.html">Tutorial</a>
+            </p>
+        </footer>
+    </div>
+</body>
+
+</html>

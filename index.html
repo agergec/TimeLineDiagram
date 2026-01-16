@@ -25,6 +25,7 @@
                 </div>
             </div>
             <div class="header-right">
+                <a href="help.html" class="btn btn-icon" title="Help & Tutorial">?</a>
                 <button id="settings-btn" class="btn btn-icon" title="Global Settings">⚙️</button>
                 <div class="zoom-controls">
                     <button id="zoom-out" class="btn btn-icon" title="Zoom Out">−</button>
@@ -33,7 +34,8 @@
                     <button id="zoom-fit" class="btn btn-sm" title="Fit to View">Fit</button>
                 </div>
                 <div class="export-controls">
-                    <button id="save-json" class="btn btn-sm btn-primary">Save</button>
+                    <button id="share-url" class="btn btn-sm btn-primary" title="Copy shareable URL to clipboard">Share</button>
+                    <button id="save-json" class="btn btn-sm">Save</button>
                     <button id="load-json" class="btn btn-sm">Load</button>
                     <button id="export-png" class="btn btn-sm">PNG</button>
                     <button id="export-svg" class="btn btn-sm">SVG</button>
@@ -52,7 +54,29 @@
                 <div id="lane-list" class="lane-list">
                     <!-- Lanes will be dynamically added here -->
                 </div>
+
+                <!-- Diagrams Panel (collapsible, at bottom) -->
+                <div id="diagrams-panel" class="diagrams-panel">
+                    <div class="diagrams-header" id="diagrams-toggle">
+                        <h3>📁 My Diagrams</h3>
+                        <span class="diagrams-chevron">▲</span>
+                    </div>
+                    <div class="diagrams-content">
+                        <button id="new-diagram-btn" class="btn btn-sm btn-primary diagrams-new-btn">+ New Diagram</button>
+                        <div id="diagrams-list" class="diagrams-list">
+                            <!-- Diagrams will be dynamically added here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-footer">
+                    <button id="reset-btn" class="btn btn-sm btn-danger" title="Clear current diagram">Reset</button>
+                    <div class="made-by">Made by UCS with 💙</div>
+                </div>
             </aside>
+
+            <!-- Toast Container -->
+            <div id="toast-container" class="toast-container"></div>
 
             <!-- Canvas Area -->
             <main class="canvas-container">
@@ -178,6 +202,25 @@
 
         <!-- Alignment Markers Container -->
         <svg id="alignment-markers" class="alignment-markers"></svg>
+
+        <!-- Measurement Overlay -->
+        <svg id="measurement-overlay" class="measurement-overlay">
+            <defs>
+                <!-- Start marker: simple | vertical line -->
+                <marker id="measure-arrow-start" markerWidth="2" markerHeight="10" refX="1" refY="5" orient="auto">
+                    <line x1="1" y1="0" x2="1" y2="10" stroke="#39FF14" stroke-width="1.5"/>
+                </marker>
+                <!-- End marker: elegant > arrow with | line -->
+                <marker id="measure-arrow-end" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+                    <path d="M2,2 L8,5 L2,8" fill="none" stroke="#39FF14" stroke-width="1.5" stroke-linejoin="miter"/>
+                    <line x1="10" y1="0" x2="10" y2="10" stroke="#39FF14" stroke-width="1.5"/>
+                </marker>
+            </defs>
+            <line id="measurement-line" class="measurement-line" x1="0" y1="0" x2="0" y2="0"
+                  marker-start="url(#measure-arrow-start)" marker-end="url(#measure-arrow-end)"/>
+            <text id="measurement-label" class="measurement-label" x="0" y="0"></text>
+        </svg>
+        <div id="measurement-info" class="measurement-info"></div>
 
         <!-- Hidden File Input for Load -->
         <input type="file" id="file-input" accept=".json" style="display: none;">
