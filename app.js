@@ -686,18 +686,20 @@ function renderDiagramsList() {
         return;
     }
 
-    container.innerHTML = diagrams.map(d => `
+    container.innerHTML = diagrams.map(d => {
+        const isLocked = d.data && d.data.locked;
+        return `
         <div class="diagram-item ${d.id === currentDiagramId ? 'active' : ''}" data-diagram-id="${d.id}">
             <div class="diagram-item-info">
-                <div class="diagram-item-title">${escapeHtml(d.title || 'Untitled')}</div>
+                <div class="diagram-item-title">${isLocked ? '🔒 ' : ''}${escapeHtml(d.title || 'Untitled')}</div>
                 <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
             </div>
             <div class="diagram-item-actions">
                 <button class="diagram-item-reset" data-diagram-id="${d.id}" title="Reset diagram">↺</button>
                 <button class="diagram-item-delete" data-diagram-id="${d.id}" title="Delete diagram">×</button>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
     // Add click listeners
     container.querySelectorAll('.diagram-item').forEach(item => {
@@ -1478,6 +1480,9 @@ function handleBoxDragStart(e, boxId) {
 
 function handleResizeStart(e, boxId) {
     e.stopPropagation();
+
+    // Don't allow resizing if locked
+    if (app.diagram.locked) return;
 
     const box = app.diagram.boxes.find(b => b.id === boxId);
     if (!box) return;

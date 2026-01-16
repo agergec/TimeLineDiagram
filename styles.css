@@ -1593,3 +1593,7 @@ body.diagram-locked #add-lane {
     opacity: 0.3;
     pointer-events: none;
 }
+
+body.diagram-locked .box-resize-handle {
+    display: none;
+}
