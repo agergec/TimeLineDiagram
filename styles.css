@@ -1244,22 +1244,36 @@ body {
     margin-top: 2px;
 }
 
-.diagram-item-delete {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 0 4px;
+.diagram-item-actions {
+    display: flex;
+    gap: 4px;
     opacity: 0;
     transition: var(--transition-fast);
 }
 
-.diagram-item:hover .diagram-item-delete {
+.diagram-item:hover .diagram-item-actions {
     opacity: 1;
 }
 
+.diagram-item-reset,
+.diagram-item-delete {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: var(--transition-fast);
+}
+
+.diagram-item-reset:hover {
+    background: var(--bg-tertiary);
+    color: var(--warning);
+}
+
 .diagram-item-delete:hover {
+    background: var(--bg-tertiary);
     color: var(--danger);
 }
 

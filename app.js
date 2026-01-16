@@ -524,6 +524,99 @@ function deleteDiagram(diagramId) {
     });
 }
 
+function resetDiagram(diagramId) {
+    const diagrams = getAllDiagrams();
+    const diagram = diagrams.find(d => d.id === diagramId);
+    if (!diagram) return;
+
+    showConfirmToast({
+        title: 'Reset Diagram?',
+        message: `All lanes and boxes in "${diagram.title}" will be cleared.`,
+        confirmLabel: 'Reset',
+        onConfirm: () => {
+            // If it's the current diagram, reset in memory too
+            if (diagramId === currentDiagramId) {
+                app.diagram.lanes = [];
+                app.diagram.boxes = [];
+                app.diagram.nextLaneId = 1;
+                app.diagram.nextBoxId = 1;
+                app.diagram.addLane('Lane 1');
+                app.selectedBoxId = null;
+                app.selectedLaneId = null;
+
+                closeMeasurement();
+                deselectBox();
+                renderLaneList();
+                renderLanesCanvas();
+                renderTimelineRuler();
+                renderTimeMarkers();
+                renderAlignmentMarkers();
+                updateTotalDuration();
+                saveCurrentDiagram();
+            } else {
+                // Reset the stored diagram
+                diagram.data.lanes = [];
+                diagram.data.boxes = [];
+                diagram.data.nextLaneId = 2;
+                diagram.data.nextBoxId = 1;
+                diagram.data.lanes = [{ id: 1, name: 'Lane 1', order: 0 }];
+                diagram.data.measurement = null;
+                diagram.updatedAt = Date.now();
+                saveDiagramsList(diagrams);
+            }
+
+            renderDiagramsList();
+            showToast({ type: 'success', title: 'Reset', message: 'Diagram cleared.', duration: 2000 });
+        }
+    });
+}
+
+function purgeApplication() {
+    showConfirmToast({
+        title: 'Purge Application?',
+        message: 'ALL diagrams and settings will be permanently deleted. This cannot be undone!',
+        confirmLabel: 'Purge All',
+        onConfirm: () => {
+            // Clear all localStorage data for this app
+            localStorage.removeItem(STORAGE_KEY);
+
+            // Reset app state
+            currentDiagramId = generateDiagramId();
+            app.diagram = new TimelineDiagram();
+            app.diagram.title = generateDiagramTitle();
+            app.diagram.addLane('Lane 1');
+            app.selectedBoxId = null;
+            app.selectedLaneId = null;
+            app.settings = {
+                timeFormatThreshold: 1000,
+                showAlignmentLines: true
+            };
+
+            closeMeasurement();
+
+            app.elements.diagramTitle.value = app.diagram.title;
+            app.elements.startTime.value = app.diagram.startTime;
+
+            deselectBox();
+            renderLaneList();
+            renderLanesCanvas();
+            renderTimelineRuler();
+            renderTimeMarkers();
+            renderAlignmentMarkers();
+            updateTotalDuration();
+            renderDiagramsList();
+
+            // Save the fresh diagram
+            saveCurrentDiagram();
+
+            // Close the settings panel
+            app.elements.propertiesPanel.classList.add('hidden');
+
+            showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
+        }
+    });
+}
+
 function generateDiagramTitle() {
     const now = new Date();
     const pad = (n, len = 2) => String(n).padStart(len, '0');
@@ -594,18 +687,29 @@ function renderDiagramsList() {
                 <div class="diagram-item-title">${escapeHtml(d.title || 'Untitled')}</div>
                 <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
             </div>
-            <button class="diagram-item-delete" data-diagram-id="${d.id}" title="Delete">×</button>
+            <div class="diagram-item-actions">
+                <button class="diagram-item-reset" data-diagram-id="${d.id}" title="Reset diagram">↺</button>
+                <button class="diagram-item-delete" data-diagram-id="${d.id}" title="Delete diagram">×</button>
+            </div>
         </div>
     `).join('');
 
     // Add click listeners
     container.querySelectorAll('.diagram-item').forEach(item => {
         item.addEventListener('click', (e) => {
-            if (e.target.classList.contains('diagram-item-delete')) return;
+            if (e.target.classList.contains('diagram-item-delete') ||
+                e.target.classList.contains('diagram-item-reset')) return;
             const id = item.dataset.diagramId;
             if (id !== currentDiagramId) {
                 loadDiagram(id);
             }
+        });
+    });
+
+    container.querySelectorAll('.diagram-item-reset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resetDiagram(btn.dataset.diagramId);
         });
     });
 
@@ -2891,33 +2995,8 @@ function init() {
     // Share button
     document.getElementById('share-url').addEventListener('click', shareAsURL);
 
-    // Reset button - now resets current diagram
-    document.getElementById('reset-btn').addEventListener('click', () => {
-        showConfirmToast({
-            title: 'Reset Diagram?',
-            message: 'All lanes and boxes will be cleared.',
-            confirmLabel: 'Reset',
-            onConfirm: () => {
-                // Reset current diagram without changing ID
-                app.diagram = new TimelineDiagram();
-                app.diagram.addLane('Lane 1');
-                app.selectedBoxId = null;
-                app.selectedLaneId = null;
-
-                app.elements.diagramTitle.value = app.diagram.title;
-                app.elements.startTime.value = app.diagram.startTime;
-
-                deselectBox();
-                renderLaneList();
-                renderLanesCanvas();
-                renderTimelineRuler();
-                renderTimeMarkers();
-                renderAlignmentMarkers();
-                updateTotalDuration();
-                autoSave();
-            }
-        });
-    });
+    // Purge Application button
+    document.getElementById('purge-app-btn').addEventListener('click', purgeApplication);
 
     // Diagrams panel toggle
     document.getElementById('diagrams-toggle').addEventListener('click', toggleDiagramsPanel);
