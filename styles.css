@@ -705,27 +705,25 @@ body.show-box-labels .lane-row {
     padding-left: 4px;
 }
 
-/* Ruler break markers for compression mode */
+/* Ruler break markers for compression mode - single line */
 .ruler-break-marker {
     position: absolute;
     top: 0;
     height: 100%;
-    background: rgba(251, 146, 60, 0.15);
-    border-left: 1px dashed var(--warning);
-    border-right: 1px dashed var(--warning);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 2px;
+    background: var(--warning);
     pointer-events: none;
     z-index: 1;
-    min-width: 16px;
 }
 
 .ruler-break-marker .break-label {
+    position: absolute;
+    top: 0;
+    left: 4px;
     background: var(--warning);
     color: #000;
     padding: 1px 4px;
-    border-radius: 3px;
+    border-radius: 0 0 3px 3px;
     font-size: 9px;
     font-weight: 600;
     white-space: nowrap;
@@ -1014,18 +1012,13 @@ body.show-box-labels .lane-row {
     color: white;
 }
 
-/* Compression Indicator in lane tracks */
+/* Compression Indicator in lane tracks - single line */
 .compression-indicator {
     position: absolute;
     top: 0;
     height: 100%;
-    width: 16px !important;
-    background: rgba(251, 146, 60, 0.1);
-    border-left: 1px dashed var(--warning);
-    border-right: 1px dashed var(--warning);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 2px;
+    background: var(--warning);
     pointer-events: none;
     z-index: 5;
 }

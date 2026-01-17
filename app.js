@@ -130,6 +130,7 @@ class TimelineDiagram {
             nextLaneId: this.nextLaneId,
             nextBoxId: this.nextBoxId,
             locked: this.locked,
+            compressionEnabled: Compression.enabled, // Save compression state per diagram
             settings: app.settings, // Include global settings
             measurement: measurement // Include pinned measurement
         };
@@ -143,6 +144,8 @@ class TimelineDiagram {
         this.nextLaneId = data.nextLaneId || 1;
         this.nextBoxId = data.nextBoxId || 1;
         this.locked = data.locked || false;
+        // Restore compression state (default to false for new/old diagrams)
+        Compression.setEnabled(data.compressionEnabled || false);
         // Restore settings if present
         if (data.settings) {
             app.settings = { ...app.settings, ...data.settings };
@@ -672,24 +675,39 @@ const Compression = {
     enabled: false,
     compressionMap: null, // Cached compression calculations
 
-    toggle() {
-        this.enabled = !this.enabled;
+    /**
+     * Set compression enabled state (used when loading diagrams)
+     */
+    setEnabled(enabled) {
+        this.enabled = enabled;
         this.compressionMap = null; // Clear cache
         const btn = document.getElementById('compress-toggle');
         if (btn) {
             btn.classList.toggle('active', this.enabled);
             btn.title = this.enabled ? 'Disable Compression' : 'Compress Empty Spaces';
         }
+    },
+
+    toggle() {
+        this.setEnabled(!this.enabled);
         renderTimelineRuler();
         renderLanesCanvas();
         renderTimeMarkers();
         Minimap.render();
+
+        // Sync scroll positions after re-render
+        const scrollLeft = app.elements.lanesCanvas.scrollLeft;
+        app.elements.timelineRuler.scrollLeft = scrollLeft;
+        app.elements.timeMarkers.scrollLeft = scrollLeft;
     },
 
     /**
      * Calculate compression map for all boxes across all lanes
      * Returns: { compressedOffsets: Map<boxId, offset>, gaps: [{start, end, compressedTo}], totalCompressed: ms }
      */
+    // Compressed gaps have zero visual size - boxes snap directly to the gap indicator line
+    COMPRESSED_GAP_MS: 0,
+
     calculateCompressionMap() {
         if (!this.enabled) return null;
         if (this.compressionMap) return this.compressionMap;
@@ -697,15 +715,25 @@ const Compression = {
         const boxes = app.diagram?.boxes || [];
         if (boxes.length === 0) return null;
 
+        // Threshold only determines which gaps get compressed (gaps > threshold)
         const threshold = app.settings.compressionThreshold || 500;
+        // Compressed gaps have zero visual size - boxes snap directly to gap line
+        const compressedVisualSize = this.COMPRESSED_GAP_MS;
 
         // Get all time events (start and end of each box) across ALL lanes
+        // Process 'end' events before 'start' events at the same time to avoid false gaps
         const events = [];
         boxes.forEach(box => {
             events.push({ time: box.startOffset, type: 'start', boxId: box.id });
             events.push({ time: box.startOffset + box.duration, type: 'end', boxId: box.id });
         });
-        events.sort((a, b) => a.time - b.time);
+        // Sort by time, and within same time: process 'start' before 'end'
+        // This ensures overlapping/adjacent boxes don't create false gaps
+        events.sort((a, b) => {
+            if (a.time !== b.time) return a.time - b.time;
+            // At same time: 'start' comes before 'end' (start=0, end=1)
+            return a.type === 'start' ? -1 : 1;
+        });
 
         // Find gaps where no box is active across all lanes
         const gaps = [];
@@ -715,14 +743,14 @@ const Compression = {
         events.forEach(event => {
             if (event.type === 'start') {
                 if (activeBoxes === 0 && event.time > gapStart) {
-                    // This is a gap
+                    // This is a gap - no boxes were active between gapStart and now
                     const gapSize = event.time - gapStart;
                     if (gapSize > threshold) {
                         gaps.push({
                             start: gapStart,
                             end: event.time,
                             size: gapSize,
-                            compressedSize: threshold
+                            compressedSize: compressedVisualSize
                         });
                     }
                 }
@@ -1963,10 +1991,11 @@ function renderTimelineRuler() {
     ruler.innerHTML = '';
 
     // Use compressed or actual duration based on compression mode
-    const actualTotalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const displayDuration = Compression.enabled
-        ? Compression.getCompressedDuration()
-        : actualTotalDuration;
+    // Must match the calculation in renderLanesCanvas for scroll sync
+    const displayDuration = Math.max(
+        Compression.enabled ? Compression.getCompressedDuration() : app.diagram.getTotalDuration(),
+        DEFAULT_MIN_TIMELINE_MS
+    );
 
     // Calculate appropriate interval - extended for extreme zoom levels
     // Includes sub-millisecond intervals for high zoom
@@ -2024,14 +2053,11 @@ function renderTimelineRuler() {
             innerWrapper.appendChild(mark);
         }
 
-        // Add break markers at gap boundaries with actual gap size label
+        // Add break markers at gap boundaries - single line with gap size label
         breakMarkers.forEach(marker => {
             const breakMark = document.createElement('div');
             breakMark.className = 'ruler-break-marker';
             breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
-            // Fixed visual width for the marker (min 16px)
-            const visualWidth = Math.max(16, msToPixels(marker.compressedEnd - marker.compressedStart));
-            breakMark.style.width = `${visualWidth}px`;
             const actualGapSize = marker.actualEnd - marker.actualStart;
             breakMark.title = `Gap: ${formatDuration(actualGapSize)} (${formatDuration(marker.actualStart)} → ${formatDuration(marker.actualEnd)})`;
             breakMark.innerHTML = `<span class="break-label">${formatDuration(actualGapSize)}</span>`;
@@ -2053,8 +2079,8 @@ function renderLanesCanvas() {
     const canvas = app.elements.lanesCanvas;
     canvas.innerHTML = '';
 
-    // Invalidate compression cache before rendering
-    Compression.invalidate();
+    // Note: Don't invalidate here - it should be done before renderTimelineRuler
+    // to ensure both use the same compression map
 
     // Calculate minimum width for tracks based on timeline duration + trailing space setting
     // Use compressed duration if compression is enabled
@@ -2083,14 +2109,13 @@ function renderLanesCanvas() {
         track.dataset.laneId = lane.id;
         track.style.minWidth = `${minTrackWidth}px`;
 
-        // Render compression indicators for this lane (fixed 16px width, no label - label is on ruler)
+        // Render compression indicators for this lane - single line
         if (Compression.enabled) {
             const gaps = Compression.getCompressedGaps();
             gaps.forEach(gap => {
                 const indicator = document.createElement('div');
                 indicator.className = 'compression-indicator';
                 indicator.style.left = `${msToPixels(gap.compressedStart)}px`;
-                // Width is fixed at 16px via CSS !important
                 indicator.title = `Gap: ${formatDuration(gap.originalSize)}`;
                 track.appendChild(indicator);
             });
@@ -2245,17 +2270,19 @@ function renderAlignmentMarkers() {
     if (!app.settings.showAlignmentLines) return;
     if (app.diagram.boxes.length === 0) return;
 
-    // Collect all time points with their box colors
-    const timePointsMap = new Map(); // time -> color (first box's color at that time)
+    // Collect all visual time points with their box colors
+    // In compression mode, use compressed visual positions
+    const timePointsMap = new Map(); // visualTime -> color (first box's color at that time)
     app.diagram.boxes.forEach(box => {
-        const startTime = box.startOffset;
-        const endTime = box.startOffset + box.duration;
+        // Get visual positions (compressed if compression enabled)
+        const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+        const visualEnd = visualStart + box.duration; // Duration stays the same visually
 
-        if (!timePointsMap.has(startTime)) {
-            timePointsMap.set(startTime, box.color);
+        if (!timePointsMap.has(visualStart)) {
+            timePointsMap.set(visualStart, box.color);
         }
-        if (!timePointsMap.has(endTime)) {
-            timePointsMap.set(endTime, box.color);
+        if (!timePointsMap.has(visualEnd)) {
+            timePointsMap.set(visualEnd, box.color);
         }
     });
 
@@ -2276,8 +2303,8 @@ function renderAlignmentMarkers() {
     const canvasHeight = canvas.scrollHeight;
     const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
 
-    timePointsMap.forEach((color, time) => {
-        const x = offsetX + msToPixels(time) - scrollLeft;
+    timePointsMap.forEach((color, visualTime) => {
+        const x = offsetX + msToPixels(visualTime) - scrollLeft;
 
         // Only draw lines that are visible in the track area (not in lane label area)
         if (x < offsetX) {
@@ -2664,13 +2691,25 @@ function handleMouseMove(e) {
 
         const rect = track.getBoundingClientRect();
         const newX = e.clientX - rect.left - app.dragData.offsetX;
-        const newStart = Math.max(0, pixelsToMs(newX));
+        let newStart = Math.max(0, pixelsToMs(newX));
+
+        // In compression mode, convert visual position to actual time
+        if (Compression.enabled) {
+            newStart = Compression.compressedToActual(newStart);
+        }
 
         box.startOffset = Math.round(newStart);
 
+        // Invalidate compression cache after changing position, then get visual offset
+        if (Compression.enabled) {
+            Compression.invalidate();
+        }
+
+        // In compression mode, use visual offset for display; otherwise use actual
         const boxEl = document.querySelector(`.timeline-box[data-box-id="${box.id}"]`);
         if (boxEl) {
-            boxEl.style.left = `${msToPixels(box.startOffset)}px`;
+            const visualOffset = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            boxEl.style.left = `${msToPixels(visualOffset)}px`;
         }
         renderTimeMarkers();
         renderAlignmentMarkers();
@@ -2684,7 +2723,12 @@ function handleMouseMove(e) {
 
         const rect = track.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
-        const mouseMs = pixelsToMs(mouseX);
+        let mouseMs = pixelsToMs(mouseX);
+
+        // In compression mode, convert visual position to actual time
+        if (Compression.enabled) {
+            mouseMs = Compression.compressedToActual(mouseMs);
+        }
 
         if (app.dragData.side === 'right') {
             const newDuration = Math.max(50, mouseMs - box.startOffset);
@@ -2696,9 +2740,16 @@ function handleMouseMove(e) {
             box.duration = Math.round(endOffset - box.startOffset);
         }
 
+        // Invalidate compression cache after changing size/position, then get visual offset
+        if (Compression.enabled) {
+            Compression.invalidate();
+        }
+
         const boxEl = document.querySelector(`.timeline-box[data-box-id="${box.id}"]`);
         if (boxEl) {
-            boxEl.style.left = `${msToPixels(box.startOffset)}px`;
+            // In compression mode, use visual offset for display; otherwise use actual
+            const visualOffset = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            boxEl.style.left = `${msToPixels(visualOffset)}px`;
             boxEl.style.width = `${getBoxVisualWidth(box.duration)}px`;
 
             const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
@@ -2727,8 +2778,20 @@ function handleMouseUp(e) {
         if (dist > 5) {
             // Use the leftmost point as start (support right-to-left drag)
             const leftX = Math.min(endX, app.dragData.startX);
-            const startOffset = pixelsToMs(Math.max(0, leftX));
-            const duration = pixelsToMs(Math.max(dist, 20));
+            const rightX = Math.max(endX, app.dragData.startX);
+
+            // Convert visual positions to actual times (handles compression mode)
+            let actualStartMs = pixelsToMs(Math.max(0, leftX));
+            let actualEndMs = pixelsToMs(Math.max(0, rightX));
+
+            // In compression mode, convert visual positions to actual times
+            if (Compression.enabled) {
+                actualStartMs = Compression.compressedToActual(actualStartMs);
+                actualEndMs = Compression.compressedToActual(actualEndMs);
+            }
+
+            const startOffset = actualStartMs;
+            const duration = Math.max(actualEndMs - actualStartMs, 20);
 
             const box = app.diagram.addBox(
                 app.dragData.laneId,
@@ -2738,9 +2801,16 @@ function handleMouseUp(e) {
                 getAutoBoxColor(app.dragData.laneId)
             );
 
+            // Invalidate compression cache since gaps may have changed
+            if (Compression.enabled) {
+                Compression.invalidate();
+            }
+
+            renderTimelineRuler();
             renderLanesCanvas();
             renderTimeMarkers();
             updateTotalDuration();
+            Minimap.render();
 
             // Select the box (and open properties if auto-open is enabled)
             selectBox(box.id, true);
@@ -4562,7 +4632,10 @@ function init() {
             compressionSlider.value = value;
             compressionInput.value = value;
             if (Compression.enabled) {
+                Compression.invalidate(); // Clear cache before re-render
+                renderTimelineRuler();
                 renderLanesCanvas();
+                renderTimeMarkers();
                 Minimap.render();
             }
         };
