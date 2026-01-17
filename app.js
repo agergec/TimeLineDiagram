@@ -164,8 +164,8 @@ const app = {
     selectedBoxId: null,
     selectedLaneId: null,
     pixelsPerMs: 0.15, // Default scale: 0.15px per ms
-    minPixelsPerMs: 0.01,
-    maxPixelsPerMs: 2,
+    minPixelsPerMs: 0.001, // Allow extreme zoom out (0.67% - see entire timeline)
+    maxPixelsPerMs: 1000,  // Allow extreme zoom in (666,666% - sub-microsecond detail)
     isDragging: false,
     dragData: null,
     boxGap: 4, // Gap between boxes in pixels
@@ -1209,6 +1209,16 @@ function formatTime(ms) {
 function formatDuration(ms) {
     const threshold = app.settings.timeFormatThreshold;
 
+    // Handle sub-millisecond values (for extreme zoom)
+    if (ms < 1 && ms > 0) {
+        const us = ms * 1000; // Convert to microseconds
+        if (us < 1) {
+            const ns = us * 1000; // Convert to nanoseconds
+            return `${ns.toFixed(ns < 10 ? 1 : 0)}ns`;
+        }
+        return `${us.toFixed(us < 10 ? 1 : 0)}μs`;
+    }
+
     // If threshold is 0, always show ms
     if (threshold === 0) {
         return `${Math.round(ms)}ms`;
@@ -1227,6 +1237,21 @@ function formatDuration(ms) {
         return `${seconds}s`;
     }
     return `${Math.round(ms)}ms`;
+}
+
+/**
+ * Format zoom level as a readable percentage string
+ * Handles very large/small zoom levels gracefully
+ */
+function formatZoomLevel(pixelsPerMs) {
+    const percent = (pixelsPerMs / 0.15) * 100;
+    if (percent >= 10000) {
+        return `${(percent / 1000).toFixed(0)}k%`;
+    }
+    if (percent < 1) {
+        return `${percent.toFixed(1)}%`;
+    }
+    return `${Math.round(percent)}%`;
 }
 
 function msToPixels(ms) {
@@ -1482,9 +1507,20 @@ function renderTimelineRuler() {
 
     const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
 
-    // Calculate appropriate interval
+    // Calculate appropriate interval - extended for extreme zoom levels
+    // Includes sub-millisecond intervals for high zoom
     let interval = 100; // Start with 100ms
-    const intervals = [100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000];
+    const intervals = [
+        0.001, 0.002, 0.005,     // Microseconds (0.001ms = 1μs)
+        0.01, 0.02, 0.05,        // Tens of microseconds
+        0.1, 0.2, 0.5,           // Sub-millisecond
+        1, 2, 5,                 // Milliseconds
+        10, 20, 50,              // Tens of ms
+        100, 200, 500,           // Hundreds of ms
+        1000, 2000, 5000,        // Seconds
+        10000, 30000, 60000,     // Tens of seconds / minute
+        120000, 300000, 600000   // Minutes
+    ];
 
     for (const int of intervals) {
         const pixelsPerInterval = msToPixels(int);
@@ -1492,6 +1528,10 @@ function renderTimelineRuler() {
             interval = int;
             break;
         }
+    }
+    // Fallback for extreme zoom out
+    if (interval === 100 && msToPixels(600000) < 60) {
+        interval = 600000; // 10 minutes
     }
 
     // Match the lane-track extension: 50% padding beyond total duration
@@ -2503,8 +2543,7 @@ function handleZoom(direction) {
     app.pixelsPerMs = Math.max(app.minPixelsPerMs,
         Math.min(app.maxPixelsPerMs, app.pixelsPerMs * factor));
 
-    const zoomPercent = Math.round((app.pixelsPerMs / 0.15) * 100);
-    app.elements.zoomLevel.textContent = `${zoomPercent}%`;
+    app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
 
     renderLanesCanvas();
 
@@ -2526,8 +2565,7 @@ function handleZoomFit() {
     app.pixelsPerMs = Math.max(app.minPixelsPerMs,
         Math.min(app.maxPixelsPerMs, canvasWidth / (totalDuration * 1.1)));
 
-    const zoomPercent = Math.round((app.pixelsPerMs / 0.15) * 100);
-    app.elements.zoomLevel.textContent = `${zoomPercent}%`;
+    app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
 
     renderLanesCanvas();
 }
