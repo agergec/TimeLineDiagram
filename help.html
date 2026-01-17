@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timeline Diagram Editor - Tutorial</title>
+    <title>Timeline Diagram Editor - Help</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -385,8 +385,12 @@
             text-decoration: none;
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
+            .nav-sidebar {
+                display: none;
+            }
             .container {
+                margin-left: 0;
                 padding: 24px 16px 60px;
             }
 
@@ -413,15 +417,17 @@
         <ul class="nav-list">
             <li><a href="#quick-start" class="nav-link"><span class="nav-icon">🚀</span> Quick Start</a></li>
             <li><a href="#features" class="nav-link"><span class="nav-icon">✨</span> Features</a></li>
-            <li><a href="#lanes" class="nav-link"><span class="nav-icon">📊</span> Working with Lanes</a></li>
-            <li><a href="#boxes" class="nav-link"><span class="nav-icon">📦</span> Working with Boxes</a></li>
-            <li><a href="#time-display" class="nav-link"><span class="nav-icon">⏱️</span> Time & Display</a></li>
-            <li><a href="#auto-save" class="nav-link"><span class="nav-icon">💾</span> Auto-Save & My Diagrams</a></li>
+            <li><a href="#lanes" class="nav-link"><span class="nav-icon">📊</span> Lanes</a></li>
+            <li><a href="#boxes" class="nav-link"><span class="nav-icon">📦</span> Boxes</a></li>
+            <li><a href="#zoom-navigation" class="nav-link"><span class="nav-icon">🔍</span> Zoom & Navigation</a></li>
+            <li><a href="#compression" class="nav-link"><span class="nav-icon">⇄</span> Gap Compression</a></li>
+            <li><a href="#measurement" class="nav-link"><span class="nav-icon">📏</span> Measurement Tool</a></li>
+            <li><a href="#minimap" class="nav-link"><span class="nav-icon">🗺️</span> Minimap</a></li>
+            <li><a href="#sip-parser" class="nav-link"><span class="nav-icon">📞</span> SIP Log Parser</a></li>
+            <li><a href="#auto-save" class="nav-link"><span class="nav-icon">💾</span> Auto-Save</a></li>
             <li><a href="#sharing-export" class="nav-link"><span class="nav-icon">🔗</span> Sharing & Export</a></li>
             <li><a href="#settings" class="nav-link"><span class="nav-icon">⚙️</span> Settings</a></li>
-            <li><a href="#measurement" class="nav-link"><span class="nav-icon">📏</span> Measurement Tool</a></li>
             <li><a href="#keyboard" class="nav-link"><span class="nav-icon">⌨️</span> Keyboard Shortcuts</a></li>
-            <li><a href="#use-cases" class="nav-link"><span class="nav-icon">💼</span> Common Use Cases</a></li>
         </ul>
     </nav>
 
@@ -430,37 +436,37 @@
 
         <header>
             <h1>Timeline Diagram Editor</h1>
-            <p class="subtitle">Create beautiful timeline diagrams to visualize processes, API calls, and sequences</p>
+            <p class="subtitle">Visualize processes, API calls, SIP flows, and sequences with precision timing</p>
         </header>
 
         <!-- Quick Start -->
         <section id="quick-start">
             <h2><span class="icon">🚀</span> Quick Start</h2>
-            <p>Get your first diagram ready in under a minute:</p>
+            <p>Create your first diagram in four steps:</p>
 
             <ol class="step-list">
                 <li>
                     <div class="step-content">
                         <strong>Add Lanes</strong>
-                        Click the <kbd>+ Add</kbd> button in the sidebar to create lanes. Each lane represents a component, service, or actor in your diagram.
+                        Click <kbd class="kbd">+ Add</kbd> in the sidebar. Each lane represents a component, service, or actor.
                     </div>
                 </li>
                 <li>
                     <div class="step-content">
                         <strong>Create Boxes</strong>
-                        Click and drag on any lane track to create a time box. This represents an activity or event with a specific duration.
+                        Click and drag on any lane track. The horizontal distance determines the duration.
                     </div>
                 </li>
                 <li>
                     <div class="step-content">
-                        <strong>Customize</strong>
-                        Click on any box to select it and edit its properties: label, color, start time, and duration.
+                        <strong>Edit Properties</strong>
+                        Click a box to open the properties panel. Set the label, color, start time, and duration.
                     </div>
                 </li>
                 <li>
                     <div class="step-content">
                         <strong>Share or Export</strong>
-                        Click <kbd>Share</kbd> to copy a URL, or export as PNG/SVG for presentations and documentation.
+                        Click <kbd class="kbd">Share</kbd> to copy a URL, or export as PNG/SVG.
                     </div>
                 </li>
             </ol>
@@ -471,130 +477,268 @@
             <h2><span class="icon">✨</span> Features</h2>
 
             <div class="feature-grid">
-                <div class="feature-card" style="border: 2px solid #39FF14; background: rgba(57, 255, 20, 0.1);">
+                <div class="feature-card">
+                    <div class="icon">⇄</div>
+                    <h4>Gap Compression</h4>
+                    <p>Compress empty gaps to focus on activity periods</p>
+                </div>
+                <div class="feature-card">
                     <div class="icon">📏</div>
-                    <h4 style="color: #39FF14;">Measurement Tool</h4>
-                    <p>Measure time distances with snapping, pinning & export support</p>
+                    <h4>Measurement Tool</h4>
+                    <p>Measure time distances with snapping and pinning</p>
                 </div>
                 <div class="feature-card">
-                    <div class="icon">🎨</div>
-                    <h4>Smart Colors</h4>
-                    <p>Auto-assigned colors that contrast well between lanes and boxes</p>
+                    <div class="icon">🗺️</div>
+                    <h4>Minimap</h4>
+                    <p>Navigate large diagrams with a draggable overview</p>
                 </div>
                 <div class="feature-card">
-                    <div class="icon">📐</div>
-                    <h4>Alignment Lines</h4>
-                    <p>Vertical guides show where events start and end across lanes</p>
+                    <div class="icon">📞</div>
+                    <h4>SIP Parser</h4>
+                    <p>Import SIP call flow logs directly into diagrams</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🔗</div>
                     <h4>URL Sharing</h4>
-                    <p>Share diagrams instantly with a single URL link</p>
+                    <p>Share diagrams instantly with a single link</p>
                 </div>
                 <div class="feature-card">
-                    <div class="icon">📤</div>
-                    <h4>Export</h4>
-                    <p>Download as PNG or SVG for use anywhere</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">💾</div>
-                    <h4>Auto-Save</h4>
-                    <p>Never lose work—diagrams save automatically to browser storage</p>
+                    <div class="icon">🔍</div>
+                    <h4>Unlimited Zoom</h4>
+                    <p>Zoom from minutes down to microseconds</p>
                 </div>
             </div>
         </section>
 
-        <!-- Working with Lanes -->
+        <!-- Lanes -->
         <section id="lanes">
-            <h2><span class="icon">📊</span> Working with Lanes</h2>
+            <h2><span class="icon">📊</span> Lanes</h2>
 
-            <h3>Adding & Naming Lanes</h3>
-            <p>Lanes represent different components in your system—services, users, databases, or any logical grouping. Click <kbd>+ Add</kbd> to create a new lane, then click on its name in the sidebar to edit it.</p>
+            <h3>Adding Lanes</h3>
+            <p>Click <kbd class="kbd">+ Add</kbd> in the sidebar to create a new lane. Lanes represent components in your system: services, users, databases, or any logical grouping.</p>
+
+            <h3>Editing Lane Names</h3>
+            <p>Click the lane name in the sidebar list to edit it. Press <kbd class="kbd">Enter</kbd> to apply the change and exit editing. The name also appears in the lane properties panel when you select a box in that lane.</p>
 
             <h3>Reordering Lanes</h3>
-            <p>Use the up/down arrows that appear when hovering over a lane in the sidebar to change the order. You can also drag lanes to reorder them.</p>
+            <p>Drag lanes by the handle (⋮⋮) to reorder them. Alternatively, use the up/down arrows (↑ ↓) that appear on hover.</p>
+
+            <h3>Inserting Lanes</h3>
+            <p>Use the insert buttons (+↑ and +↓) to add a new lane above or below an existing lane.</p>
 
             <h3>Lane Colors</h3>
-            <p>Click on the colored square next to a lane name to open the color picker. All boxes in that lane will use variations of this base color.</p>
+            <p>Click the colored square next to a lane name to open the color picker. Boxes in that lane use variations of this base color.</p>
 
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>Use contrasting colors for adjacent lanes to make your diagram easier to read at a glance.</p>
-            </div>
+            <h3>Deleting Lanes</h3>
+            <p>Click the × button on a lane to delete it. A confirmation dialog appears showing how many boxes will be removed.</p>
         </section>
 
-        <!-- Working with Boxes -->
+        <!-- Boxes -->
         <section id="boxes">
-            <h2><span class="icon">📦</span> Working with Boxes</h2>
+            <h2><span class="icon">📦</span> Boxes</h2>
 
             <h3>Creating Boxes</h3>
-            <p>Click and drag horizontally on any lane track to create a new box. You can drag in either direction—left-to-right or right-to-left—and the box will be created correctly. The leftmost point becomes the start time, and the drag distance determines the duration.</p>
+            <p>Click and drag horizontally on any lane track. Drag left-to-right or right-to-left; the leftmost point becomes the start time.</p>
 
-            <h3>Editing Boxes</h3>
-            <p>Click on any box to select it and open the properties panel. You can edit:</p>
-            <ul>
-                <li><strong>Label</strong> — A name or description for the activity</li>
-                <li><strong>Color</strong> — Pick from the palette or use the color picker</li>
-                <li><strong>Start Time</strong> — When the activity begins (in milliseconds)</li>
-                <li><strong>Duration</strong> — How long the activity lasts</li>
-            </ul>
-
-            <h3>Resizing Boxes</h3>
-            <p>Hover over the left or right edge of a box until you see the resize cursor, then drag to adjust the start time or duration.</p>
+            <h3>Selecting Boxes</h3>
+            <p>Click a box to select it. The properties panel opens showing all editable fields.</p>
 
             <h3>Moving Boxes</h3>
-            <p>Drag a box horizontally to change its start time. The box will stay in its lane.</p>
+            <p>Drag a selected box horizontally to change its start time. The box remains in its lane.</p>
 
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>Use the "📍" button next to Start Time to pick the end time of another box—perfect for showing sequential activities.</p>
-            </div>
+            <h3>Resizing Boxes</h3>
+            <p>Hover over the left or right edge of a box until the resize cursor appears. Drag to adjust the start time (left edge) or duration (right edge).</p>
+
+            <h3>Box Properties</h3>
+            <table class="shortcut-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>Label</td>
+                    <td>Text displayed inside the box. Shows as tooltip when box is too narrow.</td>
+                </tr>
+                <tr>
+                    <td>Color</td>
+                    <td>Box color. Click palette colors or use the color picker.</td>
+                </tr>
+                <tr>
+                    <td>Start Time</td>
+                    <td>Offset from diagram start time in milliseconds.</td>
+                </tr>
+                <tr>
+                    <td>Duration</td>
+                    <td>Box length in milliseconds.</td>
+                </tr>
+            </table>
+
+            <h3>Pick Mode</h3>
+            <p>Click the 📍 button next to Start Time in the properties panel to enter pick mode. Click any box to set the start time to that box's end time. This creates sequential activities.</p>
+
+            <h3>Deleting Boxes</h3>
+            <p>Select a box and press <kbd class="kbd">Delete</kbd> or <kbd class="kbd">Backspace</kbd>. Alternatively, click the delete button in the properties panel.</p>
         </section>
 
-        <!-- Time & Display -->
-        <section id="time-display">
-            <h2><span class="icon">⏱️</span> Time & Display</h2>
-
-            <h3>Start Time</h3>
-            <p>The "Start Time" in the header sets the absolute time reference. All box times are offsets from this point. Use format: <kbd>HH:MM:SS sss</kbd> (e.g., "14:30:00 000").</p>
+        <!-- Zoom & Navigation -->
+        <section id="zoom-navigation">
+            <h2><span class="icon">🔍</span> Zoom & Navigation</h2>
 
             <h3>Zoom Controls</h3>
-            <p>Use the <kbd>−</kbd> and <kbd>+</kbd> buttons to zoom in/out. Click <kbd>Fit</kbd> to automatically fit the entire diagram in view.</p>
+            <p>Located in the top toolbar:</p>
+            <ul>
+                <li><kbd class="kbd">−</kbd> Zoom out (wider time range)</li>
+                <li><kbd class="kbd">+</kbd> Zoom in (narrower time range, more detail)</li>
+                <li><kbd class="kbd">Fit</kbd> Automatically fit the entire diagram in view</li>
+            </ul>
 
-            <h3>Time Markers</h3>
-            <p>The bottom area shows time markers for all box start (S:) and end (E:) points, color-coded to match their boxes.</p>
+            <h3>Zoom Range</h3>
+            <p>Zoom from 1% to 666,666%. At high zoom levels, the ruler displays microseconds (μs) and nanoseconds (ns) for sub-millisecond precision.</p>
 
-            <h3>Time Format</h3>
-            <p>Open Settings (⚙️) to configure when times switch from milliseconds to seconds/minutes display.</p>
+            <h3>Scrolling</h3>
+            <p>Scroll horizontally to navigate the timeline. The ruler, lanes, and time markers scroll together in sync.</p>
+
+            <h3>Viewport Centering</h3>
+            <p>When zooming, the viewport stays centered on the visible content. This maintains your focus point during zoom operations.</p>
         </section>
 
-        <!-- Auto-Save & Diagrams -->
+        <!-- Gap Compression -->
+        <section id="compression">
+            <h2><span class="icon">⇄</span> Gap Compression</h2>
+
+            <h3>What It Does</h3>
+            <p>Gap compression removes empty time periods where no boxes exist across all lanes. This brings activity periods closer together, making the diagram more compact and readable.</p>
+
+            <h3>Enabling Compression</h3>
+            <p>Click the <kbd class="kbd">⇄</kbd> button in the top toolbar (next to zoom controls). The button highlights when compression is active.</p>
+
+            <h3>How It Works</h3>
+            <ul>
+                <li>Gaps larger than the compression threshold (default: 500ms) are compressed</li>
+                <li>Compressed gaps are marked with orange striped indicators showing how much time was hidden</li>
+                <li>Boxes maintain their relative positions and actual durations</li>
+            </ul>
+
+            <h3>Ruler Display (Hybrid Mode)</h3>
+            <p>The time ruler shows actual time values at compressed positions. Break markers (≋) indicate where gaps were compressed. Hover over a break marker to see the original time range.</p>
+
+            <h3>Measurement in Compressed Mode</h3>
+            <p>The measurement tool displays actual time values, not compressed values. Measuring between two points shows the real time difference including any compressed gaps.</p>
+
+            <h3>Compression Threshold</h3>
+            <p>Open Settings (⚙️) and adjust the "Gap Compression Threshold" slider. Gaps smaller than this value remain uncompressed.</p>
+        </section>
+
+        <!-- Measurement Tool -->
+        <section id="measurement">
+            <h2><span class="icon">📏</span> Measurement Tool</h2>
+
+            <h3>Activating the Tool</h3>
+            <p>Two methods:</p>
+            <ul>
+                <li>Hold <kbd class="kbd">Cmd</kbd> (Mac) or <kbd class="kbd">Ctrl</kbd> (Windows/Linux) and click-drag on the canvas</li>
+                <li>Click the 📏 button in the toolbar to toggle measurement mode, then click-drag</li>
+            </ul>
+
+            <h3>Measuring</h3>
+            <p>Click and drag between two points. A green line with arrow markers shows the measurement. The info box displays:</p>
+            <ul>
+                <li><strong>Duration</strong>: Time difference between the two points</li>
+                <li><strong>Start</strong>: Time offset of the start point</li>
+                <li><strong>End</strong>: Time offset of the end point</li>
+            </ul>
+
+            <h3>Snapping</h3>
+            <p>The measurement endpoints snap to box edges within 8 pixels. This enables precise measurements between box start/end points.</p>
+
+            <h3>Pinning Measurements</h3>
+            <p>Click the 📌 button in the info box to pin the measurement. Pinned measurements:</p>
+            <ul>
+                <li>Stay visible until unpinned or closed</li>
+                <li>Display a glowing green border</li>
+                <li>Are included in PNG and SVG exports</li>
+            </ul>
+
+            <h3>Closing Measurements</h3>
+            <p>Click × in the info box, or press <kbd class="kbd">Escape</kbd>. Unpinned measurements fade after 2 seconds.</p>
+        </section>
+
+        <!-- Minimap -->
+        <section id="minimap">
+            <h2><span class="icon">🗺️</span> Minimap</h2>
+
+            <h3>Location</h3>
+            <p>The minimap appears in the footer area below the lanes canvas.</p>
+
+            <h3>What It Shows</h3>
+            <p>A compressed overview of all boxes in the diagram. Each box appears as a colored rectangle. The viewport indicator (highlighted rectangle) shows the currently visible portion of the timeline.</p>
+
+            <h3>Click Navigation</h3>
+            <p>Click anywhere on the minimap to jump to that position in the timeline.</p>
+
+            <h3>Drag Navigation</h3>
+            <p>Drag the viewport indicator left or right to scroll through the timeline. This provides smooth navigation for large diagrams.</p>
+
+            <h3>Compression Indicators</h3>
+            <p>When gap compression is enabled, the minimap shows orange markers at compressed gap positions.</p>
+        </section>
+
+        <!-- SIP Log Parser -->
+        <section id="sip-parser">
+            <h2><span class="icon">📞</span> SIP Log Parser</h2>
+
+            <h3>Accessing the Parser</h3>
+            <p>Click the <kbd class="kbd">SIP</kbd> button in the top toolbar to open the SIP Log Parser page.</p>
+
+            <h3>Supported Log Formats</h3>
+            <p>The parser recognizes three types of log entries:</p>
+            <ul>
+                <li><strong>SIP Messages</strong>: Lines containing "Outgoing SIP" or "Incoming SIP" with method names (INVITE, BYE, etc.)</li>
+                <li><strong>Events</strong>: Lines starting with "Event*" (outgoing direction)</li>
+                <li><strong>Requests</strong>: Lines starting with "Request*" (incoming direction)</li>
+            </ul>
+
+            <h3>Parsing Process</h3>
+            <ol>
+                <li>Paste your SIP log into the text area</li>
+                <li>Click <kbd class="kbd">Parse Logs</kbd></li>
+                <li>The grid displays all parsed messages with timestamp, type, direction, CID, method, from/to headers</li>
+                <li>Delta time between messages with the same reference ID is calculated automatically</li>
+            </ol>
+
+            <h3>Filtering</h3>
+            <ul>
+                <li><strong>Toggle SIP</strong>: Show or hide SIP messages</li>
+                <li><strong>Toggle Events/Requests</strong>: Show or hide Event and Request entries</li>
+                <li><strong>CID Filters</strong>: Click individual CID buttons to show only specific call IDs</li>
+            </ul>
+
+            <h3>Generating Diagrams</h3>
+            <p>Click <kbd class="kbd">Generate Diagram</kbd> to create a timeline diagram from the filtered messages. Each unique CID becomes a separate lane. The lane name includes the CID and from/to header values.</p>
+        </section>
+
+        <!-- Auto-Save -->
         <section id="auto-save">
             <h2><span class="icon">💾</span> Auto-Save & My Diagrams</h2>
 
             <h3>Automatic Saving</h3>
-            <p>Your work is automatically saved to your browser's local storage as you make changes. You'll never lose work due to accidental page refresh or browser closure.</p>
-
-            <div class="tip">
-                <div class="tip-title">💡 Good to Know</div>
-                <p>Auto-save happens within 1 second of any change. The most recent 10 diagrams are kept in storage.</p>
-            </div>
+            <p>Changes save automatically to browser local storage within 1 second. Refreshing the page or closing the browser preserves your work.</p>
 
             <h3>My Diagrams Panel</h3>
-            <p>Click the "📁 My Diagrams" header in the sidebar to expand the panel. Here you can:</p>
+            <p>Click "📁 My Diagrams" in the sidebar to expand the diagram list. Actions:</p>
             <ul>
-                <li><strong>Switch diagrams</strong> — Click any diagram to load it</li>
-                <li><strong>Create new</strong> — Click "+ New Diagram" to start fresh</li>
-                <li><strong>Lock/Unlock</strong> — Hover over a diagram's control menu (⋮) and click the lock icon (🔒/🔓) to protect it from edits or purging</li>
-                <li><strong>Reset</strong> — Hover and click ↺ to clear all lanes and boxes but keep the diagram slot</li>
-                <li><strong>Delete</strong> — Hover and click × to remove a diagram</li>
+                <li><strong>Click diagram</strong>: Load that diagram</li>
+                <li><strong>+ New Diagram</strong>: Create a blank diagram</li>
+                <li><strong>🔒 Lock</strong>: Protect from edits and purging</li>
+                <li><strong>↺ Reset</strong>: Clear all lanes and boxes</li>
+                <li><strong>× Delete</strong>: Remove the diagram</li>
             </ul>
-            <p>The currently active diagram is highlighted. Each entry shows the title and when it was last modified. Locked diagrams display a 🔒 icon next to their title.</p>
 
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>Lock important diagrams to prevent accidental edits or deletion. Locked diagrams cannot be modified and are skipped during the purge operation.</p>
-            </div>
+            <h3>Locking Diagrams</h3>
+            <p>Locked diagrams cannot be edited, reset, or deleted. The lock icon (🔒) appears next to locked diagram titles. Locked diagrams survive the purge operation.</p>
+
+            <h3>Storage Limit</h3>
+            <p>The 10 most recent diagrams are kept. Older unlocked diagrams may be automatically removed when the limit is reached.</p>
         </section>
 
         <!-- Sharing & Export -->
@@ -602,39 +746,26 @@
             <h2><span class="icon">🔗</span> Sharing & Export</h2>
 
             <h3>URL Sharing</h3>
-            <p>Click <kbd>Share</kbd> to copy a URL that contains your entire diagram. Anyone with this link can view and edit a copy of your diagram. Perfect for:</p>
-            <ul>
-                <li>Sharing with teammates via Slack, email, or documentation</li>
-                <li>Embedding in wikis or issue trackers</li>
-                <li>Saving bookmarks of different diagram versions</li>
-            </ul>
+            <p>Click <kbd class="kbd">Share</kbd> to copy a URL containing the entire diagram. Recipients can view and edit their own copy. The shared diagram saves to their "My Diagrams" list automatically.</p>
 
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>When you open a shared URL, the diagram is automatically saved as a new entry in your "My Diagrams" list.</p>
-            </div>
-
-            <div class="warning tip">
-                <div class="tip-title">⚠️ Note</div>
-                <p>Very large diagrams may exceed URL length limits. Use Save/Load for complex diagrams.</p>
+            <div class="tip warning">
+                <div class="tip-title">⚠️ URL Length Limits</div>
+                <p>Large diagrams may exceed browser URL limits. Use Save/Load for complex diagrams.</p>
             </div>
 
             <h3>Save & Load (JSON)</h3>
-            <p>Click <kbd>Save</kbd> to download your diagram as a JSON file. Use <kbd>Load</kbd> to import from a saved file. This is best for:</p>
             <ul>
-                <li>Backing up your work externally</li>
-                <li>Storing diagrams in version control</li>
-                <li>Large diagrams that exceed URL limits</li>
-                <li>Transferring diagrams between browsers/devices</li>
+                <li><kbd class="kbd">Save</kbd>: Download the diagram as a JSON file</li>
+                <li><kbd class="kbd">Load</kbd>: Import a saved JSON file as a new diagram</li>
             </ul>
-
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>Loading a JSON file always creates a new diagram—your current work is never overwritten. The imported diagram appears as a new entry in "My Diagrams".</p>
-            </div>
+            <p>Loading always creates a new diagram; existing work is never overwritten.</p>
 
             <h3>Export as Image</h3>
-            <p><kbd>PNG</kbd> creates a high-quality raster image. <kbd>SVG</kbd> creates a scalable vector image. Both include the full diagram with title, time markers, and branding.</p>
+            <ul>
+                <li><kbd class="kbd">PNG</kbd>: High-quality raster image</li>
+                <li><kbd class="kbd">SVG</kbd>: Scalable vector image</li>
+            </ul>
+            <p>Exports include the title, all lanes, boxes, time markers, and any pinned measurements.</p>
         </section>
 
         <!-- Settings -->
@@ -649,82 +780,37 @@
                 </tr>
                 <tr>
                     <td>Page Title</td>
-                    <td>The diagram title shown in header and exports</td>
+                    <td>Diagram title shown in header and exports</td>
                 </tr>
                 <tr>
                     <td>Time Format Threshold</td>
-                    <td>When to switch from "ms" to "s" or "m" display</td>
+                    <td>Millisecond threshold for switching to seconds/minutes display</td>
                 </tr>
                 <tr>
                     <td>Show Alignment Lines</td>
-                    <td>Toggle vertical dashed lines at box start/end times</td>
+                    <td>Vertical dashed lines at box start/end times</td>
                 </tr>
                 <tr>
                     <td>Show Box Labels</td>
-                    <td>Display persistent labels above narrow boxes for better readability</td>
+                    <td>Persistent labels above narrow boxes</td>
+                </tr>
+                <tr>
+                    <td>Auto-Open Box Properties</td>
+                    <td>Open properties panel when creating new boxes</td>
+                </tr>
+                <tr>
+                    <td>Trailing Space</td>
+                    <td>Extra timeline space after the last box (in milliseconds)</td>
+                </tr>
+                <tr>
+                    <td>Gap Compression Threshold</td>
+                    <td>Minimum gap size to compress (in milliseconds)</td>
                 </tr>
                 <tr>
                     <td>Purge Application</td>
-                    <td>Delete all unlocked diagrams and reset settings (locked diagrams are preserved)</td>
+                    <td>Delete all unlocked diagrams and reset settings</td>
                 </tr>
             </table>
-        </section>
-
-        <!-- Measurement Tool -->
-        <section id="measurement" style="border: 2px solid #39FF14; box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);">
-            <h2><span class="icon">📏</span> Measurement Tool</h2>
-
-            <p>The measurement tool lets you precisely measure time distances between any two points on your diagram. It features <strong style="color: #39FF14;">smart snapping</strong> to box edges, <strong style="color: #39FF14;">pinning</strong> for persistent display, and <strong style="color: #39FF14;">export support</strong>.</p>
-
-            <h3>How to Use</h3>
-            <ol class="step-list">
-                <li>
-                    <div class="step-content">
-                        <strong>Activate</strong>
-                        Hold <kbd>Cmd</kbd> (Mac) or <kbd>Ctrl</kbd> (Windows/Linux) and left-click on the diagram canvas.
-                    </div>
-                </li>
-                <li>
-                    <div class="step-content">
-                        <strong>Drag to Measure</strong>
-                        While holding the mouse button, drag to your second point. A <span style="color: #39FF14; font-weight: 600;">phosphorus green</span> line shows the measurement with elegant <code>|------>|</code> markers.
-                    </div>
-                </li>
-                <li>
-                    <div class="step-content">
-                        <strong>Read Results</strong>
-                        The info box displays duration, start time, and end time of the measured range.
-                    </div>
-                </li>
-                <li>
-                    <div class="step-content">
-                        <strong>Pin or Close</strong>
-                        Click 📌 to pin the measurement and keep it visible, or × to close immediately. Unpinned measurements fade after 2 seconds.
-                    </div>
-                </li>
-            </ol>
-
-            <h3 style="color: #39FF14;">✨ Smart Snapping</h3>
-            <p>The measurement tool automatically <strong>snaps to vertical alignment lines</strong>—the start and end points of boxes. When your cursor is within 8 pixels of a box edge, it snaps to that exact position, making it easy to measure precise distances between events.</p>
-
-            <h3 style="color: #39FF14;">📌 Pin & Export</h3>
-            <p>When you pin a measurement:</p>
-            <ul>
-                <li>The measurement stays visible until you unpin or close it</li>
-                <li>The info box gets a glowing green border</li>
-                <li><strong>Pinned measurements are included in PNG and SVG exports!</strong></li>
-            </ul>
-            <p>This is perfect for highlighting specific time intervals in your exported diagrams or presentations.</p>
-
-            <div class="tip">
-                <div class="tip-title">💡 Pro Tip</div>
-                <p>Use pinned measurements to annotate your exports—show the gap between API call and response, highlight a critical time window, or compare durations across lanes.</p>
-            </div>
-
-            <div class="tip warning">
-                <div class="tip-title">⚠️ Note</div>
-                <p>Creating boxes is disabled while measuring. Release the mouse and ensure you're not holding Cmd/Ctrl to resume normal editing.</p>
-            </div>
         </section>
 
         <!-- Keyboard Shortcuts -->
@@ -733,59 +819,43 @@
 
             <table class="shortcut-table">
                 <tr>
-                    <th>Key / Action</th>
-                    <th>Description</th>
-                </tr>
-                <tr style="background: rgba(57, 255, 20, 0.1);">
-                    <td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + Left Click + Drag</td>
-                    <td>Activate measurement tool and measure distance</td>
+                    <th>Shortcut</th>
+                    <th>Action</th>
                 </tr>
                 <tr>
-                    <td>📌 button (in measurement info box)</td>
-                    <td>Pin measurement to keep visible and include in exports</td>
+                    <td><span class="kbd">Cmd</span>/<span class="kbd">Ctrl</span> + Click + Drag</td>
+                    <td>Activate measurement tool</td>
                 </tr>
                 <tr>
-                    <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+                    <td><span class="kbd">Delete</span> / <span class="kbd">Backspace</span></td>
                     <td>Delete selected box</td>
                 </tr>
                 <tr>
-                    <td><kbd>Escape</kbd></td>
-                    <td>Deselect box / Cancel measurement / Close panel</td>
+                    <td><span class="kbd">Escape</span></td>
+                    <td>Deselect box, cancel measurement, close panel</td>
+                </tr>
+                <tr>
+                    <td><span class="kbd">Enter</span></td>
+                    <td>Apply and exit text field editing</td>
                 </tr>
             </table>
-        </section>
-
-        <!-- Use Cases -->
-        <section id="use-cases">
-            <h2><span class="icon">💼</span> Common Use Cases</h2>
-
-            <h3>API Call Flows</h3>
-            <p>Visualize the timing of requests between frontend, backend, databases, and external services. Great for debugging latency issues.</p>
-
-            <h3>Process Documentation</h3>
-            <p>Document business processes showing which departments or systems are involved at each stage.</p>
-
-            <h3>Performance Analysis</h3>
-            <p>Map out where time is spent in a request lifecycle to identify bottlenecks.</p>
-
-            <h3>System Architecture</h3>
-            <p>Show the sequence of operations in distributed systems, microservices, or event-driven architectures.</p>
         </section>
 
         <!-- CTA -->
         <section class="cta-section">
             <h2>Ready to Create?</h2>
-            <p style="margin-bottom: 24px;">Start building your timeline diagram now!</p>
+            <p style="margin-bottom: 24px;">Start building your timeline diagram now.</p>
             <a href="index.html" class="cta-btn">
                 Open Editor →
             </a>
         </section>
 
         <footer>
-            <p>Made by UCS with 💙</p>
+            <p>Made by UCS</p>
             <p style="margin-top: 8px;">
                 <a href="index.html">Editor</a> ·
-                <a href="help.html">Tutorial</a>
+                <a href="sip-parser.html">SIP Parser</a> ·
+                <a href="help.html">Help</a>
             </p>
         </footer>
     </div>
@@ -799,7 +869,6 @@
                 const targetSection = document.getElementById(targetId);
                 if (targetSection) {
                     targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    // Update active link
                     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
                     link.classList.add('active');
                 }
@@ -814,7 +883,6 @@
             let current = '';
             sections.forEach(section => {
                 const sectionTop = section.offsetTop;
-                const sectionHeight = section.clientHeight;
                 if (window.pageYOffset >= sectionTop - 100) {
                     current = section.getAttribute('id');
                 }
@@ -829,7 +897,7 @@
         }
 
         window.addEventListener('scroll', highlightNav);
-        highlightNav(); // Initial highlight
+        highlightNav();
     </script>
 </body>
 
