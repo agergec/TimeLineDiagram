@@ -186,9 +186,265 @@ const app = {
         autoOpenBoxProperties: false // Auto-open box properties panel after creating a new box
     },
 
+    // Duration scaling settings (for PoC - can be removed if not needed)
+    durationScaling: {
+        enabled: false,
+        mode: 'none', // 'none', 'floor', 'logarithmic', 'compression', 'minWidth'
+        // Mode A: Floor - treat all durations as at least this value (ms)
+        floorValue: 100,
+        // Mode B: Logarithmic - log scale with base factor
+        logBase: 10,
+        logMinDuration: 10, // Minimum duration for log calculation
+        // Mode C: Linear Compression - compress range to [minVisual, maxVisual]
+        compressionFactor: 0.5, // 0 = full compression, 1 = linear (no compression)
+        // Mode D: Minimum Width - minimum box width in pixels (overrides the default 20px)
+        minWidthPx: 20
+    },
+
     // DOM Elements
     elements: {}
 };
+
+// =====================================================
+// Duration Scaling Module (PoC - Removable)
+// =====================================================
+// This module provides 4 different scaling algorithms to make small duration
+// boxes more visible. Each can be enabled/disabled independently.
+
+const DurationScaling = {
+    /**
+     * Get the visual duration for a box based on current scaling mode
+     * @param {number} actualDuration - The real duration in ms
+     * @returns {number} - The visual duration to use for rendering
+     */
+    getVisualDuration(actualDuration) {
+        const config = app.durationScaling;
+        if (!config.enabled || config.mode === 'none') {
+            return actualDuration;
+        }
+
+        switch (config.mode) {
+            case 'floor':
+                return this.applyFloor(actualDuration);
+            case 'logarithmic':
+                return this.applyLogarithmic(actualDuration);
+            case 'compression':
+                return this.applyCompression(actualDuration);
+            default:
+                return actualDuration;
+        }
+    },
+
+    /**
+     * Mode A: Duration Floor
+     * Treats all durations as at least the floor value
+     * Simple and predictable - boxes under threshold appear same size
+     */
+    applyFloor(duration) {
+        return Math.max(duration, app.durationScaling.floorValue);
+    },
+
+    /**
+     * Mode B: Logarithmic Scale
+     * Compresses large durations, expands small ones
+     * Formula: visualDuration = minDuration * (1 + log(1 + duration/minDuration) * scaleFactor)
+     */
+    applyLogarithmic(duration) {
+        const { logBase, logMinDuration } = app.durationScaling;
+        if (duration <= 0) return logMinDuration;
+
+        // Logarithmic scaling: smaller values get proportionally larger boost
+        const logValue = Math.log(1 + duration / logMinDuration) / Math.log(logBase);
+        return logMinDuration * (1 + logValue * (logBase - 1));
+    },
+
+    /**
+     * Mode C: Linear Compression
+     * Reduces the visual range between small and large durations
+     * Formula: visualDuration = minDuration + (duration - minDuration) * compressionFactor
+     */
+    applyCompression(duration) {
+        const { compressionFactor } = app.durationScaling;
+        const boxes = app.diagram?.boxes || [];
+        if (boxes.length === 0) return duration;
+
+        // Find min/max durations in current diagram
+        const durations = boxes.map(b => b.duration).filter(d => d > 0);
+        if (durations.length === 0) return duration;
+
+        const minDuration = Math.min(...durations);
+        const maxDuration = Math.max(...durations);
+
+        if (maxDuration === minDuration) return duration;
+
+        // Compress the range: small boxes get boosted, large boxes get reduced
+        // compressionFactor: 0 = all same size, 1 = linear (no change)
+        const normalized = (duration - minDuration) / (maxDuration - minDuration);
+        const compressed = Math.pow(normalized, compressionFactor);
+        return minDuration + compressed * (maxDuration - minDuration);
+    },
+
+    /**
+     * Mode D: Minimum Width
+     * Simply returns a larger minimum pixel width for boxes
+     * This is applied at render time, not to duration
+     */
+    getMinBoxWidth() {
+        const config = app.durationScaling;
+        if (config.enabled && config.mode === 'minWidth') {
+            return config.minWidthPx;
+        }
+        return 20; // Default minimum
+    },
+
+    /**
+     * Get display info for current scaling mode
+     */
+    getModeInfo() {
+        const config = app.durationScaling;
+        const modes = {
+            'none': { name: 'None', description: 'No scaling applied' },
+            'floor': { name: 'Duration Floor', description: `Min visual duration: ${config.floorValue}ms` },
+            'logarithmic': { name: 'Logarithmic', description: `Log base ${config.logBase}, min ${config.logMinDuration}ms` },
+            'compression': { name: 'Compression', description: `Factor: ${config.compressionFactor}` },
+            'minWidth': { name: 'Min Width', description: `Min box width: ${config.minWidthPx}px` }
+        };
+        return modes[config.mode] || modes['none'];
+    }
+};
+
+// =====================================================
+// Duration Scaling UI Handlers (PoC - Removable)
+// =====================================================
+
+function initDurationScalingUI() {
+    const enabledCheckbox = document.getElementById('config-scaling-enabled');
+    const modeSelect = document.getElementById('config-scaling-mode');
+    const scalingOptions = document.getElementById('scaling-options');
+
+    if (!enabledCheckbox || !modeSelect) return;
+
+    // Enable/Disable toggle
+    enabledCheckbox.addEventListener('change', () => {
+        app.durationScaling.enabled = enabledCheckbox.checked;
+        if (scalingOptions) {
+            scalingOptions.classList.toggle('hidden', !enabledCheckbox.checked);
+        }
+        if (enabledCheckbox.checked) {
+            app.durationScaling.mode = modeSelect.value;
+        }
+        updateScalingModeInfo();
+        renderLanesCanvas();
+    });
+
+    // Mode selection
+    modeSelect.addEventListener('change', () => {
+        app.durationScaling.mode = modeSelect.value;
+        updateScalingModeOptions();
+        updateScalingModeInfo();
+        renderLanesCanvas();
+    });
+
+    // Mode A: Floor controls
+    const floorSlider = document.getElementById('config-floor-slider');
+    const floorValue = document.getElementById('config-floor-value');
+    if (floorSlider && floorValue) {
+        const syncFloor = (value) => {
+            app.durationScaling.floorValue = parseInt(value, 10);
+            floorSlider.value = value;
+            floorValue.value = value;
+            updateScalingModeInfo();
+            renderLanesCanvas();
+        };
+        floorSlider.addEventListener('input', () => syncFloor(floorSlider.value));
+        floorValue.addEventListener('change', () => syncFloor(floorValue.value));
+    }
+
+    // Mode B: Logarithmic controls
+    const logBaseSlider = document.getElementById('config-log-base-slider');
+    const logBase = document.getElementById('config-log-base');
+    const logMin = document.getElementById('config-log-min');
+    if (logBaseSlider && logBase) {
+        const syncLogBase = (value) => {
+            app.durationScaling.logBase = parseInt(value, 10);
+            logBaseSlider.value = value;
+            logBase.value = value;
+            updateScalingModeInfo();
+            renderLanesCanvas();
+        };
+        logBaseSlider.addEventListener('input', () => syncLogBase(logBaseSlider.value));
+        logBase.addEventListener('change', () => syncLogBase(logBase.value));
+    }
+    if (logMin) {
+        logMin.addEventListener('change', () => {
+            app.durationScaling.logMinDuration = parseInt(logMin.value, 10);
+            updateScalingModeInfo();
+            renderLanesCanvas();
+        });
+    }
+
+    // Mode C: Compression controls
+    const compressionSlider = document.getElementById('config-compression-slider');
+    const compressionFactor = document.getElementById('config-compression-factor');
+    if (compressionSlider && compressionFactor) {
+        const syncCompression = (value) => {
+            app.durationScaling.compressionFactor = parseFloat(value);
+            compressionSlider.value = value;
+            compressionFactor.value = value;
+            updateScalingModeInfo();
+            renderLanesCanvas();
+        };
+        compressionSlider.addEventListener('input', () => syncCompression(compressionSlider.value));
+        compressionFactor.addEventListener('change', () => syncCompression(compressionFactor.value));
+    }
+
+    // Mode D: Min Width controls
+    const minWidthSlider = document.getElementById('config-minwidth-slider');
+    const minWidth = document.getElementById('config-min-width');
+    if (minWidthSlider && minWidth) {
+        const syncMinWidth = (value) => {
+            app.durationScaling.minWidthPx = parseInt(value, 10);
+            minWidthSlider.value = value;
+            minWidth.value = value;
+            updateScalingModeInfo();
+            renderLanesCanvas();
+        };
+        minWidthSlider.addEventListener('input', () => syncMinWidth(minWidthSlider.value));
+        minWidth.addEventListener('change', () => syncMinWidth(minWidth.value));
+    }
+
+    // Initialize UI state
+    updateScalingModeOptions();
+    updateScalingModeInfo();
+}
+
+function updateScalingModeOptions() {
+    const mode = app.durationScaling.mode;
+    const allOpts = document.querySelectorAll('.scaling-mode-opts');
+    allOpts.forEach(el => el.classList.add('hidden'));
+
+    const optMap = {
+        'floor': 'scaling-floor-opts',
+        'logarithmic': 'scaling-log-opts',
+        'compression': 'scaling-compression-opts',
+        'minWidth': 'scaling-minwidth-opts'
+    };
+
+    const activeOpt = document.getElementById(optMap[mode]);
+    if (activeOpt) {
+        activeOpt.classList.remove('hidden');
+    }
+}
+
+function updateScalingModeInfo() {
+    const infoEl = document.getElementById('scaling-mode-info');
+    if (infoEl) {
+        const info = DurationScaling.getModeInfo();
+        infoEl.textContent = app.durationScaling.enabled
+            ? `${info.name} - ${info.description}`
+            : 'Disabled';
+    }
+}
 
 // Color palette reordered to maximize difference between adjacent lanes
 // Original: Red, Pink, Purple, Deep Purple, Indigo, Blue, Light Blue, Cyan,
@@ -981,6 +1237,17 @@ function pixelsToMs(px) {
     return px / app.pixelsPerMs;
 }
 
+/**
+ * Calculate the visual width of a box, applying duration scaling if enabled
+ * @param {number} duration - The actual duration in ms
+ * @returns {number} - The width in pixels
+ */
+function getBoxVisualWidth(duration) {
+    const visualDuration = DurationScaling.getVisualDuration(duration);
+    const minWidth = DurationScaling.getMinBoxWidth();
+    return Math.max(msToPixels(visualDuration), minWidth);
+}
+
 function getContrastColor(hexColor) {
     // Convert hex to RGB
     const r = parseInt(hexColor.slice(1, 3), 16);
@@ -1304,7 +1571,7 @@ function createBoxElement(box) {
     el.dataset.boxId = box.id;
 
     const left = msToPixels(box.startOffset);
-    const width = Math.max(msToPixels(box.duration), 20); // Minimum width of 20px
+    const width = getBoxVisualWidth(box.duration); // Apply duration scaling
 
     el.style.left = `${left}px`;
     el.style.width = `${width}px`;
@@ -1855,7 +2122,7 @@ function handleMouseMove(e) {
         const boxEl = document.querySelector(`.timeline-box[data-box-id="${box.id}"]`);
         if (boxEl) {
             boxEl.style.left = `${msToPixels(box.startOffset)}px`;
-            boxEl.style.width = `${Math.max(msToPixels(box.duration), 20)}px`;
+            boxEl.style.width = `${getBoxVisualWidth(box.duration)}px`;
 
             const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
             const labelEl = boxEl.querySelector('.box-label');
@@ -2676,7 +2943,7 @@ function exportToPNG() {
         laneBoxes.forEach(box => {
             const bx = laneLabelWidth + msToPixels(box.startOffset);
             const by = y + 6;
-            const bw = Math.max(msToPixels(box.duration), 20);
+            const bw = getBoxVisualWidth(box.duration);
             const bh = laneHeight - 12;
 
             ctx.fillStyle = box.color;
@@ -3031,7 +3298,7 @@ function exportToSVG() {
         laneBoxes.forEach(box => {
             const bx = Math.round(laneLabelWidth + msToPixels(box.startOffset));
             const by = y + 6;
-            const bw = Math.max(Math.round(msToPixels(box.duration)), 20);
+            const bw = Math.round(getBoxVisualWidth(box.duration));
             const bh = laneHeight - 12;
             const textColor = getContrastColor(box.color);
             const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
@@ -3637,6 +3904,9 @@ function init() {
     if (autoOpenCheckbox) {
         autoOpenCheckbox.addEventListener('change', handleSettingsChange);
     }
+
+    // Duration Scaling controls (PoC - Removable)
+    initDurationScalingUI();
 
     // Also sync header title input changes to settings
     app.elements.diagramTitle.addEventListener('input', (e) => {

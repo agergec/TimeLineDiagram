@@ -1237,6 +1237,100 @@ body.show-box-labels .lane-row {
 }
 
 /* =====================================================
+   Duration Scaling Controls (PoC - Removable)
+   ===================================================== */
+.scaling-options {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.scaling-options.hidden {
+    display: none;
+}
+
+.scaling-mode-opts {
+    margin-top: var(--spacing-sm);
+}
+
+.scaling-mode-opts.hidden {
+    display: none;
+}
+
+.input-with-unit {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.input-with-unit input[type="range"] {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    appearance: none;
+    cursor: pointer;
+}
+
+.input-with-unit input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.input-with-unit input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.input-with-unit input[type="number"] {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 4px 8px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.input-with-unit input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.input-with-unit .unit {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 20px;
+}
+
+.scaling-preview {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--border-color);
+}
+
+.scaling-preview .text-muted {
+    margin-top: 0;
+}
+
+#scaling-mode-info {
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+
+/* =====================================================
    Alignment Markers
    ===================================================== */
 .alignment-markers {
