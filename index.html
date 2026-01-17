@@ -107,13 +107,18 @@
                     </div>
                 </div>
 
-                <!-- Total Duration Footer -->
+                <!-- Timeline Footer with Minimap -->
                 <div class="timeline-footer">
                     <div class="lane-label-spacer"></div>
-                    <div class="duration-display">
-                        <span>TOTAL DURATION: </span>
+                    <div class="minimap-container">
+                        <canvas id="minimap-canvas"></canvas>
+                        <div id="minimap-viewport" class="minimap-viewport"></div>
+                    </div>
+                    <div class="footer-info">
+                        <span class="duration-label">Total:</span>
                         <span id="total-duration">0ms</span>
                     </div>
+                    <button id="compress-toggle" class="btn btn-icon footer-btn" title="Compress Empty Spaces">⇄</button>
                 </div>
             </main>
         </div>
@@ -162,6 +167,27 @@
                             <span>Auto-open Box Properties</span>
                         </label>
                         <small class="text-muted">Automatically open properties panel when creating a new box</small>
+                    </div>
+
+                    <!-- Timeline Display Settings -->
+                    <hr style="border-color: var(--border-color); margin: 20px 0;">
+                    <div class="form-group">
+                        <label for="config-trailing-space">Trailing Space</label>
+                        <div class="input-with-unit">
+                            <input type="range" id="config-trailing-slider" min="0" max="200" value="50" step="10">
+                            <input type="number" id="config-trailing-space" class="form-input" value="50" min="0" max="500" style="width: 70px;">
+                            <span class="unit">%</span>
+                        </div>
+                        <small class="text-muted">Extra space after the last box</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="config-compression-threshold">Gap Compression Threshold</label>
+                        <div class="input-with-unit">
+                            <input type="range" id="config-compression-slider" min="50" max="2000" value="500" step="50">
+                            <input type="number" id="config-compression-threshold" class="form-input" value="500" min="10" max="10000" style="width: 70px;">
+                            <span class="unit">ms</span>
+                        </div>
+                        <small class="text-muted">Gaps larger than this are compressed (when enabled)</small>
                     </div>
 
                     <!-- Duration Scaling Section (PoC - Removable) -->

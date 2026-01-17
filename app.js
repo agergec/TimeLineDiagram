@@ -183,7 +183,9 @@ const app = {
         timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
         showAlignmentLines: true,  // Toggle vertical alignment lines
         showBoxLabels: false,      // Toggle persistent floating labels above boxes
-        autoOpenBoxProperties: false // Auto-open box properties panel after creating a new box
+        autoOpenBoxProperties: false, // Auto-open box properties panel after creating a new box
+        trailingSpace: 50,         // Extra space after last box as percentage (0-200%)
+        compressionThreshold: 500  // Gaps larger than this (ms) get compressed
     },
 
     // Duration scaling settings (for PoC - can be removed if not needed)
@@ -445,6 +447,188 @@ function updateScalingModeInfo() {
             : 'Disabled';
     }
 }
+
+// =====================================================
+// Minimap Module
+// =====================================================
+
+const Minimap = {
+    canvas: null,
+    ctx: null,
+    viewport: null,
+    container: null,
+
+    init() {
+        this.canvas = document.getElementById('minimap-canvas');
+        this.viewport = document.getElementById('minimap-viewport');
+        this.container = document.querySelector('.minimap-container');
+
+        if (!this.canvas || !this.viewport || !this.container) return;
+
+        this.ctx = this.canvas.getContext('2d');
+
+        // Handle click to navigate
+        this.container.addEventListener('click', (e) => this.handleClick(e));
+
+        // Handle resize
+        window.addEventListener('resize', () => this.render());
+    },
+
+    render() {
+        if (!this.canvas || !this.ctx) return;
+
+        const container = this.container;
+        const rect = container.getBoundingClientRect();
+
+        // Set canvas size to match container
+        this.canvas.width = rect.width;
+        this.canvas.height = rect.height;
+
+        const ctx = this.ctx;
+        const lanes = app.diagram?.lanes || [];
+        const boxes = app.diagram?.boxes || [];
+        const totalDuration = app.diagram?.getTotalDuration() || 1;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        if (lanes.length === 0 || boxes.length === 0) return;
+
+        // Calculate scale
+        const padding = 4;
+        const availableWidth = this.canvas.width - padding * 2;
+        const availableHeight = this.canvas.height - padding * 2;
+        const laneHeight = Math.max(2, Math.floor(availableHeight / lanes.length));
+        const timeScale = availableWidth / (totalDuration * (1 + app.settings.trailingSpace / 100));
+
+        // Draw boxes as small rectangles/dots
+        lanes.forEach((lane, laneIndex) => {
+            const laneBoxes = boxes.filter(b => b.laneId === lane.id);
+            const y = padding + laneIndex * laneHeight;
+
+            laneBoxes.forEach(box => {
+                const x = padding + box.startOffset * timeScale;
+                const width = Math.max(2, box.duration * timeScale);
+                const height = Math.max(2, laneHeight - 1);
+
+                ctx.fillStyle = box.color;
+                ctx.fillRect(x, y, width, height);
+            });
+        });
+
+        // Update viewport indicator
+        this.updateViewport();
+    },
+
+    updateViewport() {
+        if (!this.viewport || !this.container) return;
+
+        const lanesCanvas = app.elements?.lanesCanvas;
+        if (!lanesCanvas) return;
+
+        const totalDuration = app.diagram?.getTotalDuration() || 1;
+        const containerWidth = this.container.getBoundingClientRect().width;
+        const padding = 4;
+        const availableWidth = containerWidth - padding * 2;
+        const timelineWidth = totalDuration * (1 + app.settings.trailingSpace / 100);
+        const timeScale = availableWidth / timelineWidth;
+
+        // Get visible viewport in time
+        const scrollLeft = lanesCanvas.scrollLeft;
+        const visibleWidth = lanesCanvas.clientWidth - 160; // Subtract lane label width
+        const visibleStartMs = pixelsToMs(scrollLeft);
+        const visibleEndMs = pixelsToMs(scrollLeft + visibleWidth);
+
+        // Convert to minimap coordinates
+        const viewportLeft = padding + visibleStartMs * timeScale;
+        const viewportWidth = (visibleEndMs - visibleStartMs) * timeScale;
+
+        this.viewport.style.left = `${Math.max(0, viewportLeft)}px`;
+        this.viewport.style.width = `${Math.min(viewportWidth, availableWidth)}px`;
+    },
+
+    handleClick(e) {
+        const lanesCanvas = app.elements?.lanesCanvas;
+        if (!lanesCanvas) return;
+
+        const rect = this.container.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const padding = 4;
+        const availableWidth = rect.width - padding * 2;
+
+        const totalDuration = app.diagram?.getTotalDuration() || 1;
+        const timelineWidth = totalDuration * (1 + app.settings.trailingSpace / 100);
+        const timeScale = availableWidth / timelineWidth;
+
+        // Calculate target time from click position
+        const targetTimeMs = (clickX - padding) / timeScale;
+
+        // Calculate scroll position to center this time
+        const visibleWidth = lanesCanvas.clientWidth - 160;
+        const targetScrollLeft = msToPixels(targetTimeMs) - visibleWidth / 2;
+
+        lanesCanvas.scrollLeft = Math.max(0, targetScrollLeft);
+    }
+};
+
+// =====================================================
+// Compression Module (Visual Gap Compression)
+// =====================================================
+
+const Compression = {
+    enabled: false,
+
+    toggle() {
+        this.enabled = !this.enabled;
+        const btn = document.getElementById('compress-toggle');
+        if (btn) {
+            btn.classList.toggle('active', this.enabled);
+            btn.title = this.enabled ? 'Disable Compression' : 'Compress Empty Spaces';
+        }
+        renderLanesCanvas();
+        Minimap.render();
+    },
+
+    /**
+     * Get compressed start offset for a box
+     * When compression is enabled, large gaps between boxes are reduced
+     */
+    getCompressedOffset(box, allBoxes) {
+        if (!this.enabled) return box.startOffset;
+
+        const threshold = app.settings.compressionThreshold || 500; // ms
+        const sortedBoxes = [...allBoxes].sort((a, b) => a.startOffset - b.startOffset);
+        const boxIndex = sortedBoxes.findIndex(b => b.id === box.id);
+
+        if (boxIndex <= 0) return box.startOffset;
+
+        let compressedOffset = 0;
+        for (let i = 0; i <= boxIndex; i++) {
+            const currentBox = sortedBoxes[i];
+            if (i === 0) {
+                compressedOffset = currentBox.startOffset;
+            } else {
+                const prevBox = sortedBoxes[i - 1];
+                const prevEnd = prevBox.startOffset + prevBox.duration;
+                const gap = currentBox.startOffset - prevEnd;
+
+                if (gap > threshold) {
+                    // Compress the gap to threshold
+                    compressedOffset += threshold + (currentBox.startOffset - prevEnd - gap);
+                } else {
+                    compressedOffset += currentBox.startOffset - prevEnd;
+                }
+
+                if (currentBox.id === box.id) {
+                    compressedOffset += prevEnd;
+                    break;
+                }
+            }
+        }
+
+        return compressedOffset;
+    }
+};
 
 // Color palette reordered to maximize difference between adjacent lanes
 // Original: Red, Pink, Purple, Deep Purple, Indigo, Blue, Light Blue, Cyan,
@@ -1534,8 +1718,8 @@ function renderTimelineRuler() {
         interval = 600000; // 10 minutes
     }
 
-    // Match the lane-track extension: 50% padding beyond total duration
-    const endTime = totalDuration * 1.5;
+    // Match the lane-track extension using trailing space setting
+    const endTime = totalDuration * (1 + app.settings.trailingSpace / 100);
 
     // Create an inner wrapper div to define scrollable width
     // (absolutely positioned children don't contribute to scroll width)
@@ -1560,9 +1744,9 @@ function renderLanesCanvas() {
     const canvas = app.elements.lanesCanvas;
     canvas.innerHTML = '';
 
-    // Calculate minimum width for tracks based on timeline duration + 50% padding
+    // Calculate minimum width for tracks based on timeline duration + trailing space setting
     const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const minTrackWidth = msToPixels(totalDuration * 1.5);
+    const minTrackWidth = msToPixels(totalDuration * (1 + app.settings.trailingSpace / 100));
 
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
@@ -1603,6 +1787,9 @@ function renderLanesCanvas() {
     renderTimelineRuler();
     renderAlignmentMarkers();
     renderTimeMarkers();
+
+    // Update minimap
+    Minimap.render();
 }
 
 function createBoxElement(box) {
@@ -1844,9 +2031,9 @@ function renderTimeMarkers() {
 
     container.innerHTML = '';
 
-    // Match the ruler and lane-track width
+    // Match the ruler and lane-track width using trailing space setting
     const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const endTime = totalDuration * 1.5;
+    const endTime = totalDuration * (1 + app.settings.trailingSpace / 100);
     const markerWidth = msToPixels(endTime);
 
     // Create an inner wrapper div to define scrollable width
@@ -3913,6 +4100,9 @@ function init() {
 
         // Update alignment markers to account for scroll position
         renderAlignmentMarkers();
+
+        // Update minimap viewport indicator
+        Minimap.updateViewport();
     });
     // Settings button
     document.getElementById('settings-btn').addEventListener('click', showSettingsPanel);
@@ -3945,6 +4135,47 @@ function init() {
 
     // Duration Scaling controls (PoC - Removable)
     initDurationScalingUI();
+
+    // Initialize Minimap
+    Minimap.init();
+
+    // Compress toggle button
+    const compressToggle = document.getElementById('compress-toggle');
+    if (compressToggle) {
+        compressToggle.addEventListener('click', () => Compression.toggle());
+    }
+
+    // Trailing space controls
+    const trailingSlider = document.getElementById('config-trailing-slider');
+    const trailingInput = document.getElementById('config-trailing-space');
+    if (trailingSlider && trailingInput) {
+        const syncTrailing = (value) => {
+            app.settings.trailingSpace = parseInt(value, 10);
+            trailingSlider.value = value;
+            trailingInput.value = value;
+            renderLanesCanvas();
+            Minimap.render();
+        };
+        trailingSlider.addEventListener('input', () => syncTrailing(trailingSlider.value));
+        trailingInput.addEventListener('change', () => syncTrailing(trailingInput.value));
+    }
+
+    // Compression threshold controls
+    const compressionSlider = document.getElementById('config-compression-slider');
+    const compressionInput = document.getElementById('config-compression-threshold');
+    if (compressionSlider && compressionInput) {
+        const syncCompression = (value) => {
+            app.settings.compressionThreshold = parseInt(value, 10);
+            compressionSlider.value = value;
+            compressionInput.value = value;
+            if (Compression.enabled) {
+                renderLanesCanvas();
+                Minimap.render();
+            }
+        };
+        compressionSlider.addEventListener('input', () => syncCompression(compressionSlider.value));
+        compressionInput.addEventListener('change', () => syncCompression(compressionInput.value));
+    }
 
     // Also sync header title input changes to settings
     app.elements.diagramTitle.addEventListener('input', (e) => {
