@@ -816,6 +816,136 @@
             margin-bottom: 16px;
             opacity: 0.5;
         }
+
+        /* Events/Requests DN Grid */
+        .events-grid-section {
+            display: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .events-grid-section.visible {
+            display: block;
+        }
+
+        .events-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .events-grid th {
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            white-space: nowrap;
+            min-width: 100px;
+        }
+
+        .events-grid th.col-time-header,
+        .events-grid th.col-delta-header {
+            min-width: 90px;
+        }
+
+        .events-grid th.col-dn-header {
+            min-width: 140px;
+            background: linear-gradient(135deg, var(--bg-primary), rgba(99, 102, 241, 0.1));
+        }
+
+        .events-grid th.col-switch-header {
+            min-width: 120px;
+            background: linear-gradient(135deg, var(--bg-primary), rgba(244, 114, 182, 0.1));
+        }
+
+        .events-grid th.col-nodn-header {
+            min-width: 160px;
+            background: linear-gradient(135deg, var(--bg-primary), rgba(251, 146, 60, 0.1));
+        }
+
+        .events-grid td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'JetBrains Mono', monospace;
+            vertical-align: middle;
+            font-size: 11px;
+        }
+
+        .events-grid tr:hover td {
+            background: var(--bg-tertiary);
+        }
+
+        .events-grid .col-time {
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .events-grid .col-delta {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .events-grid .cell-event {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            display: inline-block;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .events-grid .cell-event.type-event {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+        }
+
+        .events-grid .cell-event.type-request {
+            background: rgba(251, 146, 60, 0.15);
+            color: #fb923c;
+        }
+
+        .events-grid .cell-switch {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            background: rgba(244, 114, 182, 0.15);
+            color: #f472b6;
+        }
+
+        .events-stats {
+            display: flex;
+            gap: 16px;
+            padding: 12px 20px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .events-stats span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .events-stats strong {
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
     </style>
 </head>
 
@@ -856,6 +986,9 @@ Requests: 02:41:48.968 RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646b
             <div class="input-actions">
                 <button id="parse-btn" class="btn btn-primary">
                     ▶ Parse Logs
+                </button>
+                <button id="parse-events-btn" class="btn btn-secondary">
+                    📊 Parse Events/Requests
                 </button>
                 <button id="save-log-btn" class="btn btn-secondary" disabled>
                     💾 Save Log
@@ -936,6 +1069,23 @@ Requests: 02:41:48.968 RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646b
                         </tr>
                     </thead>
                     <tbody id="message-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Events/Requests DN Grid -->
+        <div id="events-grid-section" class="events-grid-section">
+            <div class="grid-header">
+                <div class="grid-title">
+                    Events/Requests by DN
+                    <span id="events-count" class="message-count">0</span>
+                </div>
+            </div>
+            <div class="events-stats" id="events-stats"></div>
+            <div class="grid-container">
+                <table class="events-grid">
+                    <thead id="events-grid-head"></thead>
+                    <tbody id="events-grid-body"></tbody>
                 </table>
             </div>
         </div>

@@ -552,6 +552,243 @@ function renderSavedLogs() {
 }
 
 // =====================================================
+// Events/Requests DN Grid
+// =====================================================
+
+// State for events grid
+let eventsGridData = {
+    messages: [],
+    dnColumns: [],    // Array of DN values (in order of appearance)
+    switchColumn: null, // Name of switch column if found (ends with ::)
+    hasNoDnColumn: false // Whether we have entries without dn=
+};
+
+function parseEventsRequestsOnly(log) {
+    const lines = log.split('\n');
+    const messages = [];
+    const dnSet = new Map(); // Tracks order of appearance
+    let dnOrder = 0;
+    let hasNoDn = false;
+    let switchName = null;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Match Event lines
+        const eventMatch = trimmed.match(/(\d{2}:\d{2}:\d{2}\.\d{3})\s+(Event\w+)\(([^)]*)\)/);
+        if (eventMatch) {
+            const [, timestamp, eventType, params] = eventMatch;
+            const parsed = parseEventParams(params);
+            const dn = parsed.dn;
+
+            // Check if it's a switch (ends with ::)
+            if (dn && dn.endsWith('::')) {
+                switchName = dn;
+            } else if (dn && dn !== 'null' && dn !== '') {
+                // Regular DN - track order of appearance
+                if (!dnSet.has(dn)) {
+                    dnSet.set(dn, dnOrder++);
+                }
+            } else {
+                // No DN
+                hasNoDn = true;
+            }
+
+            messages.push({
+                type: 'event',
+                timestamp: parseSipTimestamp(timestamp),
+                timeStr: timestamp,
+                eventType,
+                dn: dn || '',
+                isSwitch: dn && dn.endsWith('::'),
+                connid: parsed.connid,
+                raw: trimmed
+            });
+            continue;
+        }
+
+        // Match Request lines
+        const requestMatch = trimmed.match(/(\d{2}:\d{2}:\d{2}\.\d{3})\s+(Request\w+)\(([^)]*)\)/);
+        if (requestMatch) {
+            const [, timestamp, requestType, params] = requestMatch;
+            const parsed = parseEventParams(params);
+            const dn = parsed.dn;
+
+            // Check if it's a switch (ends with ::)
+            if (dn && dn.endsWith('::')) {
+                switchName = dn;
+            } else if (dn && dn !== 'null' && dn !== '') {
+                // Regular DN - track order of appearance
+                if (!dnSet.has(dn)) {
+                    dnSet.set(dn, dnOrder++);
+                }
+            } else {
+                // No DN
+                hasNoDn = true;
+            }
+
+            messages.push({
+                type: 'request',
+                timestamp: parseSipTimestamp(timestamp),
+                timeStr: timestamp,
+                eventType: requestType,
+                dn: dn || '',
+                isSwitch: dn && dn.endsWith('::'),
+                connid: parsed.connid,
+                raw: trimmed
+            });
+        }
+    }
+
+    // Calculate delta times (between consecutive events/requests)
+    let lastTime = null;
+    for (const msg of messages) {
+        msg.delta = lastTime !== null ? msg.timestamp - lastTime : null;
+        lastTime = msg.timestamp;
+    }
+
+    // Build DN columns array in order of appearance
+    const dnColumns = [...dnSet.entries()]
+        .sort((a, b) => a[1] - b[1])
+        .map(([dn]) => dn);
+
+    eventsGridData = {
+        messages,
+        dnColumns,
+        switchColumn: switchName,
+        hasNoDnColumn: hasNoDn
+    };
+
+    return eventsGridData;
+}
+
+function renderEventsRequestsGrid() {
+    const { messages, dnColumns, switchColumn, hasNoDnColumn } = eventsGridData;
+
+    if (messages.length === 0) {
+        alert('No Events or Requests found in the input');
+        return;
+    }
+
+    const gridSection = document.getElementById('events-grid-section');
+    const thead = document.getElementById('events-grid-head');
+    const tbody = document.getElementById('events-grid-body');
+    const countBadge = document.getElementById('events-count');
+    const statsDiv = document.getElementById('events-stats');
+
+    countBadge.textContent = messages.length;
+
+    // Build stats
+    const eventCount = messages.filter(m => m.type === 'event').length;
+    const requestCount = messages.filter(m => m.type === 'request').length;
+    statsDiv.innerHTML = `
+        <span>Events: <strong>${eventCount}</strong></span>
+        <span>Requests: <strong>${requestCount}</strong></span>
+        <span>DN Columns: <strong>${dnColumns.length}</strong></span>
+        ${switchColumn ? `<span>Switch: <strong>${switchColumn}</strong></span>` : ''}
+    `;
+
+    // Build header row
+    // Columns: Time | Delta | No-DN (if needed) | DN1 | DN2 | ... | Switch (if needed)
+    let headerHtml = '<tr>';
+    headerHtml += '<th class="col-time-header">Time</th>';
+    headerHtml += '<th class="col-delta-header">Δ Delta</th>';
+
+    if (hasNoDnColumn) {
+        headerHtml += '<th class="col-nodn-header">No DN</th>';
+    }
+
+    for (const dn of dnColumns) {
+        headerHtml += `<th class="col-dn-header">${escapeHtml(dn)}</th>`;
+    }
+
+    if (switchColumn) {
+        headerHtml += `<th class="col-switch-header">${escapeHtml(switchColumn)}</th>`;
+    }
+
+    headerHtml += '</tr>';
+    thead.innerHTML = headerHtml;
+
+    // Build body rows
+    let bodyHtml = '';
+    for (const msg of messages) {
+        bodyHtml += '<tr>';
+
+        // Time column
+        bodyHtml += `<td class="col-time">${msg.timeStr}</td>`;
+
+        // Delta column
+        const deltaClass = getDeltaClass(msg.delta);
+        const deltaText = msg.delta === null ? '—' : `+${msg.delta}ms`;
+        bodyHtml += `<td class="col-delta"><span class="delta-badge ${deltaClass}">${deltaText}</span></td>`;
+
+        // No-DN column (if present)
+        if (hasNoDnColumn) {
+            if (!msg.dn || msg.dn === '' || msg.dn === 'null') {
+                const typeClass = msg.type === 'event' ? 'type-event' : 'type-request';
+                bodyHtml += `<td><span class="cell-event ${typeClass}" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+            } else {
+                bodyHtml += '<td></td>';
+            }
+        }
+
+        // DN columns
+        for (const dn of dnColumns) {
+            if (msg.dn === dn && !msg.isSwitch) {
+                const typeClass = msg.type === 'event' ? 'type-event' : 'type-request';
+                bodyHtml += `<td><span class="cell-event ${typeClass}" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+            } else {
+                bodyHtml += '<td></td>';
+            }
+        }
+
+        // Switch column (if present)
+        if (switchColumn) {
+            if (msg.isSwitch) {
+                bodyHtml += `<td><span class="cell-switch" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+            } else {
+                bodyHtml += '<td></td>';
+            }
+        }
+
+        bodyHtml += '</tr>';
+    }
+
+    tbody.innerHTML = bodyHtml;
+    gridSection.classList.add('visible');
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+}
+
+function handleParseEventsRequests() {
+    const input = document.getElementById('sip-input').value.trim();
+
+    if (!input) {
+        alert('Please paste logs first');
+        return;
+    }
+
+    // Hide the regular grid section
+    document.getElementById('grid-section').classList.remove('visible');
+    document.getElementById('stats-bar').classList.remove('visible');
+    document.getElementById('filter-bar').classList.remove('visible');
+    document.getElementById('cid-legend').classList.remove('visible');
+    document.getElementById('import-section').classList.remove('visible');
+
+    // Parse and render events/requests grid
+    parseEventsRequestsOnly(input);
+    renderEventsRequestsGrid();
+}
+
+// =====================================================
 // Timeline Diagram Export
 // =====================================================
 
@@ -718,6 +955,9 @@ function handleParse() {
         return;
     }
 
+    // Hide events grid section (in case it was visible)
+    document.getElementById('events-grid-section').classList.remove('visible');
+
     renderStats(parsedMessages);
     renderMessageGrid(parsedMessages);
 
@@ -731,6 +971,7 @@ function handleClear() {
     document.getElementById('filter-bar').classList.remove('visible');
     document.getElementById('cid-legend').classList.remove('visible');
     document.getElementById('grid-section').classList.remove('visible');
+    document.getElementById('events-grid-section').classList.remove('visible');
     document.getElementById('import-section').classList.remove('visible');
     document.getElementById('success-toast').classList.remove('visible');
     document.getElementById('save-log-btn').disabled = true;
@@ -742,6 +983,8 @@ function handleClear() {
     filters.showSip = true;
     filters.showEvents = true;
     filters.showRequests = true;
+    // Clear events grid data
+    eventsGridData = { messages: [], dnColumns: [], switchColumn: null, hasNoDnColumn: false };
 }
 
 // =====================================================
@@ -750,6 +993,7 @@ function handleClear() {
 
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('parse-btn').addEventListener('click', handleParse);
+    document.getElementById('parse-events-btn').addEventListener('click', handleParseEventsRequests);
     document.getElementById('clear-btn').addEventListener('click', handleClear);
     document.getElementById('save-log-btn').addEventListener('click', saveCurrentLog);
     document.getElementById('import-btn').addEventListener('click', handleImport);
