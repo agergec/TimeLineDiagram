@@ -628,13 +628,13 @@ function generateSipDiagram() {
     const minTime = Math.min(...callSetups.map(s => s.inviteTime));
     const cids = [...new Set(callSetups.map(s => s.cid))].sort();
 
-    // Generate lane names with CID, from, and to headers (3-line format using <br> for HTML)
+    // Generate lane names with CID, from, and to headers (3-line format using \n)
     const lanes = cids.map((cid, index) => {
         const ft = cidFromTo.get(cid) || { from: '', to: '' };
         // Remove leading colon if present (e.g., ":05334359177" -> "05334359177")
         const fromStr = (ft.from || '?').replace(/^:/, '');
         const toStr = (ft.to || '?').replace(/^:/, '');
-        const laneName = `${cid}<br>f:${fromStr}<br>t:${toStr}`;
+        const laneName = `${cid}\nf:${fromStr}\nt:${toStr}`;
         return {
             id: index + 1,
             name: laneName,

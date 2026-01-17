@@ -1267,7 +1267,8 @@ function renderLanesCanvas() {
 
         const label = document.createElement('div');
         label.className = 'lane-label';
-        label.textContent = lane.name;
+        // Support multi-line lane names (convert \n to <br>)
+        label.innerHTML = escapeHtml(lane.name).replace(/\n/g, '<br>');
         label.title = lane.name;
 
         const track = document.createElement('div');
