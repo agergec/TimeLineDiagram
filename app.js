@@ -2199,12 +2199,12 @@ function showBoxTooltip(box, e) {
     tooltip.innerHTML = `
         <div class="tooltip-label">${escapeHtml(box.label || 'Untitled Box')}</div>
         <div class="tooltip-row">
-            <span class="label">Start:</span>
-            <span class="value">+${formatDuration(box.startOffset)} (${formatTime(baseTime + box.startOffset)})</span>
-        </div>
-        <div class="tooltip-row">
             <span class="label">Duration:</span>
             <span class="value">${formatDuration(box.duration)}</span>
+        </div>
+        <div class="tooltip-row">
+            <span class="label">Start:</span>
+            <span class="value">+${formatDuration(box.startOffset)} (${formatTime(baseTime + box.startOffset)})</span>
         </div>
         <div class="tooltip-row">
             <span class="label">End:</span>
