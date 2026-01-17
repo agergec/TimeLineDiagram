@@ -519,8 +519,13 @@ const Minimap = {
         const availableWidth = rect.width - padding * 2;
         const minimapToTimelineRatio = msToPixels(timelineWidth) / availableWidth;
 
+        // Calculate max scroll (total scrollable width minus visible width)
+        const totalScrollWidth = msToPixels(timelineWidth);
+        const visibleWidth = lanesCanvas.clientWidth - 160; // Subtract lane label width
+        const maxScroll = Math.max(0, totalScrollWidth - visibleWidth);
+
         const newScrollLeft = this.dragStartScroll + (deltaX * minimapToTimelineRatio);
-        lanesCanvas.scrollLeft = Math.max(0, newScrollLeft);
+        lanesCanvas.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScroll));
     },
 
     handleMouseUp() {
@@ -649,7 +654,11 @@ const Minimap = {
         const visibleWidth = lanesCanvas.clientWidth - 160;
         const targetScrollLeft = msToPixels(targetTimeMs) - visibleWidth / 2;
 
-        lanesCanvas.scrollLeft = Math.max(0, targetScrollLeft);
+        // Calculate max scroll (total scrollable width minus visible width)
+        const totalScrollWidth = msToPixels(timelineWidth);
+        const maxScroll = Math.max(0, totalScrollWidth - visibleWidth);
+
+        lanesCanvas.scrollLeft = Math.max(0, Math.min(targetScrollLeft, maxScroll));
     }
 };
 
