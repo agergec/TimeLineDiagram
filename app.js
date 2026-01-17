@@ -2163,6 +2163,12 @@ function createBoxElement(box) {
             return;
         }
 
+        // Allow measurement to start from box - don't intercept if Cmd/Ctrl held or measure mode active
+        if (e.ctrlKey || e.metaKey || app.measureToolActive) {
+            // Don't stop propagation - let canvas handler start measurement
+            return;
+        }
+
         if (e.target.classList.contains('box-resize-handle')) {
             handleResizeStart(e, box.id);
         } else {
