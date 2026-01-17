@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Log Parser - Timeline Diagram</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f1419;
+            --bg-secondary: #1a1f2e;
+            --bg-tertiary: #252b3b;
+            --text-primary: #ffffff;
+            --text-secondary: #a8b2c1;
+            --text-muted: #6b7280;
+            --accent-primary: #6366f1;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .back-link {
+            color: var(--accent-primary);
+            text-decoration: none;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .description {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .parser-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title .step {
+            background: var(--accent-primary);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            resize: vertical;
+            transition: border-color 0.15s ease;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .stats {
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            display: none;
+        }
+
+        .stats.visible {
+            display: block;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .stat-row span:last-child {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .stat-success {
+            color: var(--success) !important;
+        }
+
+        .stat-warning {
+            color: var(--warning) !important;
+        }
+
+        .stat-error {
+            color: var(--danger) !important;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5558e3;
+        }
+
+        .btn-primary:disabled {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-secondary);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #0ea572;
+        }
+
+        .preview-section {
+            display: none;
+        }
+
+        .preview-section.visible {
+            display: block;
+        }
+
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .preview-table th,
+        .preview-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .preview-table th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            background: var(--bg-tertiary);
+        }
+
+        .preview-table tr:hover td {
+            background: var(--bg-tertiary);
+        }
+
+        .color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .success-message {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+            display: none;
+        }
+
+        .success-message.visible {
+            display: block;
+        }
+
+        .success-message h4 {
+            color: var(--success);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .success-message p {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .success-message a {
+            color: var(--accent-primary);
+        }
+
+        .format-help {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 12px;
+        }
+
+        .format-help code {
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>SIP Log Parser</h1>
+            <a href="index.html" class="back-link">← Back to Timeline Editor</a>
+        </header>
+
+        <p class="description">
+            Parse SIP call flow logs to extract INVITE → ACK durations. The parser creates a timeline diagram
+            with lanes for each Call-ID and boxes showing the duration of each call setup.
+        </p>
+
+        <!-- Step 1: Paste Logs -->
+        <div class="parser-section">
+            <h2 class="section-title">
+                <span class="step">1</span>
+                Paste SIP Logs
+            </h2>
+            <textarea id="sip-input" placeholder="Paste your SIP logs here...
+
+Example formats supported:
+
+Simple:
+02:41:48.790     <-INVITE [f: :05334359177 |t: :3010 |cs: 1 INVITE | Cid000 ]
+02:41:49.091     <-ACK [f: :05334359177 |t: :3010 |cs: 1 ACK    | Cid000 ]
+
+With filename prefix:
+SIPServer.log(32001):   02:41:48.790     <-INVITE [f: :05334359177 |t: :3010 |cs: 1 INVITE | Cid000 ]"></textarea>
+            <div class="format-help">
+                Supported Call-ID formats: <code>Cid000</code>, <code>Call-001</code>, <code>Session1</code>, etc.
+            </div>
+            <div class="actions">
+                <button id="parse-btn" class="btn btn-primary">Parse Logs</button>
+                <button id="clear-btn" class="btn btn-secondary">Clear</button>
+            </div>
+            <div id="stats" class="stats"></div>
+        </div>
+
+        <!-- Step 2: Preview -->
+        <div id="preview-section" class="parser-section preview-section">
+            <h2 class="section-title">
+                <span class="step">2</span>
+                Preview Results
+            </h2>
+            <table class="preview-table">
+                <thead>
+                    <tr>
+                        <th>Call-ID</th>
+                        <th>CSeq</th>
+                        <th>INVITE Time</th>
+                        <th>ACK Time</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="preview-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Step 3: Import -->
+        <div id="import-section" class="parser-section preview-section">
+            <h2 class="section-title">
+                <span class="step">3</span>
+                Import to Timeline Editor
+            </h2>
+            <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                This will create a new diagram in your Timeline Editor with the parsed SIP data.
+            </p>
+            <div class="actions">
+                <button id="import-btn" class="btn btn-success">Import as New Diagram</button>
+            </div>
+            <div id="success-message" class="success-message">
+                <h4>Import Successful!</h4>
+                <p>Your SIP call flow diagram has been created. <a href="index.html">Open Timeline Editor</a> to view it.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="sip-parser.js"></script>
+</body>
+
+</html>
