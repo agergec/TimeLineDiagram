@@ -671,7 +671,9 @@ const Compression = {
             btn.classList.toggle('active', this.enabled);
             btn.title = this.enabled ? 'Disable Compression' : 'Compress Empty Spaces';
         }
+        renderTimelineRuler();
         renderLanesCanvas();
+        renderTimeMarkers();
         Minimap.render();
     },
 
@@ -810,6 +812,56 @@ const Compression = {
      */
     invalidate() {
         this.compressionMap = null;
+    },
+
+    /**
+     * Convert a compressed (visual) time position to actual (original) time
+     * Used for ruler labels and measurement tool
+     */
+    compressedToActual(compressedTime) {
+        if (!this.enabled) return compressedTime;
+
+        const map = this.calculateCompressionMap();
+        if (!map || map.gaps.length === 0) return compressedTime;
+
+        // Walk through gaps to figure out how much compression happens before this point
+        let compressionBefore = 0;
+        for (const gap of map.gaps) {
+            const compressedGapStart = gap.start - compressionBefore;
+            const compressedGapEnd = compressedGapStart + gap.compressedSize;
+            const gapCompression = gap.size - gap.compressedSize;
+
+            if (compressedTime <= compressedGapStart) {
+                // Before this gap
+                break;
+            } else if (compressedTime <= compressedGapEnd) {
+                // Inside the compressed gap region - interpolate
+                const progress = (compressedTime - compressedGapStart) / gap.compressedSize;
+                return gap.start + progress * gap.size;
+            } else {
+                // After this gap
+                compressionBefore += gapCompression;
+            }
+        }
+
+        return compressedTime + compressionBefore;
+    },
+
+    /**
+     * Get break marker positions (compressed) for the ruler
+     * Returns array of { compressedPos, actualStart, actualEnd, compression }
+     */
+    getBreakMarkers() {
+        if (!this.enabled) return [];
+
+        const gaps = this.getCompressedGaps();
+        return gaps.map(gap => ({
+            compressedStart: gap.compressedStart,
+            compressedEnd: gap.compressedEnd,
+            actualStart: gap.originalStart,
+            actualEnd: gap.originalEnd,
+            compression: gap.originalSize - gap.compressedSize
+        }));
     }
 };
 
@@ -1872,7 +1924,11 @@ function renderTimelineRuler() {
 
     ruler.innerHTML = '';
 
-    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
+    // Use compressed or actual duration based on compression mode
+    const actualTotalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
+    const displayDuration = Compression.enabled
+        ? Compression.getCompressedDuration()
+        : actualTotalDuration;
 
     // Calculate appropriate interval - extended for extreme zoom levels
     // Includes sub-millisecond intervals for high zoom
@@ -1902,7 +1958,7 @@ function renderTimelineRuler() {
     }
 
     // Match the lane-track extension using trailing space setting
-    const endTime = totalDuration + app.settings.trailingSpace;
+    const endTime = displayDuration + app.settings.trailingSpace;
 
     // Create an inner wrapper div to define scrollable width
     // (absolutely positioned children don't contribute to scroll width)
@@ -1914,12 +1970,41 @@ function renderTimelineRuler() {
     innerWrapper.style.height = '100%';
     ruler.appendChild(innerWrapper);
 
-    for (let time = 0; time <= endTime; time += interval) {
-        const mark = document.createElement('div');
-        mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
-        mark.style.left = `${msToPixels(time)}px`;
-        mark.innerHTML = `<span>${formatDuration(time)}</span>`;
-        innerWrapper.appendChild(mark);
+    if (Compression.enabled) {
+        // HYBRID APPROACH: Show actual times at compressed positions with break markers
+        const breakMarkers = Compression.getBreakMarkers();
+
+        // Generate ruler marks at compressed positions but show actual times
+        for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
+            // Convert compressed position to actual time for the label
+            const actualTime = Compression.compressedToActual(compressedTime);
+
+            const mark = document.createElement('div');
+            mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
+            mark.style.left = `${msToPixels(compressedTime)}px`;
+            mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
+            innerWrapper.appendChild(mark);
+        }
+
+        // Add break markers at gap boundaries
+        breakMarkers.forEach(marker => {
+            const breakMark = document.createElement('div');
+            breakMark.className = 'ruler-break-marker';
+            breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
+            breakMark.style.width = `${msToPixels(marker.compressedEnd - marker.compressedStart)}px`;
+            breakMark.title = `Compressed: ${formatDuration(marker.actualStart)} → ${formatDuration(marker.actualEnd)} (${formatDuration(marker.compression)} hidden)`;
+            breakMark.innerHTML = '<span class="break-symbol">≋</span>';
+            innerWrapper.appendChild(breakMark);
+        });
+    } else {
+        // Normal mode: show time at corresponding position
+        for (let time = 0; time <= endTime; time += interval) {
+            const mark = document.createElement('div');
+            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+            mark.style.left = `${msToPixels(time)}px`;
+            mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+            innerWrapper.appendChild(mark);
+        }
     }
 }
 
@@ -2238,8 +2323,12 @@ function renderTimeMarkers() {
     container.innerHTML = '';
 
     // Match the ruler and lane-track width using trailing space setting
-    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const endTime = totalDuration + app.settings.trailingSpace;
+    // Use compressed duration if compression is enabled
+    const actualTotalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
+    const displayDuration = Compression.enabled
+        ? Compression.getCompressedDuration()
+        : actualTotalDuration;
+    const endTime = displayDuration + app.settings.trailingSpace;
     const markerWidth = msToPixels(endTime);
 
     // Create an inner wrapper div to define scrollable width
@@ -2257,24 +2346,33 @@ function renderTimeMarkers() {
     const markers = [];
 
     app.diagram.boxes.forEach(box => {
+        // Get visual (compressed) offset for positioning
+        const visualOffset = Compression.getVisualOffset(box);
+        const visualEnd = visualOffset + box.duration;
+        // Actual times for labels
+        const actualStart = box.startOffset;
+        const actualEnd = box.startOffset + box.duration;
+
         markers.push({
-            time: box.startOffset,
+            visualTime: visualOffset,      // For positioning
+            actualTime: actualStart,       // For label
             type: 'start',
             boxId: box.id,
             color: box.color,
-            label: formatDuration(box.startOffset)
+            label: formatDuration(actualStart)
         });
         markers.push({
-            time: box.startOffset + box.duration,
+            visualTime: visualEnd,         // For positioning
+            actualTime: actualEnd,         // For label
             type: 'end',
             boxId: box.id,
             color: box.color,
-            label: formatDuration(box.startOffset + box.duration)
+            label: formatDuration(actualEnd)
         });
     });
 
-    // Sort by time
-    markers.sort((a, b) => a.time - b.time);
+    // Sort by visual time for proper layout
+    markers.sort((a, b) => a.visualTime - b.visualTime);
 
     // Layout Logic: Horizontal text with vertical stacking for collisions
     const levels = [];
@@ -2282,7 +2380,7 @@ function renderTimeMarkers() {
     const padding = 10;
 
     markers.forEach(m => {
-        const x = msToPixels(m.time);
+        const x = msToPixels(m.visualTime);
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const width = text.length * charWidth + padding;
         const startX = x - (width / 2);
@@ -2309,7 +2407,7 @@ function renderTimeMarkers() {
     const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : 200;
 
     markers.forEach(m => {
-        const x = msToPixels(m.time);
+        const x = msToPixels(m.visualTime);
 
         const el = document.createElement('div');
         el.className = 'time-marker-h';
@@ -2823,10 +2921,21 @@ function updateMeasurementDisplay() {
     const endX = app.measureEnd.clientX;
     const endY = app.measureEnd.clientY;
 
-    // Calculate distance in pixels and time
-    const pixelDistX = Math.abs(endX - startX);
-    const pixelDistY = Math.abs(endY - startY);
-    const timeDistance = pixelsToMs(pixelDistX);
+    // Calculate visual positions in timeline coordinates (subtract lane label width)
+    const visualStartMs = pixelsToMs(Math.min(app.measureStart.x, app.measureEnd.x) - 160);
+    const visualEndMs = pixelsToMs(Math.max(app.measureStart.x, app.measureEnd.x) - 160);
+
+    // In compression mode, convert visual positions to actual times
+    let actualStartMs, actualEndMs, actualDuration;
+    if (Compression.enabled) {
+        actualStartMs = Compression.compressedToActual(Math.max(0, visualStartMs));
+        actualEndMs = Compression.compressedToActual(Math.max(0, visualEndMs));
+        actualDuration = actualEndMs - actualStartMs;
+    } else {
+        actualStartMs = Math.max(0, visualStartMs);
+        actualEndMs = Math.max(0, visualEndMs);
+        actualDuration = actualEndMs - actualStartMs;
+    }
 
     // Update SVG line
     const svgRect = overlay.getBoundingClientRect();
@@ -2847,26 +2956,25 @@ function updateMeasurementDisplay() {
     label.setAttribute('x', midX);
     label.setAttribute('y', midY - 10);
 
-    // Format the measurement text
-    const timeText = formatDuration(Math.round(timeDistance));
+    // Format the measurement text (always show actual duration)
+    const timeText = formatDuration(Math.round(actualDuration));
     label.textContent = timeText;
 
     // Update info box
     const infoBox = document.getElementById('measurement-info');
-    const startTimeMs = pixelsToMs(Math.min(app.measureStart.x, app.measureEnd.x) - 160); // Subtract lane label width
-    const endTimeMs = startTimeMs + timeDistance;
 
     const pinBtnClass = app.measurePinned ? 'measure-pin-btn active' : 'measure-pin-btn';
     const pinTitle = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
 
+    // Show actual times in the info box
     infoBox.innerHTML = `
         <div class="measure-header">
             <button class="${pinBtnClass}" onclick="toggleMeasurementPin()" title="${pinTitle}">📌</button>
             <button class="measure-close-btn" onclick="closeMeasurement()" title="Close measurement">×</button>
         </div>
         <div class="measure-row"><span>Duration:</span><strong>${timeText}</strong></div>
-        <div class="measure-row"><span>Start:</span>${formatDuration(Math.max(0, Math.round(startTimeMs)))}</div>
-        <div class="measure-row"><span>End:</span>${formatDuration(Math.max(0, Math.round(endTimeMs)))}</div>
+        <div class="measure-row"><span>Start:</span>${formatDuration(Math.round(actualStartMs))}</div>
+        <div class="measure-row"><span>End:</span>${formatDuration(Math.round(actualEndMs))}</div>
     `;
 
     // Position info box with accurate distance calculation for rectangular box

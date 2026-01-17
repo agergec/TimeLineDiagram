@@ -705,6 +705,33 @@ body.show-box-labels .lane-row {
     padding-left: 4px;
 }
 
+/* Ruler break markers for compression mode */
+.ruler-break-marker {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 3px,
+        rgba(251, 146, 60, 0.2) 3px,
+        rgba(251, 146, 60, 0.2) 6px
+    );
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.ruler-break-marker .break-symbol {
+    color: var(--warning);
+    font-size: 14px;
+    font-weight: bold;
+    text-shadow: 0 0 4px var(--bg-primary);
+    opacity: 0.8;
+}
+
 /* Lanes Canvas */
 .lanes-canvas {
     flex: 1;
