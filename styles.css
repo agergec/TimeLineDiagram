@@ -1010,23 +1010,7 @@ body.show-box-labels .lane-row {
 }
 
 /* Compress Toggle Button */
-.footer-btn {
-    height: 100%;
-    width: 40px;
-    border-radius: 0;
-    border: none;
-    border-left: 1px solid var(--border-color);
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    font-size: 14px;
-}
-
-.footer-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-}
-
-.footer-btn.active {
+#compress-toggle.active {
     background: var(--accent-primary);
     color: white;
 }

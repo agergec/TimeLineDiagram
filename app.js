@@ -1740,6 +1740,23 @@ function renderLaneList() {
 
     // Add event listeners for lane name inputs
     container.querySelectorAll('.lane-name-input').forEach(input => {
+        // Prevent drag when interacting with input
+        input.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            // Temporarily disable dragging on parent
+            const item = input.closest('.lane-item');
+            if (item) item.draggable = false;
+        });
+        input.addEventListener('mouseup', () => {
+            // Re-enable dragging after mouse up
+            const item = input.closest('.lane-item');
+            if (item) item.draggable = true;
+        });
+        input.addEventListener('blur', () => {
+            // Re-enable dragging when input loses focus
+            const item = input.closest('.lane-item');
+            if (item) item.draggable = true;
+        });
         input.addEventListener('change', (e) => {
             if (!isEditingAllowed()) {
                 e.target.value = app.diagram.lanes.find(l => l.id === parseInt(e.target.dataset.laneId, 10))?.name || '';
@@ -1748,6 +1765,18 @@ function renderLaneList() {
             const laneId = parseInt(e.target.dataset.laneId, 10);
             app.diagram.renameLane(laneId, e.target.value);
             renderLanesCanvas();
+        });
+        // Enter key applies and unfocuses
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (isEditingAllowed()) {
+                    const laneId = parseInt(input.dataset.laneId, 10);
+                    app.diagram.renameLane(laneId, input.value);
+                    renderLanesCanvas();
+                }
+                input.blur();
+            }
         });
     });
 
@@ -2700,7 +2729,16 @@ function handleMouseUp(e) {
             selectBox(box.id, true);
         }
     } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
-        renderTimelineRuler();
+        // Recalculate compression gaps after moving/resizing
+        if (Compression.enabled) {
+            Compression.invalidate();
+            renderTimelineRuler();
+            renderLanesCanvas();
+            renderTimeMarkers();
+            Minimap.render();
+        } else {
+            renderTimelineRuler();
+        }
         renderAlignmentMarkers();
         updateTotalDuration();
         updatePropertiesPanel();
@@ -4500,7 +4538,26 @@ function init() {
     const laneNameInput = document.getElementById('lane-name');
     if (laneNameInput) {
         laneNameInput.addEventListener('change', handleLaneNameChange);
+        // Enter key applies and unfocuses
+        laneNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleLaneNameChange();
+                laneNameInput.blur();
+            }
+        });
     }
+
+    // Diagram title Enter key handler
+    app.elements.diagramTitle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            app.diagram.title = e.target.value;
+            autoSave();
+            renderDiagramsList();
+            e.target.blur();
+        }
+    });
 
     // Zoom controls
     document.getElementById('zoom-in').addEventListener('click', () => handleZoom('in'));
