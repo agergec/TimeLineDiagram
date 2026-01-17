@@ -6,20 +6,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SIP Log Parser - Timeline Diagram</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #0f1419;
-            --bg-secondary: #1a1f2e;
-            --bg-tertiary: #252b3b;
-            --text-primary: #ffffff;
-            --text-secondary: #a8b2c1;
-            --text-muted: #6b7280;
+            --bg-primary: #0a0e14;
+            --bg-secondary: #12171f;
+            --bg-tertiary: #1a2029;
+            --bg-card: #1e2530;
+            --text-primary: #e6e6e6;
+            --text-secondary: #8b949e;
+            --text-muted: #5c6370;
             --accent-primary: #6366f1;
-            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --border-color: rgba(255, 255, 255, 0.08);
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
+
+            /* Direction colors */
+            --incoming: #22d3ee;
+            --outgoing: #a78bfa;
+
+            /* CID Colors - vibrant neon palette */
+            --cid-0: #ff6b6b;
+            --cid-1: #4ecdc4;
+            --cid-2: #ffe66d;
+            --cid-3: #a78bfa;
+            --cid-4: #22d3ee;
+            --cid-5: #f472b6;
+            --cid-6: #34d399;
+            --cid-7: #fb923c;
+            --cid-8: #60a5fa;
+            --cid-9: #c084fc;
         }
 
         * {
@@ -37,163 +55,172 @@
             min-height: 100vh;
         }
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 40px 20px;
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: -1;
         }
 
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Header */
         header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 32px;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
         }
 
         h1 {
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 600;
+            background: linear-gradient(135deg, #fff, #a5b4fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
         }
 
         .back-link {
-            color: var(--accent-primary);
+            color: var(--text-secondary);
             text-decoration: none;
-            font-size: 14px;
+            font-size: 13px;
             display: flex;
             align-items: center;
             gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            transition: all 0.2s;
         }
 
         .back-link:hover {
-            text-decoration: underline;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
 
-        .description {
-            color: var(--text-secondary);
-            margin-bottom: 24px;
-            line-height: 1.6;
-        }
-
-        .parser-section {
+        /* Input Section */
+        .input-section {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 24px;
+            border-radius: 16px;
+            padding: 20px;
             margin-bottom: 24px;
         }
 
-        .section-title {
-            font-size: 16px;
-            font-weight: 600;
+        .input-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             margin-bottom: 16px;
+        }
+
+        .input-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .section-title .step {
-            background: var(--accent-primary);
-            color: white;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: 600;
+        .input-title::before {
+            content: '>';
+            color: var(--accent-primary);
+            font-family: 'JetBrains Mono', monospace;
         }
 
         textarea {
             width: 100%;
-            height: 300px;
-            background: var(--bg-tertiary);
+            height: 200px;
+            background: var(--bg-primary);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 16px;
             color: var(--text-primary);
-            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 12px;
-            line-height: 1.4;
+            line-height: 1.5;
             resize: vertical;
-            transition: border-color 0.15s ease;
+            transition: all 0.2s;
         }
 
         textarea:focus {
             outline: none;
             border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         textarea::placeholder {
             color: var(--text-muted);
         }
 
-        .stats {
-            margin-top: 16px;
-            padding: 16px;
-            background: var(--bg-tertiary);
-            border-radius: 8px;
-            display: none;
-        }
-
-        .stats.visible {
-            display: block;
-        }
-
-        .stat-row {
+        .input-actions {
             display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            color: var(--text-secondary);
-            font-size: 13px;
-        }
-
-        .stat-row span:last-child {
-            color: var(--text-primary);
-            font-weight: 500;
-        }
-
-        .stat-success {
-            color: var(--success) !important;
-        }
-
-        .stat-warning {
-            color: var(--warning) !important;
-        }
-
-        .stat-error {
-            color: var(--danger) !important;
-        }
-
-        .actions {
-            display: flex;
-            gap: 12px;
+            gap: 10px;
             margin-top: 16px;
         }
 
+        /* Buttons */
         .btn {
-            padding: 10px 20px;
+            padding: 10px 18px;
             border: none;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .btn-primary {
-            background: var(--accent-primary);
+            background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
             color: white;
+            box-shadow: 0 2px 10px var(--accent-glow);
         }
 
         .btn-primary:hover {
-            background: #5558e3;
-        }
-
-        .btn-primary:disabled {
-            background: var(--bg-tertiary);
-            color: var(--text-muted);
-            cursor: not-allowed;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px var(--accent-glow);
         }
 
         .btn-secondary {
@@ -203,98 +230,446 @@
         }
 
         .btn-secondary:hover {
-            background: var(--bg-secondary);
+            background: var(--bg-card);
         }
 
         .btn-success {
-            background: var(--success);
+            background: linear-gradient(135deg, var(--success), #059669);
             color: white;
         }
 
         .btn-success:hover {
-            background: #0ea572;
+            transform: translateY(-1px);
         }
 
-        .preview-section {
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
             display: none;
+            gap: 24px;
+            padding: 16px 20px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            margin-top: 16px;
         }
 
-        .preview-section.visible {
+        .stats-bar.visible {
+            display: flex;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* CID Legend */
+        .cid-legend {
+            display: none;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .cid-legend.visible {
+            display: flex;
+        }
+
+        .cid-tag {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .cid-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* Message Grid */
+        .grid-section {
+            display: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .grid-section.visible {
             display: block;
         }
 
-        .preview-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 12px;
-        }
-
-        .preview-table th,
-        .preview-table td {
-            padding: 10px 12px;
-            text-align: left;
+        .grid-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
         }
 
-        .preview-table th {
-            color: var(--text-secondary);
+        .grid-title {
+            font-size: 14px;
             font-weight: 500;
-            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .preview-table tr:hover td {
-            background: var(--bg-tertiary);
+        .message-count {
+            background: var(--accent-primary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
         }
 
-        .color-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 8px;
+        .grid-container {
+            overflow-x: auto;
+        }
+
+        .message-grid {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .message-grid th {
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            white-space: nowrap;
+        }
+
+        .message-grid td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'JetBrains Mono', monospace;
             vertical-align: middle;
         }
 
-        .success-message {
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid var(--success);
-            border-radius: 8px;
-            padding: 16px;
-            margin-top: 16px;
-            display: none;
+        .message-grid tr:hover td {
+            background: var(--bg-tertiary);
         }
 
-        .success-message.visible {
+        /* Row styling based on CID */
+        .message-grid tr[data-cid] {
+            border-left: 3px solid transparent;
+        }
+
+        .message-grid tr[data-cid="0"] { border-left-color: var(--cid-0); }
+        .message-grid tr[data-cid="1"] { border-left-color: var(--cid-1); }
+        .message-grid tr[data-cid="2"] { border-left-color: var(--cid-2); }
+        .message-grid tr[data-cid="3"] { border-left-color: var(--cid-3); }
+        .message-grid tr[data-cid="4"] { border-left-color: var(--cid-4); }
+        .message-grid tr[data-cid="5"] { border-left-color: var(--cid-5); }
+        .message-grid tr[data-cid="6"] { border-left-color: var(--cid-6); }
+        .message-grid tr[data-cid="7"] { border-left-color: var(--cid-7); }
+        .message-grid tr[data-cid="8"] { border-left-color: var(--cid-8); }
+        .message-grid tr[data-cid="9"] { border-left-color: var(--cid-9); }
+
+        /* Time column */
+        .col-time {
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        /* Delta column */
+        .col-delta {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .delta-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            background: var(--bg-card);
+        }
+
+        .delta-badge.first {
+            color: var(--text-muted);
+            background: transparent;
+        }
+
+        .delta-badge.fast {
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.15);
+        }
+
+        .delta-badge.medium {
+            color: var(--warning);
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        .delta-badge.slow {
+            color: var(--danger);
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        /* Direction & Method */
+        .col-message {
+            white-space: nowrap;
+        }
+
+        .direction {
+            display: inline-block;
+            width: 24px;
+            font-weight: 600;
+        }
+
+        .direction.incoming {
+            color: var(--incoming);
+        }
+
+        .direction.outgoing {
+            color: var(--outgoing);
+        }
+
+        .method {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .method-invite { color: #22d3ee; }
+        .method-ack { color: #34d399; }
+        .method-bye { color: #f472b6; }
+        .method-cancel { color: #fb923c; }
+        .method-info { color: #a78bfa; }
+        .method-notify { color: #60a5fa; }
+        .method-response { color: var(--text-secondary); }
+
+        /* From/To columns */
+        .col-endpoint {
+            color: var(--text-secondary);
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* CSeq column */
+        .col-cseq {
+            text-align: center;
+        }
+
+        .cseq-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--bg-card);
+            font-size: 11px;
+        }
+
+        /* CID column */
+        .col-cid {
+            white-space: nowrap;
+        }
+
+        .cid-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .cid-badge[data-cid="0"] { background: rgba(255, 107, 107, 0.15); color: var(--cid-0); }
+        .cid-badge[data-cid="1"] { background: rgba(78, 205, 196, 0.15); color: var(--cid-1); }
+        .cid-badge[data-cid="2"] { background: rgba(255, 230, 109, 0.15); color: var(--cid-2); }
+        .cid-badge[data-cid="3"] { background: rgba(167, 139, 250, 0.15); color: var(--cid-3); }
+        .cid-badge[data-cid="4"] { background: rgba(34, 211, 238, 0.15); color: var(--cid-4); }
+        .cid-badge[data-cid="5"] { background: rgba(244, 114, 182, 0.15); color: var(--cid-5); }
+        .cid-badge[data-cid="6"] { background: rgba(52, 211, 153, 0.15); color: var(--cid-6); }
+        .cid-badge[data-cid="7"] { background: rgba(251, 146, 60, 0.15); color: var(--cid-7); }
+        .cid-badge[data-cid="8"] { background: rgba(96, 165, 250, 0.15); color: var(--cid-8); }
+        .cid-badge[data-cid="9"] { background: rgba(192, 132, 252, 0.15); color: var(--cid-9); }
+
+        /* Content column */
+        .col-content {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .content-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--bg-card);
+        }
+
+        /* Import Section */
+        .import-section {
+            display: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .import-section.visible {
             display: block;
         }
 
-        .success-message h4 {
-            color: var(--success);
-            font-size: 14px;
-            margin-bottom: 8px;
+        .import-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
         }
 
-        .success-message p {
+        .import-title {
+            font-size: 14px;
+            font-weight: 500;
             color: var(--text-secondary);
+        }
+
+        .success-toast {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            border-radius: 10px;
+            margin-top: 16px;
+        }
+
+        .success-toast.visible {
+            display: flex;
+        }
+
+        .success-toast a {
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+
+        /* Saved logs section */
+        .saved-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            display: none;
+        }
+
+        .saved-section.visible {
+            display: block;
+        }
+
+        .saved-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .saved-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .saved-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .saved-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .saved-item:hover {
+            background: var(--bg-card);
+        }
+
+        .saved-item-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .saved-item-title {
+            font-weight: 500;
             font-size: 13px;
         }
 
-        .success-message a {
-            color: var(--accent-primary);
-        }
-
-        .format-help {
-            font-size: 12px;
+        .saved-item-meta {
+            font-size: 11px;
             color: var(--text-muted);
-            margin-top: 12px;
         }
 
-        .format-help code {
-            background: var(--bg-tertiary);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+        .saved-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .saved-item-actions button {
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
         }
     </style>
 </head>
@@ -302,76 +677,114 @@
 <body>
     <div class="container">
         <header>
-            <h1>SIP Log Parser</h1>
-            <a href="index.html" class="back-link">← Back to Timeline Editor</a>
+            <div class="logo">
+                <div class="logo-icon">📡</div>
+                <h1>SIP Log Parser</h1>
+            </div>
+            <div class="header-actions">
+                <a href="index.html" class="back-link">← Timeline Editor</a>
+            </div>
         </header>
 
-        <p class="description">
-            Parse SIP call flow logs to extract INVITE → ACK durations. The parser creates a timeline diagram
-            with lanes for each Call-ID and boxes showing the duration of each call setup.
-        </p>
+        <!-- Saved Logs -->
+        <div id="saved-section" class="saved-section">
+            <div class="saved-header">
+                <div class="saved-title">
+                    💾 Saved Logs
+                </div>
+                <button id="clear-saved-btn" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Clear All</button>
+            </div>
+            <div id="saved-list" class="saved-list"></div>
+        </div>
 
-        <!-- Step 1: Paste Logs -->
-        <div class="parser-section">
-            <h2 class="section-title">
-                <span class="step">1</span>
-                Paste SIP Logs
-            </h2>
-            <textarea id="sip-input" placeholder="Paste your SIP logs here...
+        <!-- Input Section -->
+        <div class="input-section">
+            <div class="input-header">
+                <div class="input-title">Paste SIP Logs</div>
+            </div>
+            <textarea id="sip-input" placeholder="Paste your SIP call flow logs here...
 
-Example formats supported:
-
-Simple:
-02:41:48.790     <-INVITE [f: :05334359177 |t: :3010 |cs: 1 INVITE | Cid000 ]
-02:41:49.091     <-ACK [f: :05334359177 |t: :3010 |cs: 1 ACK    | Cid000 ]
-
-With filename prefix:
+Supported formats:
+02:41:48.790     <-INVITE [f: :05334359177 |t: :3010 |cs: 1 INVITE | Cid000 ] application/sdp
 SIPServer.log(32001):   02:41:48.790     <-INVITE [f: :05334359177 |t: :3010 |cs: 1 INVITE | Cid000 ]"></textarea>
-            <div class="format-help">
-                Supported Call-ID formats: <code>Cid000</code>, <code>Call-001</code>, <code>Session1</code>, etc.
+            <div class="input-actions">
+                <button id="parse-btn" class="btn btn-primary">
+                    ▶ Parse Logs
+                </button>
+                <button id="save-log-btn" class="btn btn-secondary" disabled>
+                    💾 Save Log
+                </button>
+                <button id="clear-btn" class="btn btn-secondary">
+                    Clear
+                </button>
             </div>
-            <div class="actions">
-                <button id="parse-btn" class="btn btn-primary">Parse Logs</button>
-                <button id="clear-btn" class="btn btn-secondary">Clear</button>
+
+            <!-- Stats Bar -->
+            <div id="stats-bar" class="stats-bar">
+                <div class="stat-item">
+                    <span id="stat-messages" class="stat-value">0</span>
+                    <span class="stat-label">SIP Messages</span>
+                </div>
+                <div class="stat-item">
+                    <span id="stat-cids" class="stat-value">0</span>
+                    <span class="stat-label">Call IDs</span>
+                </div>
+                <div class="stat-item">
+                    <span id="stat-invites" class="stat-value">0</span>
+                    <span class="stat-label">INVITEs</span>
+                </div>
+                <div class="stat-item">
+                    <span id="stat-duration" class="stat-value">0ms</span>
+                    <span class="stat-label">Total Span</span>
+                </div>
             </div>
-            <div id="stats" class="stats"></div>
+
+            <!-- CID Legend -->
+            <div id="cid-legend" class="cid-legend"></div>
         </div>
 
-        <!-- Step 2: Preview -->
-        <div id="preview-section" class="parser-section preview-section">
-            <h2 class="section-title">
-                <span class="step">2</span>
-                Preview Results
-            </h2>
-            <table class="preview-table">
-                <thead>
-                    <tr>
-                        <th>Call-ID</th>
-                        <th>CSeq</th>
-                        <th>INVITE Time</th>
-                        <th>ACK Time</th>
-                        <th>Duration</th>
-                    </tr>
-                </thead>
-                <tbody id="preview-body"></tbody>
-            </table>
+        <!-- Message Grid -->
+        <div id="grid-section" class="grid-section">
+            <div class="grid-header">
+                <div class="grid-title">
+                    SIP Messages
+                    <span id="message-count" class="message-count">0</span>
+                </div>
+            </div>
+            <div class="grid-container">
+                <table class="message-grid">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Δ Delta</th>
+                            <th>Message</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>CSeq</th>
+                            <th>Call-ID</th>
+                            <th>Content</th>
+                        </tr>
+                    </thead>
+                    <tbody id="message-body"></tbody>
+                </table>
+            </div>
         </div>
 
-        <!-- Step 3: Import -->
-        <div id="import-section" class="parser-section preview-section">
-            <h2 class="section-title">
-                <span class="step">3</span>
-                Import to Timeline Editor
-            </h2>
-            <p style="color: var(--text-secondary); margin-bottom: 16px;">
-                This will create a new diagram in your Timeline Editor with the parsed SIP data.
+        <!-- Import Section -->
+        <div id="import-section" class="import-section">
+            <div class="import-header">
+                <div class="import-title">📊 Create Timeline Diagram</div>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+                Extract INVITE → ACK pairs and create a timeline diagram showing call setup durations.
             </p>
-            <div class="actions">
-                <button id="import-btn" class="btn btn-success">Import as New Diagram</button>
-            </div>
-            <div id="success-message" class="success-message">
-                <h4>Import Successful!</h4>
-                <p>Your SIP call flow diagram has been created. <a href="index.html">Open Timeline Editor</a> to view it.</p>
+            <button id="import-btn" class="btn btn-success">
+                🚀 Import to Timeline Editor
+            </button>
+            <div id="success-toast" class="success-toast">
+                <span>✓</span>
+                <span>Diagram created successfully!</span>
+                <a href="index.html">Open Timeline Editor →</a>
             </div>
         </div>
     </div>
