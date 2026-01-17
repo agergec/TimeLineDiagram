@@ -318,7 +318,8 @@ function getFilteredMessages() {
         if (msg.type === 'request' && !filters.showRequests) return false;
 
         // CID filter (only applies to SIP messages)
-        if (msg.type === 'sip' && msg.cid && filters.enabledCids.size > 0) {
+        // If no CIDs are enabled, hide all SIP messages
+        if (msg.type === 'sip' && msg.cid) {
             if (!filters.enabledCids.has(msg.cid)) return false;
         }
 
@@ -627,12 +628,13 @@ function generateSipDiagram() {
     const minTime = Math.min(...callSetups.map(s => s.inviteTime));
     const cids = [...new Set(callSetups.map(s => s.cid))].sort();
 
-    // Generate lane names with CID, from, and to headers
+    // Generate lane names with CID, from, and to headers (3-line format)
     const lanes = cids.map((cid, index) => {
         const ft = cidFromTo.get(cid) || { from: '', to: '' };
-        const fromStr = ft.from || '?';
-        const toStr = ft.to || '?';
-        const laneName = `${cid} | f:${fromStr} → t:${toStr}`;
+        // Remove leading colon if present (e.g., ":05334359177" -> "05334359177")
+        const fromStr = (ft.from || '?').replace(/^:/, '');
+        const toStr = (ft.to || '?').replace(/^:/, '');
+        const laneName = `${cid}\nf:${fromStr}\nt:${toStr}`;
         return {
             id: index + 1,
             name: laneName,
