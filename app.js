@@ -184,7 +184,7 @@ const app = {
         showAlignmentLines: true,  // Toggle vertical alignment lines
         showBoxLabels: false,      // Toggle persistent floating labels above boxes
         autoOpenBoxProperties: false, // Auto-open box properties panel after creating a new box
-        trailingSpace: 50,         // Extra space after last box as percentage (0-200%)
+        trailingSpace: 5000,       // Extra space after last box in milliseconds
         compressionThreshold: 500  // Gaps larger than this (ms) get compressed
     },
 
@@ -457,6 +457,9 @@ const Minimap = {
     ctx: null,
     viewport: null,
     container: null,
+    isDragging: false,
+    dragStartX: 0,
+    dragStartScroll: 0,
 
     init() {
         this.canvas = document.getElementById('minimap-canvas');
@@ -468,10 +471,63 @@ const Minimap = {
         this.ctx = this.canvas.getContext('2d');
 
         // Handle click to navigate
-        this.container.addEventListener('click', (e) => this.handleClick(e));
+        this.container.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        document.addEventListener('mouseup', () => this.handleMouseUp());
 
         // Handle resize
         window.addEventListener('resize', () => this.render());
+    },
+
+    handleMouseDown(e) {
+        const rect = this.container.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+
+        // Check if clicking on viewport indicator for dragging
+        const viewportRect = this.viewport.getBoundingClientRect();
+        const viewportLeft = viewportRect.left - rect.left;
+        const viewportRight = viewportLeft + viewportRect.width;
+
+        if (clickX >= viewportLeft && clickX <= viewportRight) {
+            // Start dragging
+            this.isDragging = true;
+            this.dragStartX = e.clientX;
+            this.dragStartScroll = app.elements.lanesCanvas.scrollLeft;
+            this.container.style.cursor = 'grabbing';
+            e.preventDefault();
+        } else {
+            // Click to navigate
+            this.handleClick(e);
+        }
+    },
+
+    handleMouseMove(e) {
+        if (!this.isDragging) return;
+
+        const lanesCanvas = app.elements.lanesCanvas;
+        if (!lanesCanvas) return;
+
+        const rect = this.container.getBoundingClientRect();
+        const deltaX = e.clientX - this.dragStartX;
+
+        // Convert minimap pixels to timeline pixels
+        const totalDuration = Compression.enabled
+            ? Compression.getCompressedDuration()
+            : (app.diagram?.getTotalDuration() || 1);
+        const timelineWidth = totalDuration + app.settings.trailingSpace;
+        const padding = 4;
+        const availableWidth = rect.width - padding * 2;
+        const minimapToTimelineRatio = msToPixels(timelineWidth) / availableWidth;
+
+        const newScrollLeft = this.dragStartScroll + (deltaX * minimapToTimelineRatio);
+        lanesCanvas.scrollLeft = Math.max(0, newScrollLeft);
+    },
+
+    handleMouseUp() {
+        if (this.isDragging) {
+            this.isDragging = false;
+            this.container.style.cursor = 'pointer';
+        }
     },
 
     render() {
@@ -487,7 +543,11 @@ const Minimap = {
         const ctx = this.ctx;
         const lanes = app.diagram?.lanes || [];
         const boxes = app.diagram?.boxes || [];
-        const totalDuration = app.diagram?.getTotalDuration() || 1;
+
+        // Use compressed duration if compression is enabled
+        const totalDuration = Compression.enabled
+            ? Compression.getCompressedDuration()
+            : (app.diagram?.getTotalDuration() || 1);
 
         // Clear canvas
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -499,7 +559,19 @@ const Minimap = {
         const availableWidth = this.canvas.width - padding * 2;
         const availableHeight = this.canvas.height - padding * 2;
         const laneHeight = Math.max(2, Math.floor(availableHeight / lanes.length));
-        const timeScale = availableWidth / (totalDuration * (1 + app.settings.trailingSpace / 100));
+        const timelineWidth = totalDuration + app.settings.trailingSpace;
+        const timeScale = availableWidth / timelineWidth;
+
+        // Draw compression indicators in minimap
+        if (Compression.enabled) {
+            const gaps = Compression.getCompressedGaps();
+            ctx.fillStyle = 'rgba(251, 146, 60, 0.3)';
+            gaps.forEach(gap => {
+                const x = padding + gap.compressedStart * timeScale;
+                const width = gap.compressedSize * timeScale;
+                ctx.fillRect(x, 0, width, this.canvas.height);
+            });
+        }
 
         // Draw boxes as small rectangles/dots
         lanes.forEach((lane, laneIndex) => {
@@ -507,7 +579,9 @@ const Minimap = {
             const y = padding + laneIndex * laneHeight;
 
             laneBoxes.forEach(box => {
-                const x = padding + box.startOffset * timeScale;
+                // Use compressed offset if enabled
+                const visualOffset = Compression.getVisualOffset(box);
+                const x = padding + visualOffset * timeScale;
                 const width = Math.max(2, box.duration * timeScale);
                 const height = Math.max(2, laneHeight - 1);
 
@@ -526,11 +600,15 @@ const Minimap = {
         const lanesCanvas = app.elements?.lanesCanvas;
         if (!lanesCanvas) return;
 
-        const totalDuration = app.diagram?.getTotalDuration() || 1;
+        // Use compressed duration if compression is enabled
+        const totalDuration = Compression.enabled
+            ? Compression.getCompressedDuration()
+            : (app.diagram?.getTotalDuration() || 1);
+
         const containerWidth = this.container.getBoundingClientRect().width;
         const padding = 4;
         const availableWidth = containerWidth - padding * 2;
-        const timelineWidth = totalDuration * (1 + app.settings.trailingSpace / 100);
+        const timelineWidth = totalDuration + app.settings.trailingSpace;
         const timeScale = availableWidth / timelineWidth;
 
         // Get visible viewport in time
@@ -556,8 +634,12 @@ const Minimap = {
         const padding = 4;
         const availableWidth = rect.width - padding * 2;
 
-        const totalDuration = app.diagram?.getTotalDuration() || 1;
-        const timelineWidth = totalDuration * (1 + app.settings.trailingSpace / 100);
+        // Use compressed duration if compression is enabled
+        const totalDuration = Compression.enabled
+            ? Compression.getCompressedDuration()
+            : (app.diagram?.getTotalDuration() || 1);
+
+        const timelineWidth = totalDuration + app.settings.trailingSpace;
         const timeScale = availableWidth / timelineWidth;
 
         // Calculate target time from click position
@@ -574,12 +656,16 @@ const Minimap = {
 // =====================================================
 // Compression Module (Visual Gap Compression)
 // =====================================================
+// Compresses large empty gaps ACROSS ALL LANES to show boxes closer together.
+// A visual indicator shows where compression occurred.
 
 const Compression = {
     enabled: false,
+    compressionMap: null, // Cached compression calculations
 
     toggle() {
         this.enabled = !this.enabled;
+        this.compressionMap = null; // Clear cache
         const btn = document.getElementById('compress-toggle');
         if (btn) {
             btn.classList.toggle('active', this.enabled);
@@ -590,43 +676,140 @@ const Compression = {
     },
 
     /**
-     * Get compressed start offset for a box
-     * When compression is enabled, large gaps between boxes are reduced
+     * Calculate compression map for all boxes across all lanes
+     * Returns: { compressedOffsets: Map<boxId, offset>, gaps: [{start, end, compressedTo}], totalCompressed: ms }
      */
-    getCompressedOffset(box, allBoxes) {
-        if (!this.enabled) return box.startOffset;
+    calculateCompressionMap() {
+        if (!this.enabled) return null;
+        if (this.compressionMap) return this.compressionMap;
 
-        const threshold = app.settings.compressionThreshold || 500; // ms
-        const sortedBoxes = [...allBoxes].sort((a, b) => a.startOffset - b.startOffset);
-        const boxIndex = sortedBoxes.findIndex(b => b.id === box.id);
+        const boxes = app.diagram?.boxes || [];
+        if (boxes.length === 0) return null;
 
-        if (boxIndex <= 0) return box.startOffset;
+        const threshold = app.settings.compressionThreshold || 500;
 
-        let compressedOffset = 0;
-        for (let i = 0; i <= boxIndex; i++) {
-            const currentBox = sortedBoxes[i];
-            if (i === 0) {
-                compressedOffset = currentBox.startOffset;
-            } else {
-                const prevBox = sortedBoxes[i - 1];
-                const prevEnd = prevBox.startOffset + prevBox.duration;
-                const gap = currentBox.startOffset - prevEnd;
+        // Get all time events (start and end of each box) across ALL lanes
+        const events = [];
+        boxes.forEach(box => {
+            events.push({ time: box.startOffset, type: 'start', boxId: box.id });
+            events.push({ time: box.startOffset + box.duration, type: 'end', boxId: box.id });
+        });
+        events.sort((a, b) => a.time - b.time);
 
-                if (gap > threshold) {
-                    // Compress the gap to threshold
-                    compressedOffset += threshold + (currentBox.startOffset - prevEnd - gap);
-                } else {
-                    compressedOffset += currentBox.startOffset - prevEnd;
+        // Find gaps where no box is active across all lanes
+        const gaps = [];
+        let activeBoxes = 0;
+        let gapStart = 0;
+
+        events.forEach(event => {
+            if (event.type === 'start') {
+                if (activeBoxes === 0 && event.time > gapStart) {
+                    // This is a gap
+                    const gapSize = event.time - gapStart;
+                    if (gapSize > threshold) {
+                        gaps.push({
+                            start: gapStart,
+                            end: event.time,
+                            size: gapSize,
+                            compressedSize: threshold
+                        });
+                    }
                 }
-
-                if (currentBox.id === box.id) {
-                    compressedOffset += prevEnd;
-                    break;
+                activeBoxes++;
+            } else {
+                activeBoxes--;
+                if (activeBoxes === 0) {
+                    gapStart = event.time;
                 }
             }
-        }
+        });
 
-        return compressedOffset;
+        // Calculate compressed offsets for each box
+        const compressedOffsets = new Map();
+        let totalCompression = 0;
+
+        boxes.forEach(box => {
+            let compression = 0;
+            gaps.forEach(gap => {
+                if (box.startOffset > gap.start) {
+                    // This box starts after this gap
+                    const gapCompression = gap.size - gap.compressedSize;
+                    if (box.startOffset >= gap.end) {
+                        // Box is fully after the gap
+                        compression += gapCompression;
+                    }
+                }
+            });
+            compressedOffsets.set(box.id, box.startOffset - compression);
+        });
+
+        // Calculate total compression
+        totalCompression = gaps.reduce((sum, gap) => sum + (gap.size - gap.compressedSize), 0);
+
+        this.compressionMap = {
+            compressedOffsets,
+            gaps,
+            totalCompression
+        };
+
+        return this.compressionMap;
+    },
+
+    /**
+     * Get the visual (compressed) offset for a box
+     */
+    getVisualOffset(box) {
+        if (!this.enabled) return box.startOffset;
+
+        const map = this.calculateCompressionMap();
+        if (!map) return box.startOffset;
+
+        return map.compressedOffsets.get(box.id) ?? box.startOffset;
+    },
+
+    /**
+     * Get compressed gaps for rendering visual indicators
+     */
+    getCompressedGaps() {
+        if (!this.enabled) return [];
+
+        const map = this.calculateCompressionMap();
+        if (!map) return [];
+
+        // Convert gaps to compressed coordinates for display
+        let compressionBefore = 0;
+        return map.gaps.map(gap => {
+            const compressedStart = gap.start - compressionBefore;
+            const result = {
+                originalStart: gap.start,
+                originalEnd: gap.end,
+                compressedStart: compressedStart,
+                compressedEnd: compressedStart + gap.compressedSize,
+                originalSize: gap.size,
+                compressedSize: gap.compressedSize
+            };
+            compressionBefore += gap.size - gap.compressedSize;
+            return result;
+        });
+    },
+
+    /**
+     * Get total compressed duration
+     */
+    getCompressedDuration() {
+        if (!this.enabled) return app.diagram?.getTotalDuration() || 0;
+
+        const map = this.calculateCompressionMap();
+        if (!map) return app.diagram?.getTotalDuration() || 0;
+
+        return (app.diagram?.getTotalDuration() || 0) - map.totalCompression;
+    },
+
+    /**
+     * Invalidate cache (call when boxes change)
+     */
+    invalidate() {
+        this.compressionMap = null;
     }
 };
 
@@ -1719,7 +1902,7 @@ function renderTimelineRuler() {
     }
 
     // Match the lane-track extension using trailing space setting
-    const endTime = totalDuration * (1 + app.settings.trailingSpace / 100);
+    const endTime = totalDuration + app.settings.trailingSpace;
 
     // Create an inner wrapper div to define scrollable width
     // (absolutely positioned children don't contribute to scroll width)
@@ -1744,9 +1927,16 @@ function renderLanesCanvas() {
     const canvas = app.elements.lanesCanvas;
     canvas.innerHTML = '';
 
+    // Invalidate compression cache before rendering
+    Compression.invalidate();
+
     // Calculate minimum width for tracks based on timeline duration + trailing space setting
-    const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const minTrackWidth = msToPixels(totalDuration * (1 + app.settings.trailingSpace / 100));
+    // Use compressed duration if compression is enabled
+    const totalDuration = Math.max(
+        Compression.enabled ? Compression.getCompressedDuration() : app.diagram.getTotalDuration(),
+        DEFAULT_MIN_TIMELINE_MS
+    );
+    const minTrackWidth = msToPixels(totalDuration + app.settings.trailingSpace);
 
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
@@ -1766,6 +1956,20 @@ function renderLanesCanvas() {
         track.className = 'lane-track';
         track.dataset.laneId = lane.id;
         track.style.minWidth = `${minTrackWidth}px`;
+
+        // Render compression indicators for this lane
+        if (Compression.enabled) {
+            const gaps = Compression.getCompressedGaps();
+            gaps.forEach(gap => {
+                const indicator = document.createElement('div');
+                indicator.className = 'compression-indicator';
+                indicator.style.left = `${msToPixels(gap.compressedStart)}px`;
+                indicator.style.width = `${msToPixels(gap.compressedSize)}px`;
+                indicator.title = `Compressed: ${formatDuration(gap.originalSize)} → ${formatDuration(gap.compressedSize)}`;
+                indicator.innerHTML = `<span class="compression-label">≋ ${formatDuration(gap.originalSize - gap.compressedSize)}</span>`;
+                track.appendChild(indicator);
+            });
+        }
 
         // Render boxes for this lane
         const boxes = app.diagram.getBoxesForLane(lane.id);
@@ -1797,7 +2001,9 @@ function createBoxElement(box) {
     el.className = 'timeline-box' + (box.id === app.selectedBoxId ? ' selected' : '');
     el.dataset.boxId = box.id;
 
-    const left = msToPixels(box.startOffset);
+    // Use compressed offset if compression is enabled
+    const visualOffset = Compression.getVisualOffset(box);
+    const left = msToPixels(visualOffset);
     const width = getBoxVisualWidth(box.duration); // Apply duration scaling
 
     el.style.left = `${left}px`;
@@ -2033,7 +2239,7 @@ function renderTimeMarkers() {
 
     // Match the ruler and lane-track width using trailing space setting
     const totalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const endTime = totalDuration * (1 + app.settings.trailingSpace / 100);
+    const endTime = totalDuration + app.settings.trailingSpace;
     const markerWidth = msToPixels(endTime);
 
     // Create an inner wrapper div to define scrollable width
