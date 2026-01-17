@@ -184,7 +184,7 @@ const app = {
         showAlignmentLines: true,  // Toggle vertical alignment lines
         showBoxLabels: false,      // Toggle persistent floating labels above boxes
         autoOpenBoxProperties: false, // Auto-open box properties panel after creating a new box
-        trailingSpace: 5000,       // Extra space after last box in milliseconds
+        trailingSpace: 1000,       // Extra space after last box in milliseconds
         compressionThreshold: 500  // Gaps larger than this (ms) get compressed
     },
 
@@ -4331,6 +4331,13 @@ function glimpsePickStartButton() {
 function enterPickMode() {
     if (!app.selectedBoxId) return;
     if (!isEditingAllowed()) return;
+
+    // Toggle behavior: if already picking, cancel
+    if (app.isPicking) {
+        cancelPickMode();
+        return;
+    }
+
     app.isPicking = true;
     document.body.style.cursor = 'crosshair';
     document.body.classList.add('picking-mode');
@@ -4347,6 +4354,23 @@ function enterPickMode() {
 
     // Apply contrast colors to each box
     applyPickableColors();
+}
+
+function cancelPickMode() {
+    if (!app.isPicking) return;
+
+    app.isPicking = false;
+    document.body.style.cursor = '';
+    document.body.classList.remove('picking-mode');
+    const btn = document.getElementById('pick-start-btn');
+    if (btn) btn.classList.remove('active');
+
+    // Remove toast and visual feedback
+    hidePickModeToast();
+    clearPickableColors();
+    document.querySelectorAll('.timeline-box').forEach(box => {
+        box.classList.remove('pickable');
+    });
 }
 
 function completePickStart(targetBoxId) {
@@ -4694,6 +4718,11 @@ function init() {
             }
         }
         if (e.key === 'Escape') {
+            // Cancel pick mode first if active
+            if (app.isPicking) {
+                cancelPickMode();
+                return;
+            }
             deselectBox();
         }
     });
