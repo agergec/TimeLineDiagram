@@ -560,13 +560,15 @@ let eventsGridData = {
     messages: [],
     dnColumns: [],    // Array of DN values (in order of appearance)
     switchColumn: null, // Name of switch column if found (ends with ::)
-    hasNoDnColumn: false // Whether we have entries without dn=
+    hasNoDnColumn: false, // Whether we have entries without dn=
+    connids: []       // Array of unique connids found
 };
 
 function parseEventsRequestsOnly(log) {
     const lines = log.split('\n');
     const messages = [];
     const dnSet = new Map(); // Tracks order of appearance
+    const connidSet = new Set(); // Track unique connids
     let dnOrder = 0;
     let hasNoDn = false;
     let switchName = null;
@@ -595,6 +597,11 @@ function parseEventsRequestsOnly(log) {
                 hasNoDn = true;
             }
 
+            // Track connid
+            if (parsed.connid) {
+                connidSet.add(parsed.connid);
+            }
+
             messages.push({
                 type: 'event',
                 timestamp: parseSipTimestamp(timestamp),
@@ -603,6 +610,7 @@ function parseEventsRequestsOnly(log) {
                 dn: dn || '',
                 isSwitch: dn && dn.endsWith('::'),
                 connid: parsed.connid,
+                refid: parsed.refid,
                 raw: trimmed
             });
             continue;
@@ -628,6 +636,11 @@ function parseEventsRequestsOnly(log) {
                 hasNoDn = true;
             }
 
+            // Track connid
+            if (parsed.connid) {
+                connidSet.add(parsed.connid);
+            }
+
             messages.push({
                 type: 'request',
                 timestamp: parseSipTimestamp(timestamp),
@@ -636,16 +649,39 @@ function parseEventsRequestsOnly(log) {
                 dn: dn || '',
                 isSwitch: dn && dn.endsWith('::'),
                 connid: parsed.connid,
+                refid: parsed.refid,
                 raw: trimmed
             });
         }
     }
 
-    // Calculate delta times (between consecutive events/requests)
+    // Calculate delta times
+    // 1. Delta from previous event/request (orange)
+    // 2. Delta from request with same refid (green) - for events that have a matching request
     let lastTime = null;
+    const refidRequestTime = new Map(); // Track first request time per refid
+
     for (const msg of messages) {
-        msg.delta = lastTime !== null ? msg.timestamp - lastTime : null;
+        // Delta from previous message
+        msg.deltaPrev = lastTime !== null ? msg.timestamp - lastTime : null;
         lastTime = msg.timestamp;
+
+        // Track request times by refid, calculate event delta from request
+        msg.deltaRefid = null;
+        if (msg.refid && msg.refid !== '' && msg.refid !== '4294967295') {
+            if (msg.type === 'request') {
+                // Store first request time for this refid
+                if (!refidRequestTime.has(msg.refid)) {
+                    refidRequestTime.set(msg.refid, msg.timestamp);
+                }
+            } else if (msg.type === 'event') {
+                // Calculate delta from the request with same refid
+                const reqTime = refidRequestTime.get(msg.refid);
+                if (reqTime !== undefined) {
+                    msg.deltaRefid = msg.timestamp - reqTime;
+                }
+            }
+        }
     }
 
     // Build DN columns array in order of appearance
@@ -657,14 +693,15 @@ function parseEventsRequestsOnly(log) {
         messages,
         dnColumns,
         switchColumn: switchName,
-        hasNoDnColumn: hasNoDn
+        hasNoDnColumn: hasNoDn,
+        connids: [...connidSet]
     };
 
     return eventsGridData;
 }
 
 function renderEventsRequestsGrid() {
-    const { messages, dnColumns, switchColumn, hasNoDnColumn } = eventsGridData;
+    const { messages, dnColumns, switchColumn, hasNoDnColumn, connids } = eventsGridData;
 
     if (messages.length === 0) {
         alert('No Events or Requests found in the input');
@@ -674,60 +711,92 @@ function renderEventsRequestsGrid() {
     const gridSection = document.getElementById('events-grid-section');
     const thead = document.getElementById('events-grid-head');
     const tbody = document.getElementById('events-grid-body');
-    const countBadge = document.getElementById('events-count');
-    const statsDiv = document.getElementById('events-stats');
+    const infoContent = document.getElementById('events-info-content');
 
-    countBadge.textContent = messages.length;
-
-    // Build stats
+    // Build info bar (like reference: ConnID:xxx Messages Total:xxx Events:xxx Requests:xxx Errors:xxx)
     const eventCount = messages.filter(m => m.type === 'event').length;
     const requestCount = messages.filter(m => m.type === 'request').length;
-    statsDiv.innerHTML = `
-        <span>Events: <strong>${eventCount}</strong></span>
-        <span>Requests: <strong>${requestCount}</strong></span>
-        <span>DN Columns: <strong>${dnColumns.length}</strong></span>
-        ${switchColumn ? `<span>Switch: <strong>${switchColumn}</strong></span>` : ''}
+    const errorCount = messages.filter(m => m.eventType && m.eventType.toLowerCase().includes('error')).length;
+    const connidStr = connids && connids.length > 0 ? connids.join(', ') : '—';
+
+    infoContent.innerHTML = `
+        <span><span class="label">ConnID:</span><span class="connid">${connidStr}</span></span>
+        <span><span class="label">Messages Total:</span>${messages.length}</span>
+        <span><span class="label">Events:</span>${eventCount}</span>
+        <span><span class="label">Requests:</span>${requestCount}</span>
+        <span><span class="label">Errors:</span><span style="color: ${errorCount > 0 ? '#ef4444' : 'inherit'}">${errorCount}</span></span>
     `;
 
     // Build header row
-    // Columns: Time | Delta | No-DN (if needed) | DN1 | DN2 | ... | Switch (if needed)
+    // Columns: # | Time | Delta | No-DN (if needed) | DN1 | DN2 | ... | Switch (if needed)
     let headerHtml = '<tr>';
-    headerHtml += '<th class="col-time-header">Time</th>';
-    headerHtml += '<th class="col-delta-header">Δ Delta</th>';
+    headerHtml += '<th>#</th>';
+    headerHtml += '<th>Time</th>';
+    headerHtml += '<th>Δ</th>';
 
     if (hasNoDnColumn) {
-        headerHtml += '<th class="col-nodn-header">No DN</th>';
+        headerHtml += '<th></th>';
     }
 
     for (const dn of dnColumns) {
-        headerHtml += `<th class="col-dn-header">${escapeHtml(dn)}</th>`;
+        headerHtml += `<th>'${escapeHtml(dn)}'</th>`;
     }
 
     if (switchColumn) {
-        headerHtml += `<th class="col-switch-header">${escapeHtml(switchColumn)}</th>`;
+        headerHtml += `<th>'${escapeHtml(switchColumn)}'</th>`;
     }
 
     headerHtml += '</tr>';
     thead.innerHTML = headerHtml;
 
+    // Helper to get cell class based on type and event name
+    function getCellClass(msg) {
+        if (msg.eventType && msg.eventType.toLowerCase().includes('error')) {
+            return 'cell-error';
+        }
+        if (msg.type === 'request') {
+            return 'cell-request';
+        }
+        return '';
+    }
+
     // Build body rows
     let bodyHtml = '';
+    let rowNum = 1;
     for (const msg of messages) {
         bodyHtml += '<tr>';
+
+        // Row number
+        bodyHtml += `<td class="col-num">${rowNum++}</td>`;
 
         // Time column
         bodyHtml += `<td class="col-time">${msg.timeStr}</td>`;
 
-        // Delta column
-        const deltaClass = getDeltaClass(msg.delta);
-        const deltaText = msg.delta === null ? '—' : `+${msg.delta}ms`;
-        bodyHtml += `<td class="col-delta"><span class="delta-badge ${deltaClass}">${deltaText}</span></td>`;
+        // Delta column - orange for prev, green for refid
+        let deltaHtml = '';
+        if (msg.deltaPrev !== null) {
+            deltaHtml += `<span class="delta-prev">+${msg.deltaPrev}</span>`;
+        }
+        if (msg.deltaRefid !== null) {
+            deltaHtml += `<span class="delta-refid">(${msg.deltaRefid})</span>`;
+        }
+        bodyHtml += `<td class="col-delta">${deltaHtml}</td>`;
+
+        const cellClass = getCellClass(msg);
+
+        // Build event/request name with refid if exists
+        function getEventLabel(m) {
+            let label = escapeHtml(m.eventType);
+            if (m.refid && m.refid !== '' && m.refid !== '4294967295') {
+                label += `<span class="refid">(${m.refid})</span>`;
+            }
+            return label;
+        }
 
         // No-DN column (if present)
         if (hasNoDnColumn) {
             if (!msg.dn || msg.dn === '' || msg.dn === 'null') {
-                const typeClass = msg.type === 'event' ? 'type-event' : 'type-request';
-                bodyHtml += `<td><span class="cell-event ${typeClass}" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+                bodyHtml += `<td class="${cellClass}">${getEventLabel(msg)}</td>`;
             } else {
                 bodyHtml += '<td></td>';
             }
@@ -736,8 +805,7 @@ function renderEventsRequestsGrid() {
         // DN columns
         for (const dn of dnColumns) {
             if (msg.dn === dn && !msg.isSwitch) {
-                const typeClass = msg.type === 'event' ? 'type-event' : 'type-request';
-                bodyHtml += `<td><span class="cell-event ${typeClass}" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+                bodyHtml += `<td class="${cellClass}">${getEventLabel(msg)}</td>`;
             } else {
                 bodyHtml += '<td></td>';
             }
@@ -746,7 +814,7 @@ function renderEventsRequestsGrid() {
         // Switch column (if present)
         if (switchColumn) {
             if (msg.isSwitch) {
-                bodyHtml += `<td><span class="cell-switch" title="${escapeHtml(msg.eventType)}">${escapeHtml(msg.eventType)}</span></td>`;
+                bodyHtml += `<td class="${cellClass}">${getEventLabel(msg)}</td>`;
             } else {
                 bodyHtml += '<td></td>';
             }
@@ -766,6 +834,16 @@ function escapeHtml(str) {
               .replace(/>/g, '&gt;')
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#039;');
+}
+
+function toggleEventsTheme() {
+    const section = document.getElementById('events-grid-section');
+    const checkbox = document.getElementById('events-theme-checkbox');
+    if (checkbox.checked) {
+        section.classList.add('light-theme');
+    } else {
+        section.classList.remove('light-theme');
+    }
 }
 
 function handleParseEventsRequests() {
@@ -984,7 +1062,7 @@ function handleClear() {
     filters.showEvents = true;
     filters.showRequests = true;
     // Clear events grid data
-    eventsGridData = { messages: [], dnColumns: [], switchColumn: null, hasNoDnColumn: false };
+    eventsGridData = { messages: [], dnColumns: [], switchColumn: null, hasNoDnColumn: false, connids: [] };
 }
 
 // =====================================================

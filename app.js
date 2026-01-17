@@ -2024,14 +2024,17 @@ function renderTimelineRuler() {
             innerWrapper.appendChild(mark);
         }
 
-        // Add break markers at gap boundaries
+        // Add break markers at gap boundaries with actual gap size label
         breakMarkers.forEach(marker => {
             const breakMark = document.createElement('div');
             breakMark.className = 'ruler-break-marker';
             breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
-            breakMark.style.width = `${msToPixels(marker.compressedEnd - marker.compressedStart)}px`;
-            breakMark.title = `Compressed: ${formatDuration(marker.actualStart)} → ${formatDuration(marker.actualEnd)} (${formatDuration(marker.compression)} hidden)`;
-            breakMark.innerHTML = '<span class="break-symbol">≋</span>';
+            // Fixed visual width for the marker (min 16px)
+            const visualWidth = Math.max(16, msToPixels(marker.compressedEnd - marker.compressedStart));
+            breakMark.style.width = `${visualWidth}px`;
+            const actualGapSize = marker.actualEnd - marker.actualStart;
+            breakMark.title = `Gap: ${formatDuration(actualGapSize)} (${formatDuration(marker.actualStart)} → ${formatDuration(marker.actualEnd)})`;
+            breakMark.innerHTML = `<span class="break-label">${formatDuration(actualGapSize)}</span>`;
             innerWrapper.appendChild(breakMark);
         });
     } else {
@@ -2080,16 +2083,15 @@ function renderLanesCanvas() {
         track.dataset.laneId = lane.id;
         track.style.minWidth = `${minTrackWidth}px`;
 
-        // Render compression indicators for this lane
+        // Render compression indicators for this lane (fixed 16px width, no label - label is on ruler)
         if (Compression.enabled) {
             const gaps = Compression.getCompressedGaps();
             gaps.forEach(gap => {
                 const indicator = document.createElement('div');
                 indicator.className = 'compression-indicator';
                 indicator.style.left = `${msToPixels(gap.compressedStart)}px`;
-                indicator.style.width = `${msToPixels(gap.compressedSize)}px`;
-                indicator.title = `Compressed: ${formatDuration(gap.originalSize)} → ${formatDuration(gap.compressedSize)}`;
-                indicator.innerHTML = `<span class="compression-label">≋ ${formatDuration(gap.originalSize - gap.compressedSize)}</span>`;
+                // Width is fixed at 16px via CSS !important
+                indicator.title = `Gap: ${formatDuration(gap.originalSize)}`;
                 track.appendChild(indicator);
             });
         }

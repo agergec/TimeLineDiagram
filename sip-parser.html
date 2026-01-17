@@ -822,7 +822,7 @@
             display: none;
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 16px;
+            border-radius: 12px;
             overflow: hidden;
             margin-bottom: 24px;
         }
@@ -831,120 +831,181 @@
             display: block;
         }
 
+        /* Theme toggle for events grid */
+        .events-theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .events-theme-toggle label {
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .events-theme-toggle input {
+            cursor: pointer;
+        }
+
         .events-grid {
-            width: 100%;
             border-collapse: collapse;
             font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Dark theme (default) */
+        .events-grid th,
+        .events-grid td {
+            border: 1px solid var(--border-color);
+            padding: 2px 8px;
+            text-align: left;
+            white-space: nowrap;
         }
 
         .events-grid th {
-            padding: 10px 12px;
-            text-align: left;
+            background: var(--bg-tertiary);
             font-weight: 500;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 0.5px;
-            background: var(--bg-primary);
-            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
             position: sticky;
             top: 0;
-            white-space: nowrap;
-            min-width: 100px;
-        }
-
-        .events-grid th.col-time-header,
-        .events-grid th.col-delta-header {
-            min-width: 90px;
-        }
-
-        .events-grid th.col-dn-header {
-            min-width: 140px;
-            background: linear-gradient(135deg, var(--bg-primary), rgba(99, 102, 241, 0.1));
-        }
-
-        .events-grid th.col-switch-header {
-            min-width: 120px;
-            background: linear-gradient(135deg, var(--bg-primary), rgba(244, 114, 182, 0.1));
-        }
-
-        .events-grid th.col-nodn-header {
-            min-width: 160px;
-            background: linear-gradient(135deg, var(--bg-primary), rgba(251, 146, 60, 0.1));
         }
 
         .events-grid td {
-            padding: 8px 12px;
-            border-bottom: 1px solid var(--border-color);
-            font-family: 'JetBrains Mono', monospace;
-            vertical-align: middle;
-            font-size: 11px;
+            font-size: 12px;
+            color: var(--text-primary);
         }
 
         .events-grid tr:hover td {
-            background: var(--bg-tertiary);
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .events-grid .col-num {
+            color: var(--text-muted);
+            text-align: right;
+            padding-right: 12px;
         }
 
         .events-grid .col-time {
             color: var(--text-secondary);
-            white-space: nowrap;
         }
 
         .events-grid .col-delta {
             text-align: right;
-            white-space: nowrap;
         }
 
-        .events-grid .cell-event {
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 500;
-            display: inline-block;
-            max-width: 180px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .events-grid .cell-event.type-event {
-            background: rgba(16, 185, 129, 0.15);
-            color: #34d399;
-        }
-
-        .events-grid .cell-event.type-request {
-            background: rgba(251, 146, 60, 0.15);
+        .events-grid .delta-prev {
             color: #fb923c;
         }
 
-        .events-grid .cell-switch {
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 500;
-            background: rgba(244, 114, 182, 0.15);
-            color: #f472b6;
+        .events-grid .delta-refid {
+            color: #10b981;
+            margin-left: 4px;
         }
 
-        .events-stats {
-            display: flex;
-            gap: 16px;
-            padding: 12px 20px;
+        .events-grid .cell-request {
+            color: #10b981;
+        }
+
+        .events-grid .cell-error {
+            color: #ef4444;
+            font-weight: 500;
+        }
+
+        .events-grid .refid {
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+
+        .events-info-bar {
+            padding: 8px 12px;
             background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
             font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .events-stats span {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: space-between;
         }
 
-        .events-stats strong {
-            color: var(--text-primary);
-            font-family: 'JetBrains Mono', monospace;
+        .events-info-bar #events-info-content {
+            display: flex;
+            gap: 20px;
+        }
+
+        .events-info-bar .connid {
+            color: var(--accent-primary);
+        }
+
+        .events-info-bar .label {
+            color: var(--text-muted);
+        }
+
+        /* Light theme for events grid */
+        .events-grid-section.light-theme {
+            background: #ffffff;
+            border-color: #d1d5db;
+        }
+
+        .events-grid-section.light-theme .events-info-bar {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+            color: #1f2937;
+        }
+
+        .events-grid-section.light-theme .events-info-bar .label {
+            color: #6b7280;
+        }
+
+        .events-grid-section.light-theme .events-info-bar .connid {
+            color: #4f46e5;
+        }
+
+        .events-grid-section.light-theme .events-grid th {
+            background: #f3f4f6;
+            color: #374151;
+            border-color: #d1d5db;
+        }
+
+        .events-grid-section.light-theme .events-grid td {
+            color: #1f2937;
+            border-color: #d1d5db;
+        }
+
+        .events-grid-section.light-theme .events-grid tr:hover td {
+            background: #f9fafb;
+        }
+
+        .events-grid-section.light-theme .events-grid .col-num {
+            color: #9ca3af;
+        }
+
+        .events-grid-section.light-theme .events-grid .col-time {
+            color: #6b7280;
+        }
+
+        .events-grid-section.light-theme .events-grid .delta-prev {
+            color: #ea580c;
+        }
+
+        .events-grid-section.light-theme .events-grid .delta-refid {
+            color: #059669;
+        }
+
+        .events-grid-section.light-theme .events-grid .cell-request {
+            color: #059669;
+        }
+
+        .events-grid-section.light-theme .events-grid .cell-error {
+            color: #dc2626;
+        }
+
+        .events-grid-section.light-theme .events-grid .refid {
+            color: #9ca3af;
         }
     </style>
 </head>
@@ -1075,13 +1136,13 @@ Requests: 02:41:48.968 RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646b
 
         <!-- Events/Requests DN Grid -->
         <div id="events-grid-section" class="events-grid-section">
-            <div class="grid-header">
-                <div class="grid-title">
-                    Events/Requests by DN
-                    <span id="events-count" class="message-count">0</span>
+            <div class="events-info-bar">
+                <span id="events-info-content"></span>
+                <div class="events-theme-toggle">
+                    <input type="checkbox" id="events-theme-checkbox" onchange="toggleEventsTheme()">
+                    <label for="events-theme-checkbox">Light</label>
                 </div>
             </div>
-            <div class="events-stats" id="events-stats"></div>
             <div class="grid-container">
                 <table class="events-grid">
                     <thead id="events-grid-head"></thead>
