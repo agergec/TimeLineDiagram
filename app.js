@@ -2220,7 +2220,18 @@ function updateMeasurementDisplay() {
 }
 
 function handleZoom(direction) {
+    const canvas = app.elements.lanesCanvas;
+    const laneLabelWidth = 160; // var(--lane-label-width)
+
+    // Get current viewport center in time (ms)
+    const viewportWidth = canvas.clientWidth - laneLabelWidth;
+    const scrollLeft = canvas.scrollLeft;
+    const centerX = scrollLeft + viewportWidth / 2;
+    const centerTimeMs = centerX / app.pixelsPerMs;
+
+    // Apply zoom
     const factor = direction === 'in' ? 1.25 : 0.8;
+    const oldScale = app.pixelsPerMs;
     app.pixelsPerMs = Math.max(app.minPixelsPerMs,
         Math.min(app.maxPixelsPerMs, app.pixelsPerMs * factor));
 
@@ -2228,6 +2239,15 @@ function handleZoom(direction) {
     app.elements.zoomLevel.textContent = `${zoomPercent}%`;
 
     renderLanesCanvas();
+
+    // Restore scroll position to keep the same time at center
+    const newCenterX = centerTimeMs * app.pixelsPerMs;
+    const newScrollLeft = newCenterX - viewportWidth / 2;
+    canvas.scrollLeft = Math.max(0, newScrollLeft);
+
+    // Sync ruler and markers
+    app.elements.timelineRuler.scrollLeft = canvas.scrollLeft;
+    app.elements.timeMarkers.scrollLeft = canvas.scrollLeft;
 }
 
 function handleZoomFit() {
