@@ -1407,7 +1407,9 @@ function purgeApplication() {
                 renderAlignmentMarkers();
                 updateTotalDuration();
 
-                app.elements.propertiesPanel.classList.add('hidden');
+                if (app.elements.propertiesPanel) {
+                    app.elements.propertiesPanel.classList.add('hidden');
+                }
 
                 // Render diagrams list immediately and after delay to ensure update
                 renderDiagramsList();
@@ -1452,7 +1454,9 @@ function purgeApplication() {
                 saveCurrentDiagram();
 
                 // Close the settings panel
-                app.elements.propertiesPanel.classList.add('hidden');
+                if (app.elements.propertiesPanel) {
+                    app.elements.propertiesPanel.classList.add('hidden');
+                }
 
                 showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
             }
@@ -2558,7 +2562,9 @@ function deselectBox() {
     document.querySelectorAll('.timeline-box.selected').forEach(el => {
         el.classList.remove('selected');
     });
-    app.elements.propertiesPanel.classList.add('hidden');
+    if (app.elements.propertiesPanel) {
+        app.elements.propertiesPanel.classList.add('hidden');
+    }
 
     // Remove active state from settings button
     const settingsBtn = document.getElementById('settings-btn');
