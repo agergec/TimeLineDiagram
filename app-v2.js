@@ -1606,7 +1606,7 @@ function renderDiagramsList() {
     // Update new diagram button state
     updateNewDiagramButton();
     updateLoadButton();
-    
+
     // Update badge
     updateDiagramsBadge();
 }
@@ -5370,6 +5370,13 @@ const V2 = {
         };
     }
 };
+
+// Global wrapper for updateDiagramsBadge (delegates to V2 if available)
+function updateDiagramsBadge() {
+    if (V2 && V2.isV2 && typeof V2.updateDiagramsBadge === 'function') {
+        V2.updateDiagramsBadge();
+    }
+}
 
 // Attach lane-controls click handler via event delegation
 document.addEventListener('click', (e) => {
