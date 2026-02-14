@@ -149,6 +149,13 @@ class TimelineDiagram {
         this.nextLaneId = data.nextLaneId || 1;
         this.nextBoxId = data.nextBoxId || 1;
         this.locked = data.locked || false;
+
+        // Migration: Ensure all lanes have baseColor (for old saved diagrams)
+        this.lanes.forEach((lane, index) => {
+            if (!lane.baseColor) {
+                lane.baseColor = PALETTE[index % PALETTE.length];
+            }
+        });
         // Restore compression state (default to false for new/old diagrams)
         Compression.setEnabled(data.compressionEnabled || false);
         // Restore settings if present
@@ -4641,6 +4648,10 @@ function init() {
     const trailingSlider = document.getElementById('config-trailing-slider');
     const trailingInput = document.getElementById('config-trailing-space');
     if (trailingSlider && trailingInput) {
+        // Initialize with current value
+        trailingSlider.value = app.settings.trailingSpace;
+        trailingInput.value = app.settings.trailingSpace;
+
         const syncTrailing = (value) => {
             app.settings.trailingSpace = parseInt(value, 10);
             trailingSlider.value = value;
