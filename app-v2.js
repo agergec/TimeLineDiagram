@@ -2352,23 +2352,44 @@ function updateTotalDuration() {
 }
 
 function updatePropertiesPanel(isNewBox = false) {
+    const panel = app.elements.propertiesPanel;
+    const boxProps = document.getElementById('box-props');
+    const laneProps = document.getElementById('lane-props');
+    const settingsProps = document.getElementById('settings-props');
+    const propsTitle = document.getElementById('props-title');
+
     if (!app.selectedBoxId) {
-        // Don't hide sidebar if settings are showing
-        if (currentMode === 'box') {
-            hideRightSidebar();
-        }
+        panel.classList.add('hidden');
         return;
     }
 
     const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
     if (!box) {
-        if (currentMode === 'box') hideRightSidebar();
+        panel.classList.add('hidden');
         return;
     }
 
-    // Determine visibility
+    // Show box properties, hide others
+    if (boxProps) boxProps.classList.remove('hidden');
+    if (laneProps) laneProps.classList.add('hidden');
+    if (settingsProps) settingsProps.classList.add('hidden');
+    if (propsTitle) propsTitle.textContent = 'Box Properties';
+
+    // Determine if panel should be visible:
+    // - If this is a NEW box: only open if autoOpenBoxProperties is enabled
+    // - If clicking existing box: always open
+    // - If updating (drag/resize): keep current visibility
+    const panelWasVisible = !panel.classList.contains('hidden');
     if (isNewBox) {
+        // New box created - respect setting
         if (app.settings.autoOpenBoxProperties) {
+            panel.classList.remove('hidden');
+        }
+    } else if (!panelWasVisible) {
+        // Not a new box and panel was closed - this is a click on existing box, open it
+        panel.classList.remove('hidden');
+    }
+    // If panel was already visible, keep it visible (already the case)
 
     app.elements.boxLabel.value = box.label;
     app.elements.boxColor.value = box.color;
