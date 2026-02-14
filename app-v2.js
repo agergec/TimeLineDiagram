@@ -2218,16 +2218,16 @@ function createBoxElement(box) {
         hideBoxTooltip();
     });
 
-    // Box click/selection (only if not dragging/resizing)
+    // Box click/selection
     el.addEventListener('click', (e) => {
-        // Suppress click if we just finished dragging or resizing
-        if (app.justFinishedDragOrResize) {
-            app.justFinishedDragOrResize = false;
-            e.stopPropagation();
-            return;
-        }
         e.stopPropagation();
-        selectBox(box.id);
+        // Only select on true clicks, not after drag/resize
+        // Check if last drag involved actual movement
+        if (!app.lastDragDidMove) {
+            selectBox(box.id);
+        }
+        // Reset flag
+        app.lastDragDidMove = false;
     });
 
     // Box dragging (move)
@@ -2338,9 +2338,10 @@ function renderAlignmentMarkers() {
     const rulerHeight = parseInt(getComputedStyle(document.documentElement)
         .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
 
-    // V2 check: In v2, sidebar is outside canvas, so don't include it in offsetX
+    // In v2, need to account for both sidebar and lane-label, but subtract lane-label
+    // because boxes are positioned relative to track which already accounts for it
     const isV2 = document.getElementById('right-sidebar') !== null;
-    const offsetX = isV2 ? laneLabelWidth : (sidebarWidth + laneLabelWidth);
+    const offsetX = isV2 ? sidebarWidth : (sidebarWidth + laneLabelWidth);
     const offsetY = headerHeight + rulerHeight;
     const canvasHeight = canvas.scrollHeight;
     const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
@@ -2718,6 +2719,11 @@ function handleResizeStart(e, boxId) {
 function handleMouseMove(e) {
     if (!app.isDragging || !app.dragData) return;
 
+    // Track that actual movement occurred during drag
+    if (!app.dragData.didMove) {
+        app.dragData.didMove = true;
+    }
+
     if (app.dragData.type === 'create') {
         const rect = app.dragData.track.getBoundingClientRect();
         const currentX = e.clientX - rect.left;
@@ -2860,9 +2866,6 @@ function handleMouseUp(e) {
             selectBox(box.id, true);
         }
     } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
-        // Set flag to suppress click event after drag/resize
-        app.justFinishedDragOrResize = true;
-
         // Recalculate compression gaps after moving/resizing
         if (Compression.enabled) {
             Compression.invalidate();
@@ -2877,6 +2880,9 @@ function handleMouseUp(e) {
         updateTotalDuration();
         updatePropertiesPanel();
     }
+
+    // Track if movement occurred during drag (for click suppression)
+    app.lastDragDidMove = app.dragData && app.dragData.didMove;
 
     app.isDragging = false;
     app.dragData = null;
