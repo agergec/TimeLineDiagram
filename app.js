@@ -975,17 +975,17 @@ function adjustHue(hex, hueShift) {
     function hue2rgb(p, q, t) {
         if (t < 0) t += 1;
         if (t > 1) t -= 1;
-        if (t < 1/6) return p + (q - p) * 6 * t;
-        if (t < 1/2) return q;
-        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
         return p;
     }
 
     let q = l < 0.5 ? l * (1 + s) : l + s - l * s;
     let p = 2 * l - q;
-    r = Math.round(hue2rgb(p, q, h + 1/3) * 255);
+    r = Math.round(hue2rgb(p, q, h + 1 / 3) * 255);
     g = Math.round(hue2rgb(p, q, h) * 255);
-    b = Math.round(hue2rgb(p, q, h - 1/3) * 255);
+    b = Math.round(hue2rgb(p, q, h - 1 / 3) * 255);
 
     return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
@@ -4352,16 +4352,16 @@ function getContrastGlowColor(colorStr) {
             const hue2rgb = (p, q, t) => {
                 if (t < 0) t += 1;
                 if (t > 1) t -= 1;
-                if (t < 1/6) return p + (q - p) * 6 * t;
-                if (t < 1/2) return q;
-                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                if (t < 1 / 6) return p + (q - p) * 6 * t;
+                if (t < 1 / 2) return q;
+                if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
                 return p;
             };
             const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
             const p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1/3);
+            r = hue2rgb(p, q, h + 1 / 3);
             g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1/3);
+            b = hue2rgb(p, q, h - 1 / 3);
         }
         return {
             r: Math.round(r * 255),
@@ -4864,3 +4864,1809 @@ function init() {
 
 // Start the app when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
+
+
+// =====================================================
+// V2 UI COMPATIBILITY LAYER
+// Detects index-v2.html and patches app behavior:
+// - Right sidebar replaces floating properties panel
+// - Modal for diagram management
+// - Theme toggle (dark/light)
+// - Click-to-activate lane controls
+// - Timeline Duration setting
+// - Lane color sync fix
+// =====================================================
+
+const V2 = {
+    isV2: false,
+    rightSidebar: null,
+    rightSidebarTitle: null,
+    currentMode: null, // 'settings', 'box', 'lane'
+
+    /**
+     * Detect v2 and initialize
+     */
+    init() {
+        this.rightSidebar = document.getElementById('right-sidebar');
+        if (!this.rightSidebar) return; // Not v2 — do nothing
+
+        this.isV2 = true;
+        this.rightSidebarTitle = document.getElementById('right-sidebar-title');
+
+        // Patch app.elements.propertiesPanel to point to right sidebar
+        // (This allows existing app logic to interact with the sidebar container)
+        app.elements.propertiesPanel = this.rightSidebar;
+
+        // 1. Patch global functions FIRST so other listeners resolve to new logic
+        this.patchFunctions();
+
+        // 2. Initialize V2 UI components
+        this.initRightSidebar();
+        this.initDiagramsModal();
+        this.initThemeToggle();
+        this.initLaneControlsClick();
+        this.initTimelineDuration();
+        this.initLockToggle();
+
+        // 3. Update UI state
+        this.updateDiagramsBadge();
+    },
+
+    /**
+     * Right sidebar toggle
+     */
+    initRightSidebar() {
+        const closeBtn = document.getElementById('close-right-sidebar');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.hideRightSidebar());
+        }
+
+        // Clone Settings button to remove init() listener (which pointed to old showSettingsPanel)
+        // and attach V2 listener
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) {
+            const newBtn = settingsBtn.cloneNode(true);
+            settingsBtn.parentNode.replaceChild(newBtn, settingsBtn);
+
+            newBtn.addEventListener('click', () => {
+                // Toggle logic
+                if (this.currentMode === 'settings') {
+                    this.hideRightSidebar();
+                } else {
+                    // Call the patched showSettingsPanel
+                    if (typeof showSettingsPanel === 'function') {
+                        showSettingsPanel();
+                    }
+                }
+            });
+        }
+    },
+
+    showRightSidebar(mode) {
+        const sidebar = this.rightSidebar;
+        const title = this.rightSidebarTitle;
+        const settingsProps = document.getElementById('settings-props');
+        const boxProps = document.getElementById('box-props');
+        const laneProps = document.getElementById('lane-props');
+
+        // Hide all sections
+        if (settingsProps) settingsProps.classList.add('hidden');
+        if (boxProps) boxProps.classList.add('hidden');
+        if (laneProps) laneProps.classList.add('hidden');
+
+        // Show requested section
+        switch (mode) {
+            case 'settings':
+                if (settingsProps) settingsProps.classList.remove('hidden');
+                if (title) title.textContent = 'Diagram Settings';
+                break;
+            case 'box':
+                if (boxProps) boxProps.classList.remove('hidden');
+                if (title) title.textContent = 'Box Properties';
+                break;
+            case 'lane':
+                if (laneProps) laneProps.classList.remove('hidden');
+                if (title) title.textContent = 'Lane Properties';
+                break;
+        }
+
+        this.currentMode = mode;
+        sidebar.classList.remove('hidden');
+        sidebar.classList.add('visible');
+
+        // Update settings button state
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) {
+            settingsBtn.classList.toggle('active', mode === 'settings');
+        }
+    },
+
+    hideRightSidebar() {
+        const sidebar = this.rightSidebar;
+        sidebar.classList.remove('visible');
+        sidebar.classList.add('hidden');
+        this.currentMode = null;
+
+        // Remove active state from settings button
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) settingsBtn.classList.remove('active');
+    },
+
+    /**
+     * Diagrams modal
+     */
+    initDiagramsModal() {
+        // ID is now diagrams-toggle in index-v2.html
+        const modalBtn = document.getElementById('diagrams-toggle');
+        const modal = document.getElementById('diagrams-modal');
+        const closeBtn = document.getElementById('close-diagrams-modal');
+
+        if (modalBtn && modal) {
+            // Clone to remove init() listener (which toggles dummy panel)
+            const newBtn = modalBtn.cloneNode(true);
+            modalBtn.parentNode.replaceChild(newBtn, modalBtn);
+
+            newBtn.addEventListener('click', () => {
+                modal.classList.remove('hidden');
+                renderDiagramsList(); // Uses patched version
+            });
+        }
+
+        if (closeBtn && modal) {
+            closeBtn.addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+        }
+
+        // Close on overlay click
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            });
+        }
+
+        // Close on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+            }
+        });
+    },
+
+    updateDiagramsBadge() {
+        const badge = document.getElementById('diagrams-badge');
+        if (badge) {
+            const diagrams = getAllDiagrams();
+            badge.textContent = diagrams.length;
+            badge.classList.toggle('empty', diagrams.length === 0);
+        }
+    },
+
+    /**
+     * Theme toggle
+     */
+    initThemeToggle() {
+        const btn = document.getElementById('theme-toggle-btn');
+        if (!btn) return;
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('tld-theme') || 'dark';
+        this.applyTheme(savedTheme);
+
+        btn.addEventListener('click', () => {
+            const isDark = document.body.classList.contains('dark-theme');
+            const newTheme = isDark ? 'light' : 'dark';
+            this.applyTheme(newTheme);
+            localStorage.setItem('tld-theme', newTheme);
+        });
+    },
+
+    applyTheme(theme) {
+        const btn = document.getElementById('theme-toggle-btn');
+        if (theme === 'light') {
+            document.body.classList.remove('dark-theme');
+            document.body.classList.add('light-theme');
+            if (btn) btn.textContent = '☀';
+        } else {
+            document.body.classList.remove('light-theme');
+            document.body.classList.add('dark-theme');
+            if (btn) btn.textContent = '☽';
+        }
+    },
+
+    /**
+     * Lane controls: click-to-activate instead of hover
+     */
+    initLaneControlsClick() {
+        // Use event delegation on lane-list
+        const laneList = document.getElementById('lane-list');
+        if (!laneList) return;
+
+        // Close any open lane menu when clicking elsewhere
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.lane-controls')) {
+                document.querySelectorAll('.lane-controls.active').forEach(el => {
+                    el.classList.remove('active');
+                });
+            }
+        });
+    },
+
+    /**
+     * Timeline Duration setting
+     */
+    initTimelineDuration() {
+        // Add timelineDuration to settings if not present
+        if (!app.settings.timelineDuration) {
+            app.settings.timelineDuration = 8000; // Default 8000ms
+        }
+
+        const durationInput = document.getElementById('config-timeline-duration');
+        if (durationInput) {
+            durationInput.value = app.settings.timelineDuration;
+            durationInput.addEventListener('change', () => {
+                const lastBoxEnd = app.diagram.getTotalDuration();
+                let newValue = parseInt(durationInput.value, 10);
+
+                // Validate: can't be less than last box end
+                if (newValue < lastBoxEnd) {
+                    newValue = Math.ceil(lastBoxEnd / 100) * 100; // Round up to nearest 100
+                    durationInput.value = newValue;
+                    showToast({
+                        type: 'warning',
+                        title: 'Duration adjusted',
+                        message: `Cannot be less than last box end (${lastBoxEnd}ms)`,
+                        duration: 3000
+                    });
+                }
+
+                app.settings.timelineDuration = newValue;
+                renderTimelineRuler();
+                renderLanesCanvas();
+                renderTimeMarkers();
+                Minimap.render();
+                autoSave();
+            });
+        }
+    },
+
+    /**
+     * Lock toggle in diagram settings
+     */
+    initLockToggle() {
+        const lockCheckbox = document.getElementById('config-lock-diagram');
+        if (lockCheckbox) {
+            lockCheckbox.addEventListener('change', () => {
+                app.diagram.locked = lockCheckbox.checked;
+                updateLockState();
+                autoSave();
+                renderDiagramsList();
+            });
+        }
+    },
+
+    /**
+     * Override existing functions for v2 behavior
+     */
+    patchFunctions() {
+        const self = this;
+
+        // Override showSettingsPanel
+        const _origShowSettings = showSettingsPanel;
+        showSettingsPanel = function () {
+            // Check V2.isV2 or explicitly force it since we are in V2 code
+            if (!V2.isV2) { _origShowSettings(); return; }
+
+            // Toggle: if settings already open, close
+            if (self.currentMode === 'settings') {
+                self.hideRightSidebar();
+                return;
+            }
+
+            // Deselect any box
+            app.selectedBoxId = null;
+            app.selectedLaneId = null;
+            document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+
+            // Populate settings values
+            const pageTitleInput = document.getElementById('config-page-title');
+            if (pageTitleInput) pageTitleInput.value = app.diagram.title;
+
+            const thresholdSelect = document.getElementById('config-time-threshold');
+            if (thresholdSelect) thresholdSelect.value = app.settings.timeFormatThreshold.toString();
+
+            const alignmentCb = document.getElementById('config-show-alignment');
+            if (alignmentCb) alignmentCb.checked = app.settings.showAlignmentLines;
+
+            const labelsCb = document.getElementById('config-show-labels');
+            if (labelsCb) labelsCb.checked = app.settings.showBoxLabels;
+
+            const autoOpenCb = document.getElementById('config-auto-open-properties');
+            if (autoOpenCb) autoOpenCb.checked = app.settings.autoOpenBoxProperties;
+
+            const lockCb = document.getElementById('config-lock-diagram');
+            if (lockCb) lockCb.checked = app.diagram.locked;
+
+            const durationInput = document.getElementById('config-timeline-duration');
+            if (durationInput) durationInput.value = app.settings.timelineDuration || 8000;
+
+            const startTimeInput = document.getElementById('start-time');
+            if (startTimeInput) startTimeInput.value = app.diagram.startTime;
+
+            self.showRightSidebar('settings');
+        };
+
+        // Override updatePropertiesPanel for right sidebar
+        const _origUpdateProps = updatePropertiesPanel;
+        updatePropertiesPanel = function (isNewBox = false) {
+            if (!V2.isV2) { _origUpdateProps(isNewBox); return; }
+
+            if (!app.selectedBoxId) {
+                // Don't hide sidebar if settings are showing
+                if (self.currentMode === 'box') {
+                    self.hideRightSidebar();
+                }
+                return;
+            }
+
+            const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+            if (!box) {
+                if (self.currentMode === 'box') self.hideRightSidebar();
+                return;
+            }
+
+            // Determine visibility
+            if (isNewBox) {
+                if (app.settings.autoOpenBoxProperties) {
+                    self.showRightSidebar('box');
+                }
+            } else if (self.currentMode !== 'box') {
+                self.showRightSidebar('box');
+            }
+
+            // Populate values
+            app.elements.boxLabel.value = box.label;
+            app.elements.boxColor.value = box.color;
+            app.elements.boxStart.value = box.startOffset;
+            app.elements.boxDuration.value = box.duration;
+
+            if (app.elements.boxEnd) {
+                app.elements.boxEnd.value = box.startOffset + box.duration;
+            }
+
+            const baseTime = parseTime(app.diagram.startTime);
+            app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
+            app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+        };
+
+        // Override deselectBox
+        const _origDeselect = deselectBox;
+        deselectBox = function () {
+            if (!V2.isV2) { _origDeselect(); return; }
+
+            app.selectedBoxId = null;
+            document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+
+            // Only hide sidebar if showing box props
+            if (self.currentMode === 'box') {
+                self.hideRightSidebar();
+            }
+
+            // Remove glimpsed state from pick-start button
+            const pickBtn = document.getElementById('pick-start-btn');
+            if (pickBtn) pickBtn.classList.remove('glimpsed');
+        };
+
+        // Override showLanePropertiesPanel
+        const _origShowLaneProps = showLanePropertiesPanel;
+        showLanePropertiesPanel = function (laneId) {
+            if (!V2.isV2) { _origShowLaneProps(laneId); return; }
+
+            const lane = app.diagram.lanes.find(l => l.id === parseInt(laneId));
+            if (!lane) return;
+
+            // Deselect any box
+            app.selectedBoxId = null;
+            app.selectedLaneId = laneId;
+            document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+
+            // Set lane name
+            const laneNameInput = document.getElementById('lane-name');
+            if (laneNameInput) laneNameInput.value = lane.name;
+
+            // Generate palette
+            const lanePalette = document.getElementById('lane-palette');
+            if (lanePalette) {
+                lanePalette.innerHTML = '';
+                PALETTE.forEach(color => {
+                    const swatch = document.createElement('div');
+                    swatch.className = 'palette-swatch';
+                    swatch.style.backgroundColor = color;
+                    swatch.title = color;
+                    if (lane.baseColor === color) swatch.classList.add('selected');
+                    swatch.addEventListener('click', () => {
+                        setLaneColor(laneId, color);
+                        lanePalette.querySelectorAll('.palette-swatch').forEach(s => s.classList.remove('selected'));
+                        swatch.classList.add('selected');
+                        // Also update the lane item color swatch in sidebar
+                        renderLaneList();
+                    });
+                    lanePalette.appendChild(swatch);
+                });
+            }
+
+            self.showRightSidebar('lane');
+        };
+
+        // Override renderDiagramsList to also update badge
+        const _origRenderDiagrams = renderDiagramsList;
+        renderDiagramsList = function () {
+            _origRenderDiagrams();
+            if (V2.isV2) {
+                self.updateDiagramsBadge();
+            }
+        };
+
+        // Override toggleDiagramsPanel for v2 (no sidebar panel, use modal)
+        const _origToggleDiagrams = toggleDiagramsPanel;
+        toggleDiagramsPanel = function () {
+            if (!V2.isV2) { _origToggleDiagrams(); return; }
+            // In v2, open the modal instead
+            const modal = document.getElementById('diagrams-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                renderDiagramsList();
+            }
+        };
+
+        // Override updateLockState for v2 (use header badge, title-input-v2)
+        const _origUpdateLock = updateLockState;
+        updateLockState = function () {
+            if (!V2.isV2) { _origUpdateLock(); return; }
+
+            const body = document.body;
+            if (app.diagram.locked) {
+                body.classList.add('diagram-locked');
+                app.elements.diagramTitle.readOnly = true;
+                const startTime = document.getElementById('start-time');
+                if (startTime) startTime.readOnly = true;
+            } else {
+                body.classList.remove('diagram-locked');
+                app.elements.diagramTitle.readOnly = false;
+                const startTime = document.getElementById('start-time');
+                if (startTime) startTime.readOnly = false;
+            }
+        };
+    }
+};
+
+// Attach lane-controls click handler via event delegation
+document.addEventListener('click', (e) => {
+    if (!V2.isV2) return;
+
+    const controls = e.target.closest('.lane-controls');
+    if (controls) {
+        // If clicking the kebab area (the pseudo-element trigger zone)
+        // but NOT a button inside
+        if (!e.target.closest('.lane-control-btn') && !e.target.closest('.lane-delete-btn')) {
+            e.stopPropagation();
+            const wasActive = controls.classList.contains('active');
+
+            // Close all other open menus
+            document.querySelectorAll('.lane-controls.active').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Toggle this one
+            if (!wasActive) {
+                controls.classList.add('active');
+            }
+        }
+    }
+});
+
+// Initialize V2 after the main init
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay to ensure init() has completed
+    setTimeout(() => V2.init(), 0);
+});
+
+// =====================================================
+// V2 Refinements (Scroll Sync, Strict Duration, Multi-line Lanes)
+// =====================================================
+
+(function () {
+    // Scroll Sync
+    function initScrollSync() {
+        if (!V2.isV2) return;
+        const lanesCanvas = document.getElementById('lanes-canvas');
+        const timeMarkers = document.getElementById('time-markers');
+        if (!lanesCanvas || !timeMarkers) return;
+
+        let isSyncing = false;
+
+        lanesCanvas.addEventListener('scroll', () => {
+            if (!isSyncing) {
+                isSyncing = true;
+                timeMarkers.scrollLeft = lanesCanvas.scrollLeft;
+                requestAnimationFrame(() => isSyncing = false);
+            }
+        });
+
+        timeMarkers.addEventListener('scroll', () => {
+            if (!isSyncing) {
+                isSyncing = true;
+                lanesCanvas.scrollLeft = timeMarkers.scrollLeft;
+                requestAnimationFrame(() => isSyncing = false);
+            }
+        });
+    }
+
+    // Override renderLaneList for div instead of input (Multi-line)
+    const _origRenderLaneList = renderLaneList;
+    renderLaneList = function () {
+        if (!V2.isV2) { _origRenderLaneList(); return; }
+
+        const container = app.elements.laneList;
+        container.innerHTML = '';
+        const totalLanes = app.diagram.lanes.length;
+
+        app.diagram.lanes.forEach((lane, index) => {
+            const item = document.createElement('div');
+            item.className = 'lane-item';
+            item.dataset.laneId = lane.id;
+            item.draggable = true;
+
+            const isFirst = index === 0;
+            const isLast = index === totalLanes - 1;
+
+            const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
+
+            // Replaced input with div.lane-name-div
+            item.innerHTML = `
+                <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
+                <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
+                <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
+                <div class="lane-controls">
+                    <button class="lane-control-btn move-up" data-lane-id="${lane.id}" title="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
+                    <button class="lane-control-btn move-down" data-lane-id="${lane.id}" title="Move down" ${isLast ? 'disabled' : ''}>↓</button>
+                    <button class="lane-control-btn insert-before" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane before">+↑</button>
+                    <button class="lane-control-btn insert-after" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane after">+↓</button>
+                    <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane">×</button>
+                </div>
+            `;
+
+            // Add click listener to open properties on the item (excluding controls)
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.lane-control-btn') || e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+                showLanePropertiesPanel(lane.id);
+            });
+
+            container.appendChild(item);
+        });
+
+        // Re-attach Delete buttons
+        container.querySelectorAll('.lane-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+                const laneId = parseInt(e.target.dataset.laneId, 10);
+                const lane = app.diagram.lanes.find(l => l.id === laneId);
+                const boxCount = app.diagram.getBoxesForLane(laneId).length;
+
+                showConfirmToast({
+                    title: 'Delete Lane?',
+                    message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
+                    onConfirm: () => {
+                        app.diagram.removeLane(laneId);
+                        renderLaneList();
+                        renderLanesCanvas();
+                        updateTotalDuration();
+                    }
+                });
+            });
+        });
+
+        // Move-up buttons
+        container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+                const laneId = parseInt(e.target.dataset.laneId, 10);
+                if (app.diagram.moveLane(laneId, 'up')) {
+                    renderLaneList();
+                    renderLanesCanvas();
+                }
+            });
+        });
+
+        // Move-down buttons
+        container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+                const laneId = parseInt(e.target.dataset.laneId, 10);
+                if (app.diagram.moveLane(laneId, 'down')) {
+                    renderLaneList();
+                    renderLanesCanvas();
+                }
+            });
+        });
+
+        // Insert-before buttons
+        container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+                const index = parseInt(e.target.dataset.index, 10);
+                app.diagram.addLaneAt(index);
+                renderLaneList();
+                renderLanesCanvas();
+            });
+        });
+
+        // Insert-after buttons
+        container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+                const index = parseInt(e.target.dataset.index, 10);
+                app.diagram.addLaneAt(index + 1);
+                renderLaneList();
+                renderLanesCanvas();
+            });
+        });
+
+        // Invoke global drag init if available (it attaches to container #lane-list)
+        if (typeof initDragAndDrop === 'function') initDragAndDrop();
+    };
+
+    // Override renderLanesCanvas for strict timeline duration
+    const _origRenderLanesCanvas = renderLanesCanvas;
+    renderLanesCanvas = function () {
+        if (!V2.isV2) { _origRenderLanesCanvas(); return; }
+
+        const canvas = app.elements.lanesCanvas;
+        canvas.innerHTML = '';
+
+        // STRICT DURATION LOGIC
+        // User wants: Duration value MUST affect design area first.
+        // But also "Prevent design area from being decreased below end-time of last box"
+
+        const totalDuration = app.diagram.getTotalDuration();
+        const settingsDuration = app.settings.timelineDuration || 8000;
+
+        // Ensure strictly >= totalDuration
+        const finalDuration = Math.max(totalDuration, settingsDuration);
+
+        // Use exact pixels unless compressed
+        const minTrackWidth = msToPixels(finalDuration + (app.settings.trailingSpace || 0));
+
+        app.diagram.lanes.forEach(lane => {
+            const row = document.createElement('div');
+            row.className = 'lane-row';
+            row.dataset.laneId = lane.id;
+            // Min-width for scrolling - considering sticky label
+            // Note: If labels are hidden, --lane-label-width is 0px
+            row.style.minWidth = `calc(var(--lane-label-width) + ${minTrackWidth}px)`;
+
+            const label = document.createElement('div');
+            label.className = 'lane-label';
+            label.innerHTML = escapeHtml(lane.name).replace(/\n/g, '<br>');
+            label.title = lane.name;
+
+            const track = document.createElement('div');
+            track.className = 'lane-track';
+            track.dataset.laneId = lane.id;
+
+            // Force explicit width to enable scrolling
+            track.style.minWidth = `${minTrackWidth}px`;
+            track.style.width = `${minTrackWidth}px`;
+
+            // Compression indicators
+            if (Compression.enabled) {
+                const gaps = Compression.getCompressedGaps();
+                gaps.forEach(gap => {
+                    const indicator = document.createElement('div');
+                    indicator.className = 'compression-indicator';
+                    indicator.style.left = `${msToPixels(gap.compressedStart)}px`;
+                    indicator.title = `Gap: ${formatDuration(gap.originalSize)}`;
+                    track.appendChild(indicator);
+                });
+            }
+
+            // Render boxes
+            const boxes = app.diagram.getBoxesForLane(lane.id);
+            boxes.forEach(box => {
+                const boxEl = createBoxElement(box);
+                track.appendChild(boxEl);
+            });
+
+            row.appendChild(label);
+            row.appendChild(track);
+            canvas.appendChild(row);
+        });
+
+        // Event listeners handling
+        canvas.querySelectorAll('.lane-track').forEach(track => {
+            track.addEventListener('mousedown', handleTrackMouseDown);
+        });
+
+        renderTimelineRuler();
+        renderAlignmentMarkers();
+        renderTimeMarkers();
+        Minimap.render();
+    };
+
+    // Compact View (Hide Labels)
+    function initCompactView() {
+        if (!V2.isV2) return;
+
+        const checkbox = document.getElementById('config-compact-view');
+        if (!checkbox) return;
+
+        // Init state
+        if (app.settings.compactView) {
+            document.body.classList.add('hide-lane-labels');
+            checkbox.checked = true;
+        }
+
+        checkbox.addEventListener('change', () => {
+            app.settings.compactView = checkbox.checked;
+            if (app.settings.compactView) {
+                document.body.classList.add('hide-lane-labels');
+            } else {
+                document.body.classList.remove('hide-lane-labels');
+            }
+            autoSave();
+            // Re-render canvases to update widths if needed (though CSS var handles visual, min-width calc uses var)
+            // But min-width style is inline calc(), so it updates automatically with css variable? 
+            // Yes, calc(var(--lane-label-width) + ...) updates when var changes.
+        });
+    }
+
+    // Also patch showSettingsPanel (via V2.patchFunctions override) to update the checkbox state when opening settings?
+    // The previously installed patchFunctions already exists. 
+    // We can just add a global listener for settings open or patch it again.
+    // Easier: Patch V2.showRightSidebar to update checkbox state.
+    const _origShowRightSidebar = V2.showRightSidebar;
+    V2.showRightSidebar = function (mode) {
+        _origShowRightSidebar.call(V2, mode);
+        if (mode === 'settings') {
+            const checkbox = document.getElementById('config-compact-view');
+            if (checkbox) checkbox.checked = !!app.settings.compactView;
+        }
+    };
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initScrollSync();
+            initCompactView();
+            // Trigger initial render for new overrides
+            if (V2.isV2) {
+                renderLaneList();
+                renderLanesCanvas();
+            }
+        }, 100);
+    });
+
+})();
+
+// =====================================================
+// V2 Fixes (Duration Sync, Compact View Alignment, Resize Fix, Lane Height)
+// =====================================================
+
+(function () {
+    // 1. DURATION SYNC & BI-DIRECTIONAL UPDATE
+    function initDurationSync() {
+        if (!V2.isV2) return;
+
+        const durationInput = document.getElementById('config-timeline-duration');
+        if (!durationInput) return;
+
+        // Force initial sync: Input value -> Settings -> Canvas
+        // or Settings -> Input (User prefers settings value to allow "default" 8000)
+        // If app.settings.timelineDuration is not set, default to 8000.
+        if (!app.settings.timelineDuration) {
+            app.settings.timelineDuration = 8000;
+        }
+        durationInput.value = app.settings.timelineDuration;
+
+        // Listen for input changes (User changes duration manually)
+        durationInput.addEventListener('change', () => {
+            let val = parseInt(durationInput.value, 10);
+            const totalDur = app.diagram.getTotalDuration();
+
+            // Allow user to set larger, but not smaller than total content
+            if (val < totalDur) {
+                // Determine if we should warn or just clamp. User said "Cannot be less than last box end" in HTML.
+                // But user also said "If the working area is expanded automatically... change the size of the option"
+                val = totalDur;
+                durationInput.value = val;
+                showToast({ type: 'info', title: 'Duration Adjusted', message: `Minimum duration is ${totalDur}ms based on existing boxes.` });
+            }
+
+            app.settings.timelineDuration = val;
+            renderLanesCanvas();
+            renderTimelineRuler();
+            renderTimeMarkers();
+            Minimap.render();
+            autoSave();
+        });
+
+        // Hook into renderLanesCanvas (which we already patched in v2_patch_refinements.js)
+        // to update input if content expands.
+        // We can't easily "hook" the hook without infinite recursion or complex wrapping.
+        // Instead, we can add a periodic check or specialized observer? 
+        // Better: Redefine the patch to include this logic. This script runs AFTER v2_patch_refinements.js
+        // so we can wrap the existing renderLanesCanvas.
+
+        const _prevRenderLanesCanvas = renderLanesCanvas;
+        renderLanesCanvas = function () {
+            // First run the rendering logic (which calculates minTrackWidth based on duration)
+            _prevRenderLanesCanvas();
+
+            if (!V2.isV2) return;
+
+            // Check if we need to auto-expand status
+            const totalDur = app.diagram.getTotalDuration();
+            const currentSetting = app.settings.timelineDuration || 8000;
+
+            if (totalDur > currentSetting) {
+                // Content determines width now. Update setting and input to match.
+                app.settings.timelineDuration = totalDur;
+                durationInput.value = totalDur;
+                // Note: We don't need to re-render immediately because _prevRenderLanesCanvas 
+                // already used Math.max(totalDur, settingsDuration) to set width.
+            }
+        };
+    }
+
+    // 2. RESIZE CLICK FIX
+    // Prevent box properties from opening when clicking resize handles.
+    // The issue is `selectBox` is called on mousedown in `handleResizeStart`.
+    // We can monkey-patch `selectBox` to ignore calls if we are resizing?
+    // Or improved: Patch `handleResizeStart` to NOT call selectBox or call it with a flag.
+    // But `handleResizeStart` is global.
+
+    // Changing `handleResizeStart` is hard because it's defined in app.js closure or global scope.
+    // However, `handleResizeStart` sets `app.dragData.type = 'resize'`.
+    // We can PATCH `updatePropertiesPanel` (again) to check this!
+
+    // We already patched updatePropertiesPanel in v2_patch.js. Let's wrap it again.
+    // The previous patch is: if (isNewBox) ... else if (!panelWasVisible) ...
+    // If we are resizing, we want to NOT open the panel if it's closed.
+
+    const _prevUpdateProps = updatePropertiesPanel;
+    updatePropertiesPanel = function (isNewBox) {
+        // If we are starting a resize, DO NOT open the panel.
+        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
+            // If panel is already open for this box, update values. 
+            // If closed, KEEP CLOSED.
+            const panel = app.elements.propertiesPanel; // patched to right sidebar
+            const isVisible = panel && (panel.classList.contains('visible') || (panel.offsetWidth > 0));
+
+            if (!isVisible) {
+                return; // Do nothing, keep closed.
+            }
+        }
+        _prevUpdateProps(isNewBox);
+    };
+
+    // 3. COMPACT VIEW ALIGNMENT
+    // User: "timeline indicators remain in previous state".
+    // This implies that while .lane-label-spacer is hidden, the markers (absoluted positioned?) might not shift?
+    // In styles.css: .time-markers-container has .lane-label-spacer inside it.
+    // And .time-marker-h is absolute. 
+    // BUT .time-markers (the scrollable area) is a flex item next to spacer.
+    // If spacer hides, .time-markers should expand/shift left.
+    // IF markers are drawn relative to 0 of .time-markers, they usually start at 0.
+    // Issue might be RE-RENDERING. If we toggle compact view, we MUST re-render time markers
+    // because their positions might depend on container width (unlikely for absolute left=msToPixels)
+    // OR: The "Time Markers" container scroll sync might be off?
+    // Let's force a full re-render when toggling compact view.
+
+    // We'll wrap initCompactView logic or add a listener to the checkbox here if needed.
+    // But we already have a listener in v2_patch_refinements.js.
+    // Let's add a secondary listener that forces a deeper update.
+
+    function initCompactViewFix() {
+        const checkbox = document.getElementById('config-compact-view');
+        if (checkbox) {
+            checkbox.addEventListener('change', () => {
+                // Force full re-layout cycle
+                setTimeout(() => {
+                    renderTimelineRuler();
+                    renderLanesCanvas();
+                    renderTimeMarkers();
+                    // Also force scroll update in case
+                    const canvas = document.getElementById('lanes-canvas');
+                    if (canvas) canvas.dispatchEvent(new Event('scroll'));
+                }, 50);
+            });
+        }
+    }
+
+    // Initialize fixes
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initDurationSync();
+            initCompactViewFix();
+        }, 200); // Run after other V2 patches
+    });
+
+})();
+
+// =====================================================
+// V2 Fixes: Render Logic for Strict Duration
+// =====================================================
+
+(function () {
+    // Override renderTimelineRuler to respect settings.timelineDuration
+    const _origRenderTimelineRuler = renderTimelineRuler;
+    renderTimelineRuler = function () {
+        if (!V2.isV2) { _origRenderTimelineRuler(); return; }
+
+        const ruler = app.elements.timelineRuler;
+        if (!ruler) return;
+
+        ruler.innerHTML = '';
+
+        // STRICT DURATION LOGIC
+        const totalDuration = Compression.enabled
+            ? Compression.getCompressedDuration()
+            : app.diagram.getTotalDuration();
+
+        const settingsDuration = app.settings.timelineDuration || 8000;
+
+        // Display duration is MAX of content vs settings
+        const displayDuration = Math.max(totalDuration, settingsDuration);
+
+        // Standard logic from original function, but using our displayDuration
+        const DEFAULT_MIN_TIMELINE_MS = 10000;
+
+        // Calculate interval
+        let interval = 100;
+        const intervals = [
+            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+            1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
+            10000, 30000, 60000, 120000, 300000, 600000
+        ];
+
+        for (const int of intervals) {
+            const pixelsPerInterval = msToPixels(int);
+            if (pixelsPerInterval >= 60) {
+                interval = int;
+                break;
+            }
+        }
+
+        // Fallback
+        if (interval === 100 && msToPixels(600000) < 60) {
+            interval = 600000;
+        }
+
+        const endTime = displayDuration + (app.settings.trailingSpace || 0);
+
+        const rulerWidth = msToPixels(endTime);
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'timeline-ruler-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${rulerWidth}px`;
+        innerWrapper.style.height = '100%';
+        ruler.appendChild(innerWrapper);
+
+        if (Compression.enabled) {
+            // Compressed mode logic (keep existing behavior for now, assume compression handles scaling internally)
+            // But we might need to extend the empty space if settingsDuration > compressedDuration
+            // For now, just render normally.
+            const breakMarkers = Compression.getBreakMarkers();
+            for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
+                const actualTime = Compression.compressedToActual(compressedTime);
+                const mark = document.createElement('div');
+                mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
+                mark.style.left = `${msToPixels(compressedTime)}px`;
+                mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
+                innerWrapper.appendChild(mark);
+            }
+            breakMarkers.forEach(marker => {
+                const breakMark = document.createElement('div');
+                breakMark.className = 'ruler-break-marker';
+                breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
+                const actualGapSize = marker.actualEnd - marker.actualStart;
+                breakMark.title = `Gap: ${formatDuration(actualGapSize)}`;
+                breakMark.innerHTML = `<span class="break-label">${formatDuration(actualGapSize)}</span>`;
+                innerWrapper.appendChild(breakMark);
+            });
+        } else {
+            // Normal mode
+            for (let time = 0; time <= endTime; time += interval) {
+                const mark = document.createElement('div');
+                mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+                mark.style.left = `${msToPixels(time)}px`;
+                mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+                innerWrapper.appendChild(mark);
+            }
+        }
+    };
+
+    // Override renderTimeMarkers to respect settings.timelineDuration
+    const _origRenderTimeMarkers = renderTimeMarkers;
+    renderTimeMarkers = function () {
+        if (!V2.isV2) { _origRenderTimeMarkers(); return; }
+
+        const container = app.elements.timeMarkers;
+        if (!container) return; // Might be null in V2 if ID changed? No, it's same ID.
+
+        container.innerHTML = '';
+
+        const totalDuration = app.diagram.getTotalDuration();
+        const settingsDuration = app.settings.timelineDuration || 8000;
+        const actualTotalDuration = Math.max(totalDuration, settingsDuration);
+
+        const displayDuration = Compression.enabled
+            ? Compression.getCompressedDuration() // Compression might complicate "min duration" logic
+            : actualTotalDuration;
+
+        const endTime = displayDuration + (app.settings.trailingSpace || 0);
+        const markerWidth = msToPixels(endTime);
+
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'time-markers-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${markerWidth}px`;
+        innerWrapper.style.height = '100%';
+        container.appendChild(innerWrapper);
+
+        if (app.diagram.boxes.length === 0) return;
+
+        // Copy logic from original for marker generation
+        const markers = [];
+        app.diagram.boxes.forEach(box => {
+            const visualOffset = Compression.getVisualOffset(box);
+            const visualEnd = visualOffset + box.duration;
+            const actualStart = box.startOffset;
+            const actualEnd = box.startOffset + box.duration;
+
+            markers.push({
+                visualTime: visualOffset,
+                actualTime: actualStart,
+                type: 'start',
+                boxId: box.id,
+                color: box.color,
+                label: formatDuration(actualStart)
+            });
+            markers.push({
+                visualTime: visualEnd,
+                actualTime: actualEnd,
+                type: 'end',
+                boxId: box.id,
+                color: box.color,
+                label: formatDuration(actualEnd)
+            });
+        });
+
+        markers.sort((a, b) => a.visualTime - b.visualTime);
+
+        // Layout logic
+        const levels = [];
+        const charWidth = 7;
+        const padding = 10;
+
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+            const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+            const width = text.length * charWidth + padding;
+            const startX = x - (width / 2);
+            const endX = startX + width;
+
+            let level = 0;
+            let placed = false;
+            while (!placed) {
+                if (!levels[level] || levels[level] < startX) {
+                    levels[level] = endX;
+                    m.level = level;
+                    m.text = text;
+                    placed = true;
+                } else {
+                    level++;
+                }
+                if (level > 20) { m.level = level; m.text = text; placed = true; }
+            }
+        });
+
+        // Use fixed height or calculate
+        const lanesCanvas = document.getElementById('lanes-canvas');
+        const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight; // better fallback
+
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+
+            const el = document.createElement('div');
+            el.className = 'time-marker-h';
+            el.style.left = `${x}px`;
+            el.style.bottom = `${4 + (m.level * 16)}px`;
+            el.style.color = m.color;
+
+            const line = document.createElement('div');
+            line.className = 'time-marker-line';
+            line.style.backgroundColor = m.color;
+            // Extend line up significantly
+            line.style.height = `${lanesCanvasHeight + 200}px`;
+
+            const tick = document.createElement('div');
+            tick.className = 'time-marker-tick';
+            tick.style.backgroundColor = m.color;
+
+            const label = document.createElement('span');
+            label.className = 'time-marker-text';
+            label.textContent = m.text;
+
+            el.appendChild(line);
+            el.appendChild(tick);
+            el.appendChild(label);
+            innerWrapper.appendChild(el);
+        });
+    };
+})();
+
+// =====================================================
+// V2 FINAL FIXES (Duration, Resize, Shift+Enter)
+// =====================================================
+
+(function () {
+
+    // 1. Shift+Enter for New Line in Lane Name
+    function initLaneNameInput() {
+        if (!V2.isV2) return;
+
+        const laneNameInput = document.getElementById('lane-name');
+        if (laneNameInput) {
+            // Remove old listeners if any (by cloning)
+            const newInput = laneNameInput.cloneNode(true);
+            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
+
+            // Re-attach standard listener for sync
+            newInput.addEventListener('input', () => {
+                if (app.selectedLaneId) {
+                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    autoSave();
+                }
+            });
+
+            // Keydown logic: Enter = Blur/Submit, Shift+Enter = Newline
+            newInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    newInput.blur(); // Trigger save via change/blur if attached, or just finish editing
+                }
+            });
+
+            // Restore focus listener if needed? 
+            // The original code didn't have special focus logic, just value binding in showLanePropertiesPanel
+        }
+    }
+
+    // 2. Resize Fix (Don't open properties if resizing)
+    // We patch updatePropertiesPanel to check for resize drag
+    const _prevUpdateProps = updatePropertiesPanel;
+    updatePropertiesPanel = function (isNewBox = false) {
+        if (!V2.isV2) { _prevUpdateProps(isNewBox); return; }
+
+        // Check if we are currently resizing
+        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
+            const sidebar = document.getElementById('right-sidebar');
+            const isSidebarOpen = sidebar && sidebar.classList.contains('active');
+
+            // If sidebar is NOT open, do NOT open it.
+            if (!isSidebarOpen) {
+                return;
+            }
+            // If it IS open, let it update (so values change while dragging if we want, or we can block that too)
+            // User said: "If I click the resize parts of the box the box properties opened. don't open it"
+            // Usually we want to see values updating while resizing? 
+            // But if the panel was closed, it should stay closed.
+        }
+
+        _prevUpdateProps(isNewBox);
+    };
+
+    // 3. Duration Sync Fix (Ruler Loop)
+    // The previous patch used Math.max(total, settings) but maybe loop condition was off?
+    // Let's rewrite renderTimelineRuler to be absolutely sure.
+    const _origRenderTimelineRuler = renderTimelineRuler;
+    renderTimelineRuler = function () {
+        if (!V2.isV2) { _origRenderTimelineRuler(); return; }
+
+        const ruler = app.elements.timelineRuler;
+        if (!ruler) return;
+        ruler.innerHTML = '';
+
+        const totalDuration = app.diagram.getTotalDuration();
+        const settingsDuration = app.settings.timelineDuration || 8000;
+
+        // Ensure we cover the full settings duration
+        const displayDuration = Math.max(totalDuration, settingsDuration);
+
+        // Default interval calc
+        let interval = 100;
+        // ... (interval selection logic same as before) ...
+        const intervals = [
+            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+            1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
+            10000, 30000, 60000, 120000, 300000, 600000
+        ];
+        for (const int of intervals) {
+            if (msToPixels(int) >= 60) {
+                interval = int;
+                break;
+            }
+        }
+        if (interval === 100 && msToPixels(600000) < 60) interval = 600000;
+
+        // Trailing space
+        const trailing = app.settings.trailingSpace || 0;
+        const endTime = displayDuration + trailing;
+
+        const rulerWidth = msToPixels(endTime);
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'timeline-ruler-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${rulerWidth}px`;
+        innerWrapper.style.height = '100%';
+        ruler.appendChild(innerWrapper);
+
+        // Loop condition: go until endTime
+        for (let time = 0; time <= endTime; time += interval) {
+            const mark = document.createElement('div');
+            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+            mark.style.left = `${msToPixels(time)}px`;
+            mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+            innerWrapper.appendChild(mark);
+        }
+    };
+
+    // Also override renderTimeMarkers to use same displayDuration
+    const _origRenderTimeMarkers = renderTimeMarkers;
+    renderTimeMarkers = function () {
+        if (!V2.isV2) { _origRenderTimeMarkers(); return; }
+        const container = app.elements.timeMarkers;
+        if (!container) return;
+        container.innerHTML = '';
+
+        const total = app.diagram.getTotalDuration();
+        const settings = app.settings.timelineDuration || 8000;
+        const displayDuration = Math.max(total, settings);
+        const endTime = displayDuration + (app.settings.trailingSpace || 0);
+        const markerWidth = msToPixels(endTime);
+
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'time-markers-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${markerWidth}px`;
+        innerWrapper.style.height = '100%';
+        container.appendChild(innerWrapper);
+
+        if (app.diagram.boxes.length === 0) return;
+
+        // Marker render logic... (simplified for brevity, assume same as before)
+        // ... (copy marker generation logic) ...
+        // We need to actually copy the logic else functionality is lost
+        const markers = [];
+        app.diagram.boxes.forEach(box => {
+            const visualOffset = Compression.getVisualOffset(box);
+            const visualEnd = visualOffset + box.duration;
+            const actualStart = box.startOffset;
+            const actualEnd = box.startOffset + box.duration;
+            markers.push({ visualTime: visualOffset, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
+            markers.push({ visualTime: visualEnd, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
+        });
+        markers.sort((a, b) => a.visualTime - b.visualTime);
+        const levels = [];
+        const charWidth = 7;
+        const padding = 10;
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+            const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+            const width = text.length * charWidth + padding;
+            const startX = x - (width / 2);
+            const endX = startX + width;
+            let level = 0;
+            let placed = false;
+            while (!placed) {
+                if (!levels[level] || levels[level] < startX) {
+                    levels[level] = endX;
+                    m.level = level;
+                    m.text = text;
+                    placed = true;
+                } else {
+                    level++;
+                }
+                if (level > 20) { m.level = level; m.text = text; placed = true; }
+            }
+        });
+        const lanesCanvas = document.getElementById('lanes-canvas');
+        const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight;
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+            const el = document.createElement('div');
+            el.className = 'time-marker-h';
+            el.style.left = `${x}px`;
+            el.style.bottom = `${4 + (m.level * 16)}px`;
+            el.style.color = m.color;
+            const line = document.createElement('div');
+            line.className = 'time-marker-line';
+            line.style.backgroundColor = m.color;
+            line.style.height = `${lanesCanvasHeight + 200}px`;
+            const tick = document.createElement('div');
+            tick.className = 'time-marker-tick';
+            tick.style.backgroundColor = m.color;
+            const label = document.createElement('span');
+            label.className = 'time-marker-text';
+            label.textContent = m.text;
+            el.appendChild(line);
+            el.appendChild(tick);
+            el.appendChild(label);
+            innerWrapper.appendChild(el);
+        });
+    };
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initLaneNameInput();
+        }, 300); // Wait for other inits
+    });
+
+})();
+
+// =====================================================
+// V2 ACCUMULATED FIXES (Updates & Fixes)
+// =====================================================
+
+(function () {
+    // Inject CSS for Alignment Lines, Overscroll, and Box Border
+    const style = document.createElement('style');
+    style.textContent = `
+        /* Alignment Markers Position Fix */
+        .alignment-markers {
+            left: var(--lane-label-width) !important;
+            width: calc(100% - var(--lane-label-width)) !important;
+        }
+        
+        /* Overscroll / Rubber-banding Fix */
+        .lanes-canvas,
+        .timeline-ruler,
+        .time-markers, 
+        .minimap-container {
+            overscroll-behavior-x: none;
+            overscroll-behavior-y: none;
+        }
+
+        /* Dashed Lines (Layout Optimization / Alignment) */
+        /* If these are the "dashed trailing lines", ensure they are visible and aligned */
+        .box-alignment-line {
+            border-left-style: dashed !important;
+            z-index: 100;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // 1. Shift+Enter for New Line in Lane Name
+    function initLaneNameInput() {
+        if (!V2.isV2) return;
+        const laneNameInput = document.getElementById('lane-name');
+        if (laneNameInput) {
+            const newInput = laneNameInput.cloneNode(true);
+            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
+
+            newInput.addEventListener('input', () => {
+                if (app.selectedLaneId) {
+                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    autoSave();
+                }
+            });
+
+            newInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    newInput.blur();
+                }
+            });
+        }
+    }
+
+    // 2. Resize Fix (Don't open properties if resizing)
+    const _prevUpdateProps = updatePropertiesPanel;
+    updatePropertiesPanel = function (isNewBox = false) {
+        if (!V2.isV2) { _prevUpdateProps(isNewBox); return; }
+
+        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
+            const sidebar = document.getElementById('right-sidebar');
+            const isSidebarOpen = sidebar && sidebar.classList.contains('active');
+            if (!isSidebarOpen) return;
+        }
+        _prevUpdateProps(isNewBox);
+    };
+
+    // 3. Duration Sync Fix (Ruler Loop & Validation)
+    // Override both renderTimelineRuler and renderTimeMarkers
+    const _origRenderTimelineRuler = renderTimelineRuler;
+    renderTimelineRuler = function () {
+        if (!V2.isV2) { _origRenderTimelineRuler(); return; }
+        const ruler = app.elements.timelineRuler;
+        if (!ruler) return;
+        ruler.innerHTML = '';
+
+        // Fix: Use total settings duration
+        const totalDuration = app.diagram.getTotalDuration();
+        const settingsDuration = app.settings.timelineDuration || 8000;
+        const displayDuration = Math.max(totalDuration, settingsDuration);
+
+        let interval = 100;
+        const intervals = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 600000];
+        for (const int of intervals) {
+            if (msToPixels(int) >= 60) { interval = int; break; }
+        }
+        if (interval === 100 && msToPixels(600000) < 60) interval = 600000;
+
+        const trailing = app.settings.trailingSpace || 0;
+        const endTime = displayDuration + trailing;
+        const rulerWidth = msToPixels(endTime);
+
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'timeline-ruler-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${rulerWidth}px`;
+        innerWrapper.style.height = '100%';
+        ruler.appendChild(innerWrapper);
+
+        // Correct loop logic
+        for (let time = 0; time <= endTime; time += interval) {
+            const mark = document.createElement('div');
+            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+            mark.style.left = `${msToPixels(time)}px`;
+            mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+            innerWrapper.appendChild(mark);
+        }
+    };
+
+    const _origRenderTimeMarkers = renderTimeMarkers;
+    renderTimeMarkers = function () {
+        if (!V2.isV2) { _origRenderTimeMarkers(); return; }
+        const container = app.elements.timeMarkers;
+        if (!container) return;
+        container.innerHTML = '';
+
+        const total = app.diagram.getTotalDuration();
+        const settings = app.settings.timelineDuration || 8000;
+        const displayDuration = Math.max(total, settings);
+        const endTime = displayDuration + (app.settings.trailingSpace || 0);
+        const markerWidth = msToPixels(endTime);
+
+        const innerWrapper = document.createElement('div');
+        innerWrapper.className = 'time-markers-inner';
+        innerWrapper.style.position = 'relative';
+        innerWrapper.style.width = `${markerWidth}px`;
+        innerWrapper.style.height = '100%';
+        container.appendChild(innerWrapper);
+
+        if (app.diagram.boxes.length === 0) return;
+
+        const markers = [];
+        app.diagram.boxes.forEach(box => {
+            const visualOffset = Compression.getVisualOffset(box);
+            const visualEnd = visualOffset + box.duration;
+            const actualStart = box.startOffset;
+            const actualEnd = box.startOffset + box.duration;
+            markers.push({ visualTime: visualOffset, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
+            markers.push({ visualTime: visualEnd, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
+        });
+        markers.sort((a, b) => a.visualTime - b.visualTime);
+
+        const levels = [];
+        const charWidth = 7;
+        const padding = 10;
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+            const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
+            const width = text.length * charWidth + padding;
+            const startX = x - (width / 2);
+            const endX = startX + width;
+            let level = 0;
+            let placed = false;
+            while (!placed) {
+                if (!levels[level] || levels[level] < startX) {
+                    levels[level] = endX;
+                    m.level = level;
+                    m.text = text;
+                    placed = true;
+                } else {
+                    level++;
+                }
+                if (level > 20) { m.level = level; m.text = text; placed = true; }
+            }
+        });
+
+        const lanesCanvas = document.getElementById('lanes-canvas');
+        const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight;
+
+        markers.forEach(m => {
+            const x = msToPixels(m.visualTime);
+            const el = document.createElement('div');
+            el.className = 'time-marker-h';
+            el.style.left = `${x}px`;
+            el.style.bottom = `${4 + (m.level * 16)}px`;
+            el.style.color = m.color;
+            const line = document.createElement('div');
+            line.className = 'time-marker-line';
+            line.style.backgroundColor = m.color;
+            line.style.height = `${lanesCanvasHeight + 2000}px`; // Ensure it covers scrollable height 
+            // IMPORTANT: dashed style? The user mentioned "dashed trailing lines".
+            // If they are dashed, we need border-style. 
+            // Assuming "time-marker-line" is solid usually. 
+            // If user meant "alignment lines" (guides), they are separate.
+            // But just in case, let's make sure these move with the container (which they do as they are children).
+
+            const tick = document.createElement('div');
+            tick.className = 'time-marker-tick';
+            tick.style.backgroundColor = m.color;
+            const label = document.createElement('span');
+            label.className = 'time-marker-text';
+            label.textContent = m.text;
+            el.appendChild(line);
+            el.appendChild(tick);
+            el.appendChild(label);
+            innerWrapper.appendChild(el);
+        });
+    };
+
+    // 4. Default Trailing Space = 0
+    function initTrailingSpace() {
+        if (!app.settings.trailingSpace) {
+            app.settings.trailingSpace = 0;
+        }
+        // Force update of input if it exists
+        const trailingInput = document.getElementById('config-trailing-space'); // guess ID
+        if (trailingInput) trailingInput.value = 0;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initLaneNameInput();
+            initTrailingSpace();
+            // Force re-render once to apply new trailing space and positioning
+            renderTimelineRuler();
+            renderTimeMarkers();
+            renderLanesCanvas();
+        }, 400);
+    });
+
+})();
+
+// =====================================================
+// V2 FIXES ROUND 3 (Refined + Body Overscroll)
+// =====================================================
+
+(function () {
+
+    // Inject CSS for Body Overscroll
+    const style = document.createElement('style');
+    style.textContent = `
+        html, body {
+            overscroll-behavior-x: none;
+            overscroll-behavior-y: none;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // 1. Shift+Enter for New Line in Lane Name (Refined)
+    function initLaneNameInput() {
+        if (!V2.isV2) return;
+
+        const laneNameInput = document.getElementById('lane-name');
+        if (laneNameInput) {
+            // Remove old listeners by cloning
+            const newInput = laneNameInput.cloneNode(true);
+            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
+
+            // Re-attach standard listener for sync
+            newInput.addEventListener('input', () => {
+                if (app.selectedLaneId) {
+                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    autoSave();
+                }
+            });
+
+            // Keydown logic
+            newInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                        // Allow default (newline)
+                        return;
+                    } else {
+                        // Enter without shift -> Finish edit
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        newInput.blur();
+                    }
+                }
+            });
+        }
+    }
+
+    // 2. Resize Fix (Don't open properties if resizing)
+    const _currentUpdateProps = updatePropertiesPanel;
+
+    updatePropertiesPanel = function (isNewBox = false) {
+        if (!V2.isV2) { _currentUpdateProps(isNewBox); return; }
+
+        // CHECK FOR RESIZE/DRAG
+        // We use a broad check: if dragging, or if dragData indicates resize
+        if (app.isDragging || (app.dragData && app.dragData.type === 'resize')) {
+            const sidebar = document.getElementById('right-sidebar');
+            const isActive = sidebar && sidebar.classList.contains('active');
+
+            if (!isActive) {
+                // Panel is closed, keep it closed.
+                return;
+            }
+        }
+
+        // Execute original logic
+        _currentUpdateProps(isNewBox);
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initLaneNameInput();
+        }, 600);
+    });
+
+})();
+
+// =====================================================
+// V2 FIXES ROUND 4 (Robust Resize Fix)
+// =====================================================
+
+(function () {
+
+    // Override selectBox to prevent properties panel from opening during resize
+    const _origSelectBox = selectBox;
+    selectBox = function (boxId, isNewBox = false) {
+        if (V2.isV2 && app.dragData && app.dragData.type === 'resize') {
+            // Manual selection logic (copied from original selectBox)
+
+            // 1. Deselect previous
+            document.querySelectorAll('.timeline-box.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+
+            // 2. Update state
+            app.selectedBoxId = boxId;
+
+            // 3. Select new visually
+            const boxEl = document.querySelector(`.timeline-box[data-box-id="${boxId}"]`);
+            if (boxEl) {
+                boxEl.classList.add('selected');
+            }
+
+            // 4. Update Properties Panel ONLY if it is already open (visible/active)
+            const sidebar = document.getElementById('right-sidebar');
+            const isActive = sidebar && sidebar.classList.contains('active');
+
+            if (isActive) {
+                // If open, update values
+                if (typeof updatePropertiesPanel === 'function') {
+                    updatePropertiesPanel(isNewBox);
+                }
+            } else {
+                // If closed, DO NOT call updatePropertiesPanel, 
+                // because updatePropertiesPanel (V2 version) has logic to auto-open it.
+                // By skipping it, we keep the sidebar closed.
+            }
+
+            // 5. Glimpse button (optional, keep it)
+            setTimeout(() => {
+                if (typeof glimpsePickStartButton === 'function') glimpsePickStartButton();
+            }, 100);
+
+            return;
+        }
+
+        // Normal behavior
+        _origSelectBox(boxId, isNewBox);
+    };
+
+})();
+
+// =====================================================
+// V2 FIXES ROUND 5 (Handle Resize Start Override)
+// =====================================================
+
+(function () {
+
+    // Override handleResizeStart to avoid calling selectBox (which opens panel)
+    // We manually select the box instead.
+
+    handleResizeStart = function (e, boxId) {
+        e.stopPropagation();
+
+        // Don't allow resizing if locked
+        if (app.diagram.locked) return;
+
+        const box = app.diagram.boxes.find(b => b.id === boxId);
+        if (!box) return;
+
+        const isLeft = e.target.classList.contains('left');
+
+        app.isDragging = true;
+        app.dragData = {
+            type: 'resize',
+            boxId: boxId,
+            side: isLeft ? 'left' : 'right',
+            originalStart: box.startOffset,
+            originalDuration: box.duration
+        };
+
+        // REPLACEMENT FOR selectBox(boxId):
+        // 1. Deselect others
+        document.querySelectorAll('.timeline-box.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+
+        // 2. Set current
+        app.selectedBoxId = boxId;
+
+        // 3. Add class
+        const boxEl = document.querySelector(`.timeline-box[data-box-id="${boxId}"]`);
+        if (boxEl) {
+            boxEl.classList.add('selected');
+        }
+
+        // 4. Update panel ONLY if it is already open (visible)
+        const sidebar = document.getElementById('right-sidebar');
+        // V2 uses 'active' class for visibility
+        if (sidebar && sidebar.classList.contains('active')) {
+            updatePropertiesPanel();
+        } else {
+            // Ensure it remains closed (do nothing)
+        }
+
+        e.preventDefault();
+    };
+
+})();
+
+// =====================================================
+// V2 FIXES ROUND 6 (Capture Click & Resize Handle)
+// =====================================================
+
+(function () {
+
+    // Add Capture Phase click listener to intercept clicks on resize handles
+    // This prevents the 'click' event from bubbling up to the .timeline-box listener
+    // which calls selectBox() and opens the properties panel.
+
+    document.addEventListener('click', (e) => {
+        // Check if target is a resize handle
+        if (e.target && e.target.classList && e.target.classList.contains('box-resize-handle')) {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            // We also don't want to deselect if we just resized... 
+            // The handle mousedown already handled selection. 
+            // So suppressing click is safe.
+        }
+    }, true); // Use Capture Phase
+
+})();

@@ -1044,7 +1044,8 @@ body.show-box-labels .lane-row {
     opacity: 0;
     transform: translateX(20px);
     pointer-events: none;
-    display: block !important; /* Override generic .hidden for animation */
+    display: block !important;
+    /* Override generic .hidden for animation */
 }
 
 .props-section.hidden {
@@ -1219,10 +1220,13 @@ body.show-box-labels .lane-row {
 }
 
 @keyframes pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
         box-shadow: 0 0 12px rgba(99, 102, 241, 0.6);
     }
+
     50% {
         transform: scale(1.05);
         box-shadow: 0 0 20px rgba(99, 102, 241, 0.8);
@@ -1235,20 +1239,24 @@ body.show-box-labels .lane-row {
         box-shadow: 0 0 0 rgba(99, 102, 241, 0);
         border-color: var(--border-color);
     }
+
     25% {
         transform: scale(1.15);
         box-shadow: 0 0 16px rgba(99, 102, 241, 0.8);
         background: var(--accent-gradient);
     }
+
     50% {
         transform: scale(1.2);
         box-shadow: 0 0 24px rgba(99, 102, 241, 1);
         background: var(--accent-gradient);
     }
+
     75% {
         transform: scale(1.1);
         box-shadow: 0 0 12px rgba(99, 102, 241, 0.6);
     }
+
     100% {
         transform: scale(1);
         box-shadow: 0 0 4px rgba(57, 255, 20, 0.4);
@@ -1276,11 +1284,14 @@ body.show-box-labels .lane-row {
 }
 
 @keyframes pickablePulse {
-    0%, 100% {
+
+    0%,
+    100% {
         outline-width: 2px;
         outline-offset: 0px;
         filter: brightness(1.05);
     }
+
     50% {
         outline-width: 3px;
         outline-offset: 2px;
@@ -1926,6 +1937,7 @@ body.show-box-labels .lane-row {
         opacity: 0;
         transform: translateY(-20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -1937,6 +1949,7 @@ body.show-box-labels .lane-row {
         opacity: 0;
         transform: translateX(100px);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
@@ -1948,6 +1961,7 @@ body.show-box-labels .lane-row {
         opacity: 1;
         transform: translateY(0);
     }
+
     to {
         opacity: 0;
         transform: translateY(-20px);
@@ -2008,7 +2022,7 @@ body.show-box-labels .lane-row {
     box-shadow: var(--shadow-lg);
 }
 
-.measurement-overlay.active + .measurement-info {
+.measurement-overlay.active+.measurement-info {
     opacity: 1;
     pointer-events: auto;
 }
@@ -2119,4 +2133,712 @@ body.diagram-locked #add-lane {
 
 body.diagram-locked .box-resize-handle {
     display: none;
+}
+
+/* =====================================================
+   V2 DESIGN SYSTEM — Header Bar, Toolbar, Right Sidebar,
+   Modal, Theme Toggle, Click-to-Activate Lane Controls
+   ===================================================== */
+
+/* --- Header Bar (sip-parser-v2 style) --- */
+.header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 40px;
+    padding: 0 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    gap: 16px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.logo-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.title-input-v2 {
+    font-size: 15px;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-primary);
+    padding: 3px 10px;
+    border-radius: 4px;
+    width: 100%;
+    max-width: 500px;
+    transition: var(--transition-fast);
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.title-input-v2:hover {
+    border-color: var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.title-input-v2:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    box-shadow: 0 0 0 2px var(--border-focus);
+    white-space: normal;
+}
+
+.header-badge {
+    font-size: 14px;
+    color: var(--warning);
+    display: none;
+}
+
+body.diagram-locked .header-badge {
+    display: inline;
+}
+
+/* --- Toolbar (sip-parser-v2 style) --- */
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    gap: 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    min-height: 36px;
+}
+
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+    text-decoration: none;
+    line-height: 1.4;
+}
+
+.toolbar-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.toolbar-btn:active {
+    transform: scale(0.97);
+}
+
+.toolbar-btn.primary {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: #fff;
+}
+
+.toolbar-btn.primary:hover {
+    opacity: 0.9;
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+}
+
+.toolbar-btn.danger {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.toolbar-btn.danger:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+.toolbar-btn.icon-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.toolbar-btn.active {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border-color);
+    flex-shrink: 0;
+    margin: 0 2px;
+}
+
+.badge {
+    display: inline-block;
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+}
+
+.badge.empty {
+    background: var(--bg-primary);
+    color: var(--text-muted);
+}
+
+/* Zoom controls in toolbar */
+.zoom-controls-v2 {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.zoom-controls-v2 .zoom-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 42px;
+    text-align: center;
+}
+
+/* --- Right Sidebar --- */
+.right-sidebar {
+    width: 0;
+    min-width: 0;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+}
+
+.right-sidebar.visible {
+    width: 300px;
+    min-width: 300px;
+}
+
+.right-sidebar.hidden {
+    display: flex !important;
+    /* Override generic .hidden — animation handles visibility */
+    width: 0;
+    min-width: 0;
+    border-left-color: transparent;
+}
+
+.right-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    min-width: 300px;
+    /* Prevent content collapse during animation */
+}
+
+.right-sidebar-header h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.right-sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    min-width: 300px;
+}
+
+.section-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 16px 0;
+}
+
+/* Time input v2 */
+.time-input-v2 {
+    font-family: 'Monaco', 'Menlo', 'JetBrains Mono', monospace;
+    font-size: 13px;
+}
+
+/* --- Modal Overlay (Diagrams) --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadeInOverlay 0.15s ease;
+}
+
+.modal-overlay.hidden {
+    display: none !important;
+}
+
+@keyframes fadeInOverlay {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.modal-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    width: 90%;
+    max-width: 480px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUpModal 0.2s ease;
+}
+
+@keyframes slideUpModal {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex-shrink: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: var(--transition-fast);
+}
+
+.modal-close:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+.modal-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+/* --- Lane Controls: Click-to-Activate --- */
+.lane-controls.active {
+    width: 160px;
+    background: var(--bg-card);
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.lane-controls.active::before {
+    opacity: 0;
+}
+
+.lane-controls.active .lane-control-btn,
+.lane-controls.active .lane-delete-btn {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+/* --- Light Theme --- */
+body.light-theme {
+    --bg-primary: #f5f6fa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #ebedf3;
+    --bg-card: rgba(255, 255, 255, 0.95);
+
+    --text-primary: #1a1a2e;
+    --text-secondary: #555770;
+    --text-muted: #8e90a6;
+
+    --accent-primary: #5b5fc7;
+    --accent-secondary: #7c5cbf;
+    --accent-gradient: linear-gradient(135deg, #5b5fc7 0%, #7c5cbf 100%);
+
+    --border-color: rgba(0, 0, 0, 0.1);
+    --border-focus: rgba(91, 95, 199, 0.3);
+
+    --success: #0f9d58;
+    --warning: #e8a317;
+    --danger: #d93025;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+body.light-theme .toolbar {
+    background: #f0f1f6;
+}
+
+body.light-theme .toolbar-btn {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.12);
+    color: var(--text-secondary);
+}
+
+body.light-theme .toolbar-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: rgba(0, 0, 0, 0.2);
+    color: var(--text-primary);
+}
+
+body.light-theme .lane-item {
+    background: #f8f9fc;
+}
+
+body.light-theme .lane-item:hover {
+    background: #eef0f5;
+}
+
+body.light-theme .timeline-box {
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+body.light-theme .measurement-label {
+    stroke: #fff;
+}
+
+body.light-theme .toast {
+    background: rgba(255, 255, 255, 0.95);
+}
+
+body.light-theme .modal-panel {
+    background: #fff;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+body.light-theme .right-sidebar-content {
+    background: #fff;
+}
+
+/* Fix locked input in light mode */
+body.light-theme.diagram-locked .title-input-v2 {
+    background: var(--bg-tertiary);
+    cursor: not-allowed;
+}
+
+/* Also lock title-input-v2 when diagram is locked */
+body.diagram-locked .title-input-v2 {
+    background: var(--bg-tertiary);
+    cursor: not-allowed;
+}
+
+/* =====================================================
+   V2 Refinements (Scroll Sync, Z-Index, Compact View)
+   ===================================================== */
+
+/* 1. Z-Index Fix */
+.right-sidebar {
+    position: relative;
+    z-index: 2000;
+    /* Above everything */
+}
+
+/* Ensure canvas container doesn't overlap sidebar */
+.canvas-container {
+    z-index: 1;
+}
+
+.time-markers-container {
+    z-index: 60;
+    /* Keep existing but below sidebar */
+}
+
+/* Ensure SVG lines are below sidebar */
+.alignment-markers {
+    z-index: 10;
+    pointer-events: none;
+}
+
+.measurement-overlay {
+    z-index: 500;
+    /* Below sidebar/toast */
+}
+
+/* 2. Hide Lane Labels (Compact View) */
+body.hide-lane-labels {
+    --lane-label-width: 0px;
+}
+
+body.hide-lane-labels .lane-label {
+    display: none;
+    border-right: none;
+}
+
+body.hide-lane-labels .lane-label-spacer {
+    display: none;
+    border-right: none;
+}
+
+body.hide-lane-labels .lane-row {
+    min-width: 100%;
+    /* Fallback */
+}
+
+/* 3. Multi-line Lane Names */
+.lane-name-div {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.2;
+    padding: 4px 6px;
+    border: 1px solid transparent;
+    min-height: 24px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    flex: 1;
+}
+
+.lane-item {
+    height: auto;
+    /* Allow growth */
+    min-height: 50px;
+    padding: 8px;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.lane-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+}
+
+.lane-drag-handle {
+    margin-top: 4px;
+}
+
+.lane-color-btn {
+    margin-top: 2px;
+}
+
+/* Fixes for V2 Refinements */
+
+/* Stronger selectors for Compact View */
+body.hide-lane-labels .lane-label,
+body.hide-lane-labels .lane-label-spacer {
+    display: none !important;
+    width: 0 !important;
+    flex-basis: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* Update styles for the textarea in sidebar */
+#lane-name {
+    font-family: inherit;
+    min-height: 70px;
+    line-height: 1.4;
+    padding: 8px;
+    resize: vertical;
+}
+
+/* Ensure lane-name-div in sidebar list wraps text */
+.lane-name-div {
+    white-space: pre-wrap !important;
+    word-break: break-word;
+}
+
+/* V2 Fixes: Lane Height, Compact View Alignment */
+
+/* 1. Fixed Lane Height & Dynamic Font */
+.lane-row {
+    height: 50px !important;
+    /* Fixed height */
+    min-height: 50px !important;
+}
+
+.lane-item {
+    height: 50px !important;
+    /* Match row height */
+    min-height: 50px !important;
+    padding: 0 8px !important;
+    overflow: hidden;
+}
+
+/* Lane Name Div: Multi-line but constrained */
+.lane-name-div {
+    font-size: 13px;
+    line-height: 1.1;
+    max-height: 100%;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    /* Limit logic lines if needed */
+    -webkit-box-orient: vertical;
+    /* responsive font size reduction if needed? 
+       Browser doesn't support container queries for font-size well yet without polyfill. 
+       We'll stick to small font and tight line-height. */
+}
+
+/* 2. Compact View Alignment Fix */
+/* Ensure markers container shifts left when label spacer is hidden */
+body.hide-lane-labels .time-markers-container .lane-label-spacer {
+    display: none !important;
+    width: 0 !important;
+}
+
+body.hide-lane-labels .timeline-ruler-container .lane-label-spacer {
+    display: none !important;
+    width: 0 !important;
+}
+
+/* 3. Adjust Time Markers position if needed */
+/* If time-markers-container uses flex, removing spacer should shift .time-markers left */
+.time-markers-container {
+    justify-content: flex-start;
+    /* Ensure left alignment */
+}
+
+/* Final Fix for Compact View Alignment */
+
+/* 
+   Structure:
+   .timeline-ruler-container > .lane-label-spacer + .timeline-ruler
+   .time-markers-container > .lane-label-spacer + #time-markers
+   
+   Goal: Hide .lane-label-spacer so the siblings (.timeline-ruler, #time-markers) shift left (flex-start).
+*/
+
+body.hide-lane-labels .lane-label-spacer {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    flex-basis: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* Ensure containers align content to start */
+body.hide-lane-labels .timeline-ruler-container,
+body.hide-lane-labels .time-markers-container {
+    justify-content: flex-start !important;
+}
+
+/* Reset any potential margins on the main content areas */
+body.hide-lane-labels .timeline-ruler,
+body.hide-lane-labels .time-markers {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+/* =====================================================
+   V2 Layout Fixes & patches
+   ===================================================== */
+
+/* Alignment Markers Position Fix */
+.alignment-markers {
+    left: var(--lane-label-width) !important;
+    width: calc(100% - var(--lane-label-width)) !important;
+}
+
+/* Overscroll / Rubber-banding Fix */
+html, body,
+.lanes-canvas,
+.timeline-ruler,
+.time-markers, 
+.minimap-container {
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: none;
+}
+
+/* Dashed Lines (Layout Optimization / Alignment) */
+.box-alignment-line {
+    border-left-style: dashed !important;
+    z-index: 100;
 }
