@@ -20,11 +20,13 @@ class TimelineDiagram {
     }
 
     addLane(name, baseColor = null) {
+        // If no color provided, assign one from PALETTE based on current lane count
+        const color = baseColor || PALETTE[this.lanes.length % PALETTE.length];
         const lane = {
             id: this.nextLaneId++,
             name: name,
             order: this.lanes.length,
-            baseColor: baseColor // Optional: lane's base color for boxes
+            baseColor: color
         };
         this.lanes.push(lane);
         return lane;
@@ -46,11 +48,14 @@ class TimelineDiagram {
         }
     }
 
-    insertLaneAt(position, name) {
+    insertLaneAt(position, name, baseColor = null) {
+        // If no color provided, assign one from PALETTE based on position
+        const color = baseColor || PALETTE[position % PALETTE.length];
         const lane = {
             id: this.nextLaneId++,
             name: name,
-            order: position
+            order: position,
+            baseColor: color
         };
         this.lanes.splice(position, 0, lane);
         // Reorder all lanes
@@ -4884,10 +4889,11 @@ function init() {
     updateTotalDuration();
     updateBoxLabelsState();
 
-    // Open diagrams panel by default if there are saved diagrams
+    // Open diagrams panel by default if there are saved diagrams (V1 only)
     const diagrams = getAllDiagrams();
-    if (diagrams.length > 0) {
-        document.getElementById('diagrams-panel').classList.add('open');
+    const diagramsPanel = document.getElementById('diagrams-panel');
+    if (diagrams.length > 0 && diagramsPanel) {
+        diagramsPanel.classList.add('open');
     }
 }
 
