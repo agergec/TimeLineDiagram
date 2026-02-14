@@ -6631,10 +6631,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 (function () {
 
-    // Override selectBox to prevent properties panel from opening during resize
+    // Override selectBox to prevent properties panel from opening during resize or drag
     const _origSelectBox = selectBox;
     selectBox = function (boxId, isNewBox = false) {
-        if (V2.isV2 && app.dragData && app.dragData.type === 'resize') {
+        if (V2.isV2 && app.dragData && (app.dragData.type === 'resize' || app.dragData.type === 'move')) {
             // Manual selection logic (copied from original selectBox)
 
             // 1. Deselect previous
