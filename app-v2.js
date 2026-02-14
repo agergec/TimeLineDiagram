@@ -2218,8 +2218,14 @@ function createBoxElement(box) {
         hideBoxTooltip();
     });
 
-    // Box click/selection
+    // Box click/selection (only if not dragging/resizing)
     el.addEventListener('click', (e) => {
+        // Suppress click if we just finished dragging or resizing
+        if (app.justFinishedDragOrResize) {
+            app.justFinishedDragOrResize = false;
+            e.stopPropagation();
+            return;
+        }
         e.stopPropagation();
         selectBox(box.id);
     });
@@ -2332,7 +2338,9 @@ function renderAlignmentMarkers() {
     const rulerHeight = parseInt(getComputedStyle(document.documentElement)
         .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
 
-    const offsetX = sidebarWidth + laneLabelWidth;
+    // V2 check: In v2, sidebar is outside canvas, so don't include it in offsetX
+    const isV2 = document.getElementById('right-sidebar') !== null;
+    const offsetX = isV2 ? laneLabelWidth : (sidebarWidth + laneLabelWidth);
     const offsetY = headerHeight + rulerHeight;
     const canvasHeight = canvas.scrollHeight;
     const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
@@ -2852,6 +2860,9 @@ function handleMouseUp(e) {
             selectBox(box.id, true);
         }
     } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
+        // Set flag to suppress click event after drag/resize
+        app.justFinishedDragOrResize = true;
+
         // Recalculate compression gaps after moving/resizing
         if (Compression.enabled) {
             Compression.invalidate();
