@@ -2328,35 +2328,29 @@ function renderAlignmentMarkers() {
 
     svg.style.display = 'block';
 
-    // Get offset for lane label width
-    const laneLabelWidth = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--lane-label-width').replace('px', ''), 10) || 160;
-    const sidebarWidth = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--sidebar-width').replace('px', ''), 10) || 220;
-    const headerHeight = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--header-height').replace('px', ''), 10) || 60;
-    const rulerHeight = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
+    // Use actual DOM position of the first lane-track for accurate alignment
+    const firstTrack = document.querySelector('.lane-track');
+    if (!firstTrack) return;
 
-    // In v2, positioning and visibility checks need different offsets
-    const isV2 = document.getElementById('right-sidebar') !== null;
+    const trackRect = firstTrack.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
 
-    // Positioning: where to draw the line in viewport coordinates
-    const positionOffsetX = isV2 ? sidebarWidth : (sidebarWidth + laneLabelWidth);
+    // trackRect.left = left edge of the track in viewport coords
+    // svgRect.left  = left edge of the SVG in viewport coords
+    // The difference gives the offset from SVG origin to track origin
+    const trackLeftInSvg = trackRect.left - svgRect.left;
 
-    // Visibility threshold: skip lines that would be covered by sticky lane-labels
-    const visibilityThresholdX = sidebarWidth + laneLabelWidth;
-
-    const offsetY = headerHeight + rulerHeight;
+    const canvasRect = canvas.getBoundingClientRect();
+    const offsetY = canvasRect.top - svgRect.top;
     const canvasHeight = canvas.scrollHeight;
-    const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
+    const scrollLeft = canvas.scrollLeft;
 
     timePointsMap.forEach((color, visualTime) => {
-        const x = positionOffsetX + msToPixels(visualTime) - scrollLeft;
+        const x = trackLeftInSvg + msToPixels(visualTime) - scrollLeft;
 
-        // Only draw lines that are visible in the track area (not covered by lane-labels or sidebar)
-        if (x < visibilityThresholdX) {
-            return; // Line would be covered by lane-labels or sidebar, skip it
+        // Only draw lines that are visible in the track area
+        if (x < trackLeftInSvg) {
+            return; // Line would be before the track start, skip it
         }
 
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -2883,11 +2877,28 @@ function handleMouseUp(e) {
         }
         renderAlignmentMarkers();
         updateTotalDuration();
-        updatePropertiesPanel();
-    }
 
-    // Track if movement occurred during drag (for click suppression)
-    app.lastDragDidMove = app.dragData && app.dragData.didMove;
+        // After drag/resize: only update properties values if sidebar already shows box props.
+        // Do NOT auto-open the sidebar — that should only happen on deliberate click.
+        if (V2 && V2.isV2) {
+            if (V2.currentMode === 'box' && app.selectedBoxId) {
+                // Sidebar already open in box mode — just refresh values
+                const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+                if (box) {
+                    app.elements.boxLabel.value = box.label;
+                    app.elements.boxColor.value = box.color;
+                    app.elements.boxStart.value = box.startOffset;
+                    app.elements.boxDuration.value = box.duration;
+                    if (app.elements.boxEnd) app.elements.boxEnd.value = box.startOffset + box.duration;
+                    const baseTime = parseTime(app.diagram.startTime);
+                    app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
+                    app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+                }
+            }
+        } else {
+            updatePropertiesPanel();
+        }
+    }
 
     app.isDragging = false;
     app.dragData = null;
