@@ -2338,20 +2338,25 @@ function renderAlignmentMarkers() {
     const rulerHeight = parseInt(getComputedStyle(document.documentElement)
         .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
 
-    // In v2, need to account for both sidebar and lane-label, but subtract lane-label
-    // because boxes are positioned relative to track which already accounts for it
+    // In v2, positioning and visibility checks need different offsets
     const isV2 = document.getElementById('right-sidebar') !== null;
-    const offsetX = isV2 ? sidebarWidth : (sidebarWidth + laneLabelWidth);
+
+    // Positioning: where to draw the line in viewport coordinates
+    const positionOffsetX = isV2 ? sidebarWidth : (sidebarWidth + laneLabelWidth);
+
+    // Visibility threshold: skip lines that would be covered by sticky lane-labels
+    const visibilityThresholdX = sidebarWidth + laneLabelWidth;
+
     const offsetY = headerHeight + rulerHeight;
     const canvasHeight = canvas.scrollHeight;
     const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
 
     timePointsMap.forEach((color, visualTime) => {
-        const x = offsetX + msToPixels(visualTime) - scrollLeft;
+        const x = positionOffsetX + msToPixels(visualTime) - scrollLeft;
 
-        // Only draw lines that are visible in the track area (not in lane label area)
-        if (x < offsetX) {
-            return; // Line would be in the lane label area or sidebar, skip it
+        // Only draw lines that are visible in the track area (not covered by lane-labels or sidebar)
+        if (x < visibilityThresholdX) {
+            return; // Line would be covered by lane-labels or sidebar, skip it
         }
 
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
