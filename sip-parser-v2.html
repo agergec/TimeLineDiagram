@@ -697,7 +697,7 @@
         .col-cross-delta {
             text-align: right;
             white-space: nowrap;
-            min-width: 70px;
+            padding: 2px 4px;
         }
 
         .delta-badge {
@@ -728,10 +728,10 @@
         }
 
         .col-elapsed {
-            color: var(--text-secondary);
             white-space: nowrap;
             font-size: 10px;
             text-align: right;
+            padding: 2px 4px;
         }
 
         .cross-delta-badge {
@@ -1407,10 +1407,10 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
             <div id="cid-legend" class="cid-legend"></div>
             <div class="filter-divider"></div>
             <div class="filter-group">
-                <span class="filter-label">Delta:</span>
-                <button id="delta-percid" class="filter-btn" title="Show only Per-CID delta values">Per-CID</button>
-                <button id="delta-crosscid" class="filter-btn" title="Show only Selected CIDs delta values">Cross-CID</button>
-                <button id="delta-both" class="filter-btn active" title="Show both delta columns">Both</button>
+                <span class="filter-label">Columns:</span>
+                <button id="toggle-elapsed" class="filter-btn active" title="Toggle Elapsed column (ms since first message)">Elapsed</button>
+                <button id="toggle-percid" class="filter-btn active" title="Toggle Per-CID delta column (time since previous message in same CID)">Per-CID</button>
+                <button id="toggle-crosscid" class="filter-btn" title="Toggle Selected CIDs delta column (time since previous visible message)">Selected CIDs</button>
             </div>
         </div>
 
@@ -1519,14 +1519,14 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                     </div>
 
                     <div class="help-section">
-                        <h3>Delta Modes</h3>
+                        <h3>Column Toggles</h3>
                         <dl>
+                            <dt>Elapsed</dt>
+                            <dd>Toggle the Elapsed column (ms since first message). On by default.</dd>
                             <dt>Per-CID</dt>
-                            <dd>Time since the previous message <em>within the same CID</em>.</dd>
-                            <dt>Cross-CID</dt>
-                            <dd>Time since the previous visible message across <em>all filtered CIDs</em>. Recalculates when CIDs are toggled.</dd>
-                            <dt>Both</dt>
-                            <dd>Shows both delta columns side by side.</dd>
+                            <dd>Toggle the &Delta; Per-CID column (time since previous message <em>within the same CID</em>). On by default.</dd>
+                            <dt>Selected CIDs</dt>
+                            <dd>Toggle the &Delta; Selected CIDs column (time since previous visible message across <em>all filtered CIDs</em>). Off by default.</dd>
                         </dl>
                     </div>
 
@@ -1537,8 +1537,10 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                             <dd>Absolute timestamp <code>HH:MM:SS.mmm</code></dd>
                             <dt>Elapsed</dt>
                             <dd>Milliseconds since the first message in the log.</dd>
-                            <dt>&Delta; Delta</dt>
-                            <dd>Per-CID or Cross-CID delta with speed indicator dots.</dd>
+                            <dt>&Delta; Per-CID</dt>
+                            <dd>Delta within same CID, with speed indicator dots.</dd>
+                            <dt>&Delta; Selected CIDs</dt>
+                            <dd>Delta across all visible CIDs, with speed indicator dots.</dd>
                             <dt>Type</dt>
                             <dd>Badge: <code>SIP</code>, <code>EVT</code>, or <code>REQ</code></dd>
                             <dt>Dir</dt>

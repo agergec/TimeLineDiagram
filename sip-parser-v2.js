@@ -48,7 +48,9 @@ let eventsGridData = {
 let currentView = 'messages'; // 'messages' | 'dn-grid'
 let isParsed = false;
 let isInputExpanded = false;
-let deltaMode = 'both'; // 'per-cid' | 'cross-cid' | 'both'
+let showElapsed = true;
+let showPerCid = true;
+let showCrossCid = false;
 // Per-view bookmark state (separate dictionaries)
 let sipSpanBookmarks = [];   // Array of { timestamp, timeStr, element }
 let kazimirBookmarks = [];   // Array of { timestamp, timeStr, element }
@@ -977,39 +979,33 @@ function renderBookmarkBar() {
 function buildDeltaCell(delta, colorHex, deltaClass) {
     var td = document.createElement('td');
     td.className = 'col-delta';
-    // Show values only when per-cid or both mode is active
-    if (deltaMode === 'per-cid' || deltaMode === 'both') {
-        var badge = document.createElement('span');
-        badge.className = 'delta-badge ' + deltaClass;
-        if (delta !== null && colorHex) {
-            badge.style.background = cidColorToRgba(colorHex, 0.12);
-            badge.style.color = colorHex;
-        }
-        badge.textContent = delta === null ? '\u2014' : '+' + delta + 'ms';
-        var dots = createSpeedDots(deltaClass);
-        if (dots) badge.appendChild(dots);
-        td.appendChild(badge);
+    var badge = document.createElement('span');
+    badge.className = 'delta-badge ' + deltaClass;
+    if (delta !== null && colorHex) {
+        badge.style.background = cidColorToRgba(colorHex, 0.12);
+        badge.style.color = colorHex;
     }
+    badge.textContent = delta === null ? '\u2014' : '+' + delta + 'ms';
+    var dots = createSpeedDots(deltaClass);
+    if (dots) badge.appendChild(dots);
+    td.appendChild(badge);
     return td;
 }
 
 function buildCrossDeltaCell(crossDelta, colorHex) {
     var td = document.createElement('td');
     td.className = 'col-cross-delta';
-    // Show values only when cross-cid or both mode is active
-    if (deltaMode === 'cross-cid' || deltaMode === 'both') {
-        var crossClass = getDeltaClass(crossDelta);
-        var badge = document.createElement('span');
-        badge.className = 'cross-delta-badge ' + crossClass;
-        if (crossDelta !== null && colorHex) {
-            badge.style.background = cidColorToRgba(colorHex, 0.12);
-            badge.style.color = colorHex;
-        }
-        badge.textContent = crossDelta === null ? '\u2014' : '+' + crossDelta + 'ms';
-        var dots = createSpeedDots(crossClass);
-        if (dots) badge.appendChild(dots);
-        td.appendChild(badge);
+    var crossClass = getDeltaClass(crossDelta);
+    var badge = document.createElement('span');
+    badge.className = 'cross-delta-badge ' + crossClass;
+    if (crossDelta !== null && colorHex) {
+        badge.style.background = cidColorToRgba(colorHex, 0.12);
+        badge.style.color = colorHex;
     }
+    badge.textContent = crossDelta === null ? '\u2014' : '+' + crossDelta + 'ms';
+    var dots = createSpeedDots(crossClass);
+    if (dots) badge.appendChild(dots);
+    td.appendChild(badge);
     return td;
 }
 
@@ -1035,19 +1031,25 @@ function renderSipRow(msg, firstTimestamp) {
     tdTime.textContent = msg.timeStr;
     tr.appendChild(tdTime);
 
-    // Elapsed
-    var tdElapsed = document.createElement('td');
-    tdElapsed.className = 'col-elapsed';
-    var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
-    tdElapsed.textContent = elapsed + 'ms';
-    tdElapsed.style.color = cidColor;
-    tr.appendChild(tdElapsed);
+    // Elapsed (conditional)
+    if (showElapsed) {
+        var tdElapsed = document.createElement('td');
+        tdElapsed.className = 'col-elapsed';
+        var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
+        tdElapsed.textContent = elapsed + 'ms';
+        tdElapsed.style.color = cidColor;
+        tr.appendChild(tdElapsed);
+    }
 
-    // Per-CID Delta (always present, content controlled by deltaMode)
-    tr.appendChild(buildDeltaCell(msg.delta, cidColor, deltaClass));
+    // Per-CID Delta (conditional)
+    if (showPerCid) {
+        tr.appendChild(buildDeltaCell(msg.delta, cidColor, deltaClass));
+    }
 
-    // Cross-CID Delta (always present, content controlled by deltaMode)
-    tr.appendChild(buildCrossDeltaCell(msg.crossDelta, cidColor));
+    // Cross-CID Delta (conditional)
+    if (showCrossCid) {
+        tr.appendChild(buildCrossDeltaCell(msg.crossDelta, cidColor));
+    }
 
     // Type
     var tdType = document.createElement('td');
@@ -1137,19 +1139,25 @@ function renderEventRequestRow(msg, firstTimestamp) {
     tdTime.textContent = msg.timeStr;
     tr.appendChild(tdTime);
 
-    // Elapsed
-    var tdElapsed = document.createElement('td');
-    tdElapsed.className = 'col-elapsed';
-    var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
-    tdElapsed.textContent = elapsed + 'ms';
-    tdElapsed.style.color = connidColor;
-    tr.appendChild(tdElapsed);
+    // Elapsed (conditional)
+    if (showElapsed) {
+        var tdElapsed = document.createElement('td');
+        tdElapsed.className = 'col-elapsed';
+        var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
+        tdElapsed.textContent = elapsed + 'ms';
+        tdElapsed.style.color = connidColor;
+        tr.appendChild(tdElapsed);
+    }
 
-    // Per-CID Delta (always present, content controlled by deltaMode)
-    tr.appendChild(buildDeltaCell(msg.delta, connidColor, deltaClass));
+    // Per-CID Delta (conditional)
+    if (showPerCid) {
+        tr.appendChild(buildDeltaCell(msg.delta, connidColor, deltaClass));
+    }
 
-    // Cross-CID Delta (always present, content controlled by deltaMode)
-    tr.appendChild(buildCrossDeltaCell(msg.crossDelta, connidColor));
+    // Cross-CID Delta (conditional)
+    if (showCrossCid) {
+        tr.appendChild(buildCrossDeltaCell(msg.crossDelta, connidColor));
+    }
 
     // Type
     var tdType = document.createElement('td');
@@ -1228,9 +1236,9 @@ function updateTableHeader() {
     }
 
     addTh('Time', 'Absolute timestamp of the message');
-    addTh('Elapsed', 'Milliseconds since the first message in the log');
-    addTh('\u0394 Per-CID', 'Time since the previous message within the same CID/ConnID');
-    addTh('\u0394 Selected CIDs', 'Time since the previous visible message across all filtered CIDs');
+    if (showElapsed) addTh('Elapsed', 'Milliseconds since the first message in the log');
+    if (showPerCid) addTh('\u0394 Per-CID', 'Time since the previous message within the same CID/ConnID');
+    if (showCrossCid) addTh('\u0394 Selected CIDs', 'Time since the previous visible message across all filtered CIDs');
     addTh('Type', 'Message type: SIP, Event, or Request');
     addTh('Message', 'Direction and method/event name');
     addTh('From / DN', 'Source endpoint or Device Number');
@@ -1381,17 +1389,19 @@ function updateFilterButtons() {
     if (eventsBtn) eventsBtn.classList.toggle('active', filters.showEvents);
     if (requestsBtn) requestsBtn.classList.toggle('active', filters.showRequests);
 
-    // Delta mode buttons
-    var percidBtn = document.getElementById('delta-percid');
-    var crosscidBtn = document.getElementById('delta-crosscid');
-    var bothBtn = document.getElementById('delta-both');
-    if (percidBtn) percidBtn.classList.toggle('active', deltaMode === 'per-cid');
-    if (crosscidBtn) crosscidBtn.classList.toggle('active', deltaMode === 'cross-cid');
-    if (bothBtn) bothBtn.classList.toggle('active', deltaMode === 'both');
+    // Column toggle buttons
+    var elapsedBtn = document.getElementById('toggle-elapsed');
+    var percidBtn = document.getElementById('toggle-percid');
+    var crosscidBtn = document.getElementById('toggle-crosscid');
+    if (elapsedBtn) elapsedBtn.classList.toggle('active', showElapsed);
+    if (percidBtn) percidBtn.classList.toggle('active', showPerCid);
+    if (crosscidBtn) crosscidBtn.classList.toggle('active', showCrossCid);
 }
 
-function setDeltaMode(mode) {
-    deltaMode = mode;
+function toggleColumnVisibility(col) {
+    if (col === 'elapsed') showElapsed = !showElapsed;
+    else if (col === 'percid') showPerCid = !showPerCid;
+    else if (col === 'crosscid') showCrossCid = !showCrossCid;
     updateFilterButtons();
     renderFilteredGrid();
 }
@@ -1814,7 +1824,9 @@ function handleClear() {
     eventsGridData = { messages: [], dnColumns: [], switchColumn: null, hasNoDnColumn: false, connids: [] };
     isParsed = false;
     currentView = 'messages';
-    deltaMode = 'both';
+    showElapsed = true;
+    showPerCid = true;
+    showCrossCid = false;
     sipSpanBookmarks = [];
     kazimirBookmarks = [];
     pendingSipBookmarks = [];
@@ -1853,10 +1865,10 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('cid-all-btn').addEventListener('click', function() { toggleAllCids(true); });
     document.getElementById('cid-none-btn').addEventListener('click', function() { toggleAllCids(false); });
 
-    // Delta mode
-    document.getElementById('delta-percid').addEventListener('click', function() { setDeltaMode('per-cid'); });
-    document.getElementById('delta-crosscid').addEventListener('click', function() { setDeltaMode('cross-cid'); });
-    document.getElementById('delta-both').addEventListener('click', function() { setDeltaMode('both'); });
+    // Column toggles
+    document.getElementById('toggle-elapsed').addEventListener('click', function() { toggleColumnVisibility('elapsed'); });
+    document.getElementById('toggle-percid').addEventListener('click', function() { toggleColumnVisibility('percid'); });
+    document.getElementById('toggle-crosscid').addEventListener('click', function() { toggleColumnVisibility('crosscid'); });
 
     // Saved logs modal
     document.getElementById('saved-logs-btn').addEventListener('click', openSavedLogsModal);
