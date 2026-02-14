@@ -4757,7 +4757,12 @@ function init() {
         });
     });
 
-    document.getElementById('close-properties').addEventListener('click', deselectBox);
+    // V1 only - close-properties button (V2 uses close-right-sidebar handled by V2 module)
+    const closePropsBtn = document.getElementById('close-properties');
+    if (closePropsBtn) {
+        closePropsBtn.addEventListener('click', deselectBox);
+    }
+
     document.getElementById('delete-box').addEventListener('click', handleDeleteBox);
 
     // Global mouse events for dragging
