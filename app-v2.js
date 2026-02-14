@@ -2300,23 +2300,25 @@ function hideBoxTooltip() {
 }
 
 function renderAlignmentMarkers() {
+    // Hide the legacy SVG overlay
     const svg = app.elements.alignmentMarkers;
-    const canvas = app.elements.lanesCanvas;
+    if (svg) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        svg.style.display = 'none';
+    }
 
-    svg.innerHTML = '';
-    svg.style.display = 'none';
+    // Remove previous alignment markers and containers
+    document.querySelectorAll('.alignment-lines-container, .alignment-marker-line').forEach(el => el.remove());
 
     // Check setting
     if (!app.settings.showAlignmentLines) return;
     if (app.diagram.boxes.length === 0) return;
 
     // Collect all visual time points with their box colors
-    // In compression mode, use compressed visual positions
-    const timePointsMap = new Map(); // visualTime -> color (first box's color at that time)
+    const timePointsMap = new Map();
     app.diagram.boxes.forEach(box => {
-        // Get visual positions (compressed if compression enabled)
         const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-        const visualEnd = visualStart + box.duration; // Duration stays the same visually
+        const visualEnd = visualStart + box.duration;
 
         if (!timePointsMap.has(visualStart)) {
             timePointsMap.set(visualStart, box.color);
@@ -2326,46 +2328,30 @@ function renderAlignmentMarkers() {
         }
     });
 
-    svg.style.display = 'block';
-
-    // Use actual DOM position of the first lane-track for accurate alignment
-    const firstTrack = document.querySelector('.lane-track');
-    if (!firstTrack) return;
-
-    const trackRect = firstTrack.getBoundingClientRect();
-    const svgRect = svg.getBoundingClientRect();
-
-    // trackRect.left = left edge of the track in viewport coords
-    // svgRect.left  = left edge of the SVG in viewport coords
-    // The difference gives the offset from SVG origin to track origin
-    const trackLeftInSvg = trackRect.left - svgRect.left;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    const offsetY = canvasRect.top - svgRect.top;
-    const canvasHeight = canvas.scrollHeight;
-    const scrollLeft = canvas.scrollLeft;
-
-    timePointsMap.forEach((color, visualTime) => {
-        const x = trackLeftInSvg + msToPixels(visualTime) - scrollLeft;
-
-        // Only draw lines that are visible in the track area
-        if (x < trackLeftInSvg) {
-            return; // Line would be before the track start, skip it
-        }
-
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('class', 'alignment-line');
-        line.setAttribute('x1', x);
-        line.setAttribute('y1', offsetY);
-        line.setAttribute('x2', x);
-        // End at the bottom of the lanes canvas (scrollbar area)
-        line.setAttribute('y2', offsetY + canvasHeight);
-        // Apply box color to the dashed line
-        line.setAttribute('stroke', color);
-        line.setAttribute('stroke-opacity', '0.5');
-
-        svg.appendChild(line);
+    // Draw lines directly inside each .lane-track — same coordinate
+    // system as boxes, so alignment is guaranteed.
+    const tracks = document.querySelectorAll('.lane-track');
+    tracks.forEach(track => {
+        timePointsMap.forEach((color, visualTime) => {
+            const line = document.createElement('div');
+            line.className = 'alignment-marker-line';
+            line.style.left = `${msToPixels(visualTime)}px`;
+            line.style.borderLeftColor = color;
+            track.appendChild(line);
+        });
     });
+
+    // Also draw in #time-markers to extend lines below the lanes
+    const timeMarkers = document.getElementById('time-markers');
+    if (timeMarkers) {
+        timePointsMap.forEach((color, visualTime) => {
+            const line = document.createElement('div');
+            line.className = 'alignment-marker-line';
+            line.style.left = `${msToPixels(visualTime)}px`;
+            line.style.borderLeftColor = color;
+            timeMarkers.appendChild(line);
+        });
+    }
 }
 
 function updateTotalDuration() {
@@ -2900,6 +2886,8 @@ function handleMouseUp(e) {
         }
     }
 
+    // Preserve didMove flag for the click handler (fires after mouseup)
+    app.lastDragDidMove = !!(app.dragData && app.dragData.didMove);
     app.isDragging = false;
     app.dragData = null;
 }
@@ -6684,9 +6672,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 boxEl.classList.add('selected');
             }
 
-            // 4. Update Properties Panel ONLY if it is already open (visible/active)
+            // 4. Update Properties Panel ONLY if it is already open
             const sidebar = document.getElementById('right-sidebar');
-            const isActive = sidebar && sidebar.classList.contains('active');
+            const isActive = sidebar && sidebar.classList.contains('visible');
 
             if (isActive) {
                 // If open, update values
@@ -6759,8 +6747,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Update panel ONLY if it is already open (visible)
         const sidebar = document.getElementById('right-sidebar');
-        // V2 uses 'active' class for visibility
-        if (sidebar && sidebar.classList.contains('active')) {
+        if (sidebar && sidebar.classList.contains('visible')) {
             updatePropertiesPanel();
         } else {
             // Ensure it remains closed (do nothing)

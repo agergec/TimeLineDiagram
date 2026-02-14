@@ -82,6 +82,7 @@ body {
     height: 100vh;
     width: 100vw;
     overflow: hidden;
+    position: relative;
 }
 
 /* =====================================================
@@ -1425,22 +1426,25 @@ body.show-box-labels .lane-row {
    Alignment Markers
    ===================================================== */
 .alignment-markers {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 50;
-    overflow: visible;
-    /* Clip to prevent overlap with sidebar and lane labels */
-    clip-path: inset(var(--header-height) 0 0 calc(var(--sidebar-width) + var(--lane-label-width)));
+    /* Legacy SVG overlay - hidden, alignment lines now rendered per-track */
+    display: none;
 }
 
 .alignment-line {
     /* stroke color is set dynamically per-line via inline attribute */
     stroke-width: 1;
     stroke-dasharray: 4 4;
+}
+
+/* Dashed alignment marker lines — rendered per-track for correct alignment */
+.alignment-marker-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed currentColor;
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 /* =====================================================
@@ -2550,11 +2554,7 @@ body.diagram-locked .title-input-v2 {
     /* Keep existing but below sidebar */
 }
 
-/* Ensure SVG lines are below sidebar */
-.alignment-markers {
-    z-index: 10;
-    pointer-events: none;
-}
+/* Legacy alignment-markers SVG - no longer used */
 
 .measurement-overlay {
     z-index: 500;
@@ -2756,11 +2756,7 @@ body.hide-lane-labels .time-markers {
    V2 Layout Fixes & patches
    ===================================================== */
 
-/* Alignment Markers Position Fix */
-.alignment-markers {
-    left: var(--lane-label-width) !important;
-    width: calc(100% - var(--lane-label-width)) !important;
-}
+/* Alignment Markers: position handled dynamically via getBoundingClientRect in JS */
 
 /* Overscroll / Rubber-banding Fix */
 html, body,
