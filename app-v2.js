@@ -1892,7 +1892,7 @@ function renderLaneList() {
             e.stopPropagation();
             if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
-            app.diagram.addLaneAt(index);
+            app.diagram.insertLaneAt(index);
             renderLaneList();
             renderLanesCanvas();
         });
@@ -1904,7 +1904,7 @@ function renderLaneList() {
             e.stopPropagation();
             if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
-            app.diagram.addLaneAt(index + 1);
+            app.diagram.insertLaneAt(index + 1);
             renderLaneList();
             renderLanesCanvas();
         });
@@ -5567,7 +5567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
                 const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.addLaneAt(index);
+                app.diagram.insertLaneAt(index);
                 renderLaneList();
                 renderLanesCanvas();
             });
@@ -5579,7 +5579,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
                 const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.addLaneAt(index + 1);
+                app.diagram.insertLaneAt(index + 1);
                 renderLaneList();
                 renderLanesCanvas();
             });
