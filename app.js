@@ -20,11 +20,13 @@ class TimelineDiagram {
     }
 
     addLane(name, baseColor = null) {
+        // If no color provided, assign one from PALETTE based on current lane count
+        const color = baseColor || PALETTE[this.lanes.length % PALETTE.length];
         const lane = {
             id: this.nextLaneId++,
             name: name,
             order: this.lanes.length,
-            baseColor: baseColor // Optional: lane's base color for boxes
+            baseColor: color
         };
         this.lanes.push(lane);
         return lane;
@@ -46,11 +48,14 @@ class TimelineDiagram {
         }
     }
 
-    insertLaneAt(position, name) {
+    insertLaneAt(position, name, baseColor = null) {
+        // If no color provided, assign one from PALETTE based on position
+        const color = baseColor || PALETTE[position % PALETTE.length];
         const lane = {
             id: this.nextLaneId++,
             name: name,
-            order: position
+            order: position,
+            baseColor: color
         };
         this.lanes.splice(position, 0, lane);
         // Reorder all lanes
@@ -144,6 +149,13 @@ class TimelineDiagram {
         this.nextLaneId = data.nextLaneId || 1;
         this.nextBoxId = data.nextBoxId || 1;
         this.locked = data.locked || false;
+
+        // Migration: Ensure all lanes have baseColor (for old saved diagrams)
+        this.lanes.forEach((lane, index) => {
+            if (!lane.baseColor) {
+                lane.baseColor = PALETTE[index % PALETTE.length];
+            }
+        });
         // Restore compression state (default to false for new/old diagrams)
         Compression.setEnabled(data.compressionEnabled || false);
         // Restore settings if present
@@ -1172,7 +1184,10 @@ function saveCurrentDiagram() {
     const trimmedDiagrams = diagrams.slice(0, MAX_DIAGRAMS);
 
     saveDiagramsList(trimmedDiagrams);
-    renderDiagramsList();
+    // Use V2 badge update
+    if (typeof updateDiagramsBadge === 'function') {
+        updateDiagramsBadge();
+    }
 }
 
 function autoSave() {
@@ -1404,7 +1419,9 @@ function purgeApplication() {
                 renderAlignmentMarkers();
                 updateTotalDuration();
 
-                app.elements.propertiesPanel.classList.add('hidden');
+                if (app.elements.propertiesPanel) {
+                    app.elements.propertiesPanel.classList.add('hidden');
+                }
 
                 // Render diagrams list immediately and after delay to ensure update
                 renderDiagramsList();
@@ -1449,7 +1466,9 @@ function purgeApplication() {
                 saveCurrentDiagram();
 
                 // Close the settings panel
-                app.elements.propertiesPanel.classList.add('hidden');
+                if (app.elements.propertiesPanel) {
+                    app.elements.propertiesPanel.classList.add('hidden');
+                }
 
                 showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
             }
@@ -1533,65 +1552,75 @@ function renderDiagramsList() {
     const container = document.getElementById('diagrams-list');
     if (!container) return;
 
+    container.innerHTML = '';
     const diagrams = getAllDiagrams();
 
     if (diagrams.length === 0) {
-        container.innerHTML = '<div class="no-diagrams">No saved diagrams</div>';
-    } else {
-        container.innerHTML = diagrams.map(d => {
-            const isLocked = d.data && d.data.locked;
-            return `
-            <div class="diagram-item ${d.id === currentDiagramId ? 'active' : ''}" data-diagram-id="${d.id}">
-                <div class="diagram-item-info">
-                    <div class="diagram-item-title">${isLocked ? '🔒 ' : ''}${escapeHtml(d.title || 'Untitled')}</div>
-                    <div class="diagram-item-time">${formatTimeAgo(d.updatedAt)}</div>
-                </div>
-                <div class="diagram-controls">
-                    <button class="diagram-control-btn diagram-lock-btn ${isLocked ? 'locked' : ''}" data-diagram-id="${d.id}" title="${isLocked ? 'Unlock' : 'Lock'} diagram">${isLocked ? '🔓' : '🔒'}</button>
-                    <button class="diagram-control-btn diagram-reset-btn" data-diagram-id="${d.id}" title="Reset diagram">↺</button>
-                    <button class="diagram-delete-btn" data-diagram-id="${d.id}" title="Delete diagram">×</button>
-                </div>
-            </div>`;
-        }).join('');
-
-        // Add click listeners
-        container.querySelectorAll('.diagram-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                if (e.target.closest('.diagram-controls')) return;
-                const id = item.dataset.diagramId;
-                if (id !== currentDiagramId) {
-                    loadDiagram(id);
-                }
-            });
-        });
-
-        container.querySelectorAll('.diagram-lock-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                toggleDiagramLock(btn.dataset.diagramId);
-            });
-        });
-
-        container.querySelectorAll('.diagram-reset-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                resetDiagram(btn.dataset.diagramId);
-            });
-        });
-
-        container.querySelectorAll('.diagram-delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteDiagram(btn.dataset.diagramId);
-            });
-        });
+        container.innerHTML = '<div class="empty-state">No saved diagrams found.</div>';
+        return;
     }
 
-    // Update New Diagram button state
-    updateNewDiagramButton();
+    // Sort by updated at desc
+    diagrams.sort((a, b) => b.updatedAt - a.updatedAt);
 
-    // Update Load button state
+    diagrams.forEach(d => {
+        const item = document.createElement('div');
+        item.className = 'diagram-item';
+        if (d.id === currentDiagramId) {
+            item.classList.add('active');
+        }
+
+        const date = new Date(d.updatedAt).toLocaleString();
+        
+        // Lock icon
+        const isLocked = d.data && d.data.locked;
+        const lockIcon = isLocked ? '<span class="lock-icon" title="Locked">🔒</span>' : '';
+
+        item.innerHTML = `
+            <div class="diagram-info">
+                <div class="diagram-title">${escapeHtml(d.title || 'Untitled')} ${lockIcon}</div>
+                <div class="diagram-date">${date}</div>
+            </div>
+            <div class="diagram-actions">
+                <button class="icon-btn load-btn" title="Load" data-id="${d.id}">📂</button>
+                <button class="icon-btn lock-btn" title="${isLocked ? 'Unlock' : 'Lock'}" data-id="${d.id}">${isLocked ? '🔓' : '🔒'}</button>
+                <button class="icon-btn delete-btn" title="Delete" data-id="${d.id}">🗑️</button>
+                <button class="icon-btn reset-btn" title="Reset (Clear Content)" data-id="${d.id}">🔄</button>
+            </div>
+        `;
+
+        item.querySelector('.load-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (loadDiagram(d.id)) {
+                // Close modal on load
+                document.getElementById('diagrams-modal').classList.add('hidden');
+            }
+        });
+
+        item.querySelector('.delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteDiagram(d.id);
+        });
+
+        item.querySelector('.lock-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleDiagramLock(d.id);
+        });
+        
+        item.querySelector('.reset-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            resetDiagram(d.id);
+        });
+
+        container.appendChild(item);
+    });
+
+    // Update new diagram button state
+    updateNewDiagramButton();
     updateLoadButton();
+
+    // Update badge
+    updateDiagramsBadge();
 }
 
 function updateNewDiagramButton() {
@@ -1632,9 +1661,10 @@ function updateLoadButton() {
 }
 
 function toggleDiagramsPanel() {
-    const panel = document.getElementById('diagrams-panel');
-    if (panel) {
-        panel.classList.toggle('open');
+    const modal = document.getElementById('diagrams-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        renderDiagramsList();
     }
 }
 
@@ -1759,10 +1789,12 @@ function renderLaneList() {
         const isLast = index === totalLanes - 1;
 
         const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
+
+        // V2: Use div.lane-name-div instead of input
         item.innerHTML = `
             <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
             <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
-            <input type="text" class="lane-name-input" value="${escapeHtml(lane.name)}" data-lane-id="${lane.id}">
+            <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
             <div class="lane-controls">
                 <button class="lane-control-btn move-up" data-lane-id="${lane.id}" title="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
                 <button class="lane-control-btn move-down" data-lane-id="${lane.id}" title="Move down" ${isLast ? 'disabled' : ''}>↓</button>
@@ -1772,52 +1804,53 @@ function renderLaneList() {
             </div>
         `;
 
+        // Add click listener to open properties on the item (excluding controls)
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.lane-control-btn') || e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+            showLanePropertiesPanel(lane.id);
+        });
+
+        // Add double-click inline editing for lane name
+        const laneNameDiv = item.querySelector('.lane-name-div');
+        laneNameDiv.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            if (!isEditingAllowed()) return;
+
+            // Create textarea for editing
+            const textarea = document.createElement('textarea');
+            textarea.className = 'lane-name-edit-textarea';
+            textarea.value = lane.name;
+            textarea.rows = 3;
+
+            // Replace div with textarea
+            laneNameDiv.replaceWith(textarea);
+            textarea.focus();
+            textarea.select();
+
+            const saveEdit = () => {
+                const newName = textarea.value.trim() || 'Unnamed Lane';
+                app.diagram.renameLane(lane.id, newName);
+                renderLaneList();
+                renderLanesCanvas();
+                autoSave();
+            };
+
+            textarea.addEventListener('blur', saveEdit);
+            textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    renderLaneList(); // Cancel edit
+                }
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    saveEdit();
+                }
+            });
+        });
+
         container.appendChild(item);
     });
 
-    // Add event listeners for lane name inputs
-    container.querySelectorAll('.lane-name-input').forEach(input => {
-        // Prevent drag when interacting with input
-        input.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            // Temporarily disable dragging on parent
-            const item = input.closest('.lane-item');
-            if (item) item.draggable = false;
-        });
-        input.addEventListener('mouseup', () => {
-            // Re-enable dragging after mouse up
-            const item = input.closest('.lane-item');
-            if (item) item.draggable = true;
-        });
-        input.addEventListener('blur', () => {
-            // Re-enable dragging when input loses focus
-            const item = input.closest('.lane-item');
-            if (item) item.draggable = true;
-        });
-        input.addEventListener('change', (e) => {
-            if (!isEditingAllowed()) {
-                e.target.value = app.diagram.lanes.find(l => l.id === parseInt(e.target.dataset.laneId, 10))?.name || '';
-                return;
-            }
-            const laneId = parseInt(e.target.dataset.laneId, 10);
-            app.diagram.renameLane(laneId, e.target.value);
-            renderLanesCanvas();
-        });
-        // Enter key applies and unfocuses
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (isEditingAllowed()) {
-                    const laneId = parseInt(input.dataset.laneId, 10);
-                    app.diagram.renameLane(laneId, input.value);
-                    renderLanesCanvas();
-                }
-                input.blur();
-            }
-        });
-    });
-
-    // Add event listeners for delete buttons
+    // Re-attach Delete buttons
     container.querySelectorAll('.lane-delete-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1839,7 +1872,7 @@ function renderLaneList() {
         });
     });
 
-    // Add event listeners for move up buttons
+    // Move-up buttons
     container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1852,7 +1885,7 @@ function renderLaneList() {
         });
     });
 
-    // Add event listeners for move down buttons
+    // Move-down buttons
     container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1865,33 +1898,32 @@ function renderLaneList() {
         });
     });
 
-    // Add event listeners for insert before buttons
+    // Insert-before buttons
     container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
-            const name = `Lane ${app.diagram.nextLaneId}`;
-            app.diagram.insertLaneAt(index, name);
+            app.diagram.insertLaneAt(index);
             renderLaneList();
             renderLanesCanvas();
         });
     });
 
-    // Add event listeners for insert after buttons
+    // Insert-after buttons
     container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!isEditingAllowed()) return;
             const index = parseInt(e.target.dataset.index, 10);
-            const name = `Lane ${app.diagram.nextLaneId}`;
-            app.diagram.insertLaneAt(index + 1, name);
+            app.diagram.insertLaneAt(index + 1);
             renderLaneList();
             renderLanesCanvas();
         });
     });
 
-    // Add event listeners for lane color buttons
+    // Invoke global drag init if available (it attaches to container #lane-list)
+    if (typeof initDragAndDrop === 'function') initDragAndDrop();
     container.querySelectorAll('.lane-color-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2079,37 +2111,41 @@ function renderLanesCanvas() {
     const canvas = app.elements.lanesCanvas;
     canvas.innerHTML = '';
 
-    // Note: Don't invalidate here - it should be done before renderTimelineRuler
-    // to ensure both use the same compression map
+    // STRICT DURATION LOGIC
+    // User wants: Duration value MUST affect design area first.
+    // But also "Prevent design area from being decreased below end-time of last box"
 
-    // Calculate minimum width for tracks based on timeline duration + trailing space setting
-    // Use compressed duration if compression is enabled
-    const totalDuration = Math.max(
-        Compression.enabled ? Compression.getCompressedDuration() : app.diagram.getTotalDuration(),
-        DEFAULT_MIN_TIMELINE_MS
-    );
-    const minTrackWidth = msToPixels(totalDuration + app.settings.trailingSpace);
+    const totalDuration = app.diagram.getTotalDuration();
+    const settingsDuration = app.settings.timelineDuration || 8000;
+
+    // Ensure strictly >= totalDuration
+    const finalDuration = Math.max(totalDuration, settingsDuration);
+
+    // Use exact pixels unless compressed
+    const minTrackWidth = msToPixels(finalDuration + (app.settings.trailingSpace || 0));
 
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
         row.className = 'lane-row';
         row.dataset.laneId = lane.id;
-        // Set min-width on row to extend alternating colors across entire scrollable area
-        // Add lane-label-width to account for the sticky label
+        // Min-width for scrolling - considering sticky label
+        // Note: If labels are hidden, --lane-label-width is 0px
         row.style.minWidth = `calc(var(--lane-label-width) + ${minTrackWidth}px)`;
 
         const label = document.createElement('div');
         label.className = 'lane-label';
-        // Support multi-line lane names (convert \n to <br>)
         label.innerHTML = escapeHtml(lane.name).replace(/\n/g, '<br>');
         label.title = lane.name;
 
         const track = document.createElement('div');
         track.className = 'lane-track';
         track.dataset.laneId = lane.id;
-        track.style.minWidth = `${minTrackWidth}px`;
 
-        // Render compression indicators for this lane - single line
+        // Force explicit width to enable scrolling
+        track.style.minWidth = `${minTrackWidth}px`;
+        track.style.width = `${minTrackWidth}px`;
+
+        // Compression indicators
         if (Compression.enabled) {
             const gaps = Compression.getCompressedGaps();
             gaps.forEach(gap => {
@@ -2121,7 +2157,7 @@ function renderLanesCanvas() {
             });
         }
 
-        // Render boxes for this lane
+        // Render boxes
         const boxes = app.diagram.getBoxesForLane(lane.id);
         boxes.forEach(box => {
             const boxEl = createBoxElement(box);
@@ -2133,7 +2169,7 @@ function renderLanesCanvas() {
         canvas.appendChild(row);
     });
 
-    // Add event listeners for box creation (click and drag on track)
+    // Event listeners handling
     canvas.querySelectorAll('.lane-track').forEach(track => {
         track.addEventListener('mousedown', handleTrackMouseDown);
     });
@@ -2141,8 +2177,6 @@ function renderLanesCanvas() {
     renderTimelineRuler();
     renderAlignmentMarkers();
     renderTimeMarkers();
-
-    // Update minimap
     Minimap.render();
 }
 
@@ -2187,7 +2221,13 @@ function createBoxElement(box) {
     // Box click/selection
     el.addEventListener('click', (e) => {
         e.stopPropagation();
-        selectBox(box.id);
+        // Only select on true clicks, not after drag/resize
+        // Check if last drag involved actual movement
+        if (!app.lastDragDidMove) {
+            selectBox(box.id);
+        }
+        // Reset flag
+        app.lastDragDidMove = false;
     });
 
     // Box dragging (move)
@@ -2260,23 +2300,25 @@ function hideBoxTooltip() {
 }
 
 function renderAlignmentMarkers() {
+    // Hide the legacy SVG overlay
     const svg = app.elements.alignmentMarkers;
-    const canvas = app.elements.lanesCanvas;
+    if (svg) {
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        svg.style.display = 'none';
+    }
 
-    svg.innerHTML = '';
-    svg.style.display = 'none';
+    // Remove previous alignment markers and containers
+    document.querySelectorAll('.alignment-lines-container, .alignment-marker-line').forEach(el => el.remove());
 
     // Check setting
     if (!app.settings.showAlignmentLines) return;
     if (app.diagram.boxes.length === 0) return;
 
     // Collect all visual time points with their box colors
-    // In compression mode, use compressed visual positions
-    const timePointsMap = new Map(); // visualTime -> color (first box's color at that time)
+    const timePointsMap = new Map();
     app.diagram.boxes.forEach(box => {
-        // Get visual positions (compressed if compression enabled)
         const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-        const visualEnd = visualStart + box.duration; // Duration stays the same visually
+        const visualEnd = visualStart + box.duration;
 
         if (!timePointsMap.has(visualStart)) {
             timePointsMap.set(visualStart, box.color);
@@ -2286,44 +2328,30 @@ function renderAlignmentMarkers() {
         }
     });
 
-    svg.style.display = 'block';
-
-    // Get offset for lane label width
-    const laneLabelWidth = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--lane-label-width').replace('px', ''), 10) || 160;
-    const sidebarWidth = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--sidebar-width').replace('px', ''), 10) || 220;
-    const headerHeight = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--header-height').replace('px', ''), 10) || 60;
-    const rulerHeight = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--ruler-height').replace('px', ''), 10) || 40;
-
-    const offsetX = sidebarWidth + laneLabelWidth;
-    const offsetY = headerHeight + rulerHeight;
-    const canvasHeight = canvas.scrollHeight;
-    const scrollLeft = canvas.scrollLeft; // Account for horizontal scroll
-
-    timePointsMap.forEach((color, visualTime) => {
-        const x = offsetX + msToPixels(visualTime) - scrollLeft;
-
-        // Only draw lines that are visible in the track area (not in lane label area)
-        if (x < offsetX) {
-            return; // Line would be in the lane label area or sidebar, skip it
-        }
-
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('class', 'alignment-line');
-        line.setAttribute('x1', x);
-        line.setAttribute('y1', offsetY);
-        line.setAttribute('x2', x);
-        // End at the bottom of the lanes canvas (scrollbar area)
-        line.setAttribute('y2', offsetY + canvasHeight);
-        // Apply box color to the dashed line
-        line.setAttribute('stroke', color);
-        line.setAttribute('stroke-opacity', '0.5');
-
-        svg.appendChild(line);
+    // Draw lines directly inside each .lane-track — same coordinate
+    // system as boxes, so alignment is guaranteed.
+    const tracks = document.querySelectorAll('.lane-track');
+    tracks.forEach(track => {
+        timePointsMap.forEach((color, visualTime) => {
+            const line = document.createElement('div');
+            line.className = 'alignment-marker-line';
+            line.style.left = `${msToPixels(visualTime)}px`;
+            line.style.borderLeftColor = color;
+            track.appendChild(line);
+        });
     });
+
+    // Also draw in #time-markers to extend lines below the lanes
+    const timeMarkers = document.getElementById('time-markers');
+    if (timeMarkers) {
+        timePointsMap.forEach((color, visualTime) => {
+            const line = document.createElement('div');
+            line.className = 'alignment-marker-line';
+            line.style.left = `${msToPixels(visualTime)}px`;
+            line.style.borderLeftColor = color;
+            timeMarkers.appendChild(line);
+        });
+    }
 }
 
 function updateTotalDuration() {
@@ -2540,7 +2568,9 @@ function deselectBox() {
     document.querySelectorAll('.timeline-box.selected').forEach(el => {
         el.classList.remove('selected');
     });
-    app.elements.propertiesPanel.classList.add('hidden');
+    if (app.elements.propertiesPanel) {
+        app.elements.propertiesPanel.classList.add('hidden');
+    }
 
     // Remove active state from settings button
     const settingsBtn = document.getElementById('settings-btn');
@@ -2673,6 +2703,11 @@ function handleResizeStart(e, boxId) {
 
 function handleMouseMove(e) {
     if (!app.isDragging || !app.dragData) return;
+
+    // Track that actual movement occurred during drag
+    if (!app.dragData.didMove) {
+        app.dragData.didMove = true;
+    }
 
     if (app.dragData.type === 'create') {
         const rect = app.dragData.track.getBoundingClientRect();
@@ -2828,9 +2863,31 @@ function handleMouseUp(e) {
         }
         renderAlignmentMarkers();
         updateTotalDuration();
-        updatePropertiesPanel();
+
+        // After drag/resize: only update properties values if sidebar already shows box props.
+        // Do NOT auto-open the sidebar — that should only happen on deliberate click.
+        if (V2 && V2.isV2) {
+            if (V2.currentMode === 'box' && app.selectedBoxId) {
+                // Sidebar already open in box mode — just refresh values
+                const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+                if (box) {
+                    app.elements.boxLabel.value = box.label;
+                    app.elements.boxColor.value = box.color;
+                    app.elements.boxStart.value = box.startOffset;
+                    app.elements.boxDuration.value = box.duration;
+                    if (app.elements.boxEnd) app.elements.boxEnd.value = box.startOffset + box.duration;
+                    const baseTime = parseTime(app.diagram.startTime);
+                    app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
+                    app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+                }
+            }
+        } else {
+            updatePropertiesPanel();
+        }
     }
 
+    // Preserve didMove flag for the click handler (fires after mouseup)
+    app.lastDragDidMove = !!(app.dragData && app.dragData.didMove);
     app.isDragging = false;
     app.dragData = null;
 }
@@ -4612,6 +4669,10 @@ function init() {
     const trailingSlider = document.getElementById('config-trailing-slider');
     const trailingInput = document.getElementById('config-trailing-space');
     if (trailingSlider && trailingInput) {
+        // Initialize with current value
+        trailingSlider.value = app.settings.trailingSpace;
+        trailingInput.value = app.settings.trailingSpace;
+
         const syncTrailing = (value) => {
             app.settings.trailingSpace = parseInt(value, 10);
             trailingSlider.value = value;
@@ -4739,7 +4800,12 @@ function init() {
         });
     });
 
-    document.getElementById('close-properties').addEventListener('click', deselectBox);
+    // V1 only - close-properties button (V2 uses close-right-sidebar handled by V2 module)
+    const closePropsBtn = document.getElementById('close-properties');
+    if (closePropsBtn) {
+        closePropsBtn.addEventListener('click', deselectBox);
+    }
+
     document.getElementById('delete-box').addEventListener('click', handleDeleteBox);
 
     // Global mouse events for dragging
@@ -4855,10 +4921,11 @@ function init() {
     updateTotalDuration();
     updateBoxLabelsState();
 
-    // Open diagrams panel by default if there are saved diagrams
+    // Open diagrams panel by default if there are saved diagrams (V1 only)
     const diagrams = getAllDiagrams();
-    if (diagrams.length > 0) {
-        document.getElementById('diagrams-panel').classList.add('open');
+    const diagramsPanel = document.getElementById('diagrams-panel');
+    if (diagrams.length > 0 && diagramsPanel) {
+        diagramsPanel.classList.add('open');
     }
 }
 
@@ -5342,6 +5409,13 @@ const V2 = {
     }
 };
 
+// Global wrapper for updateDiagramsBadge (delegates to V2 if available)
+function updateDiagramsBadge() {
+    if (V2 && V2.isV2 && typeof V2.updateDiagramsBadge === 'function') {
+        V2.updateDiagramsBadge();
+    }
+}
+
 // Attach lane-controls click handler via event delegation
 document.addEventListener('click', (e) => {
     if (!V2.isV2) return;
@@ -5444,6 +5518,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 showLanePropertiesPanel(lane.id);
             });
 
+            // Add double-click inline editing for lane name
+            const laneNameDiv = item.querySelector('.lane-name-div');
+            laneNameDiv.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+
+                // Create textarea for editing
+                const textarea = document.createElement('textarea');
+                textarea.className = 'lane-name-edit-textarea';
+                textarea.value = lane.name;
+                textarea.rows = 3;
+
+                // Replace div with textarea
+                laneNameDiv.replaceWith(textarea);
+                textarea.focus();
+                textarea.select();
+
+                const saveEdit = () => {
+                    const newName = textarea.value.trim() || 'Unnamed Lane';
+                    app.diagram.renameLane(lane.id, newName);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    autoSave();
+                };
+
+                textarea.addEventListener('blur', saveEdit);
+                textarea.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        renderLaneList(); // Cancel edit
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        saveEdit();
+                    }
+                });
+            });
+
             container.appendChild(item);
         });
 
@@ -5501,7 +5612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
                 const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.addLaneAt(index);
+                app.diagram.insertLaneAt(index);
                 renderLaneList();
                 renderLanesCanvas();
             });
@@ -5513,7 +5624,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
                 const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.addLaneAt(index + 1);
+                app.diagram.insertLaneAt(index + 1);
                 renderLaneList();
                 renderLanesCanvas();
             });
@@ -6541,10 +6652,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 (function () {
 
-    // Override selectBox to prevent properties panel from opening during resize
+    // Override selectBox to prevent properties panel from opening during resize or drag
     const _origSelectBox = selectBox;
     selectBox = function (boxId, isNewBox = false) {
-        if (V2.isV2 && app.dragData && app.dragData.type === 'resize') {
+        if (V2.isV2 && app.dragData && (app.dragData.type === 'resize' || app.dragData.type === 'move')) {
             // Manual selection logic (copied from original selectBox)
 
             // 1. Deselect previous
@@ -6561,9 +6672,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 boxEl.classList.add('selected');
             }
 
-            // 4. Update Properties Panel ONLY if it is already open (visible/active)
+            // 4. Update Properties Panel ONLY if it is already open
             const sidebar = document.getElementById('right-sidebar');
-            const isActive = sidebar && sidebar.classList.contains('active');
+            const isActive = sidebar && sidebar.classList.contains('visible');
 
             if (isActive) {
                 // If open, update values
@@ -6636,8 +6747,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Update panel ONLY if it is already open (visible)
         const sidebar = document.getElementById('right-sidebar');
-        // V2 uses 'active' class for visibility
-        if (sidebar && sidebar.classList.contains('active')) {
+        if (sidebar && sidebar.classList.contains('visible')) {
             updatePropertiesPanel();
         } else {
             // Ensure it remains closed (do nothing)

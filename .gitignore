@@ -4,14 +4,10 @@
 # Except these project files
 !index.html
 !app.js
-!index-v2.html
-!app-v2.js
 !styles.css
 !help.html
 !sip-parser.html
 !sip-parser.js
-!sip-parser-v2.html
-!sip-parser-v2.js
 !LICENSE
 !README.md
 !CLAUDE.md
@@ -19,3 +15,9 @@
 !.github/
 !.github/workflows/
 !.github/workflows/deploy.yml
+
+# V1 backups
+!index-v1.html
+!app-v1.js
+!sip-parser-v1.html
+!sip-parser-v1.js
