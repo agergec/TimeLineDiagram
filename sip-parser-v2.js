@@ -48,7 +48,7 @@ let eventsGridData = {
 let currentView = 'messages'; // 'messages' | 'dn-grid'
 let isParsed = false;
 let isInputExpanded = false;
-let deltaMode = 'per-cid'; // 'per-cid' | 'cross-cid' | 'both'
+let deltaMode = 'both'; // 'per-cid' | 'cross-cid' | 'both'
 // Per-view bookmark state (separate dictionaries)
 let sipSpanBookmarks = [];   // Array of { timestamp, timeStr, element }
 let kazimirBookmarks = [];   // Array of { timestamp, timeStr, element }
@@ -913,11 +913,18 @@ function renderBookmarkBar() {
     if (dnContainer) dnContainer.textContent = '';
 
     var rows = getActiveBookmarks();
-    if (rows.length === 0) return;
 
     // Target the active view's container
     var bar = currentView === 'messages' ? msgContainer : dnContainer;
     if (!bar) return;
+
+    if (rows.length === 0) {
+        var hint = document.createElement('span');
+        hint.className = 'bookmark-hint';
+        hint.textContent = 'Select a row to calculate custom delta time.';
+        bar.appendChild(hint);
+        return;
+    }
 
     // Clear button first (left side)
     var clearBtn = document.createElement('button');
@@ -970,33 +977,39 @@ function renderBookmarkBar() {
 function buildDeltaCell(delta, colorHex, deltaClass) {
     var td = document.createElement('td');
     td.className = 'col-delta';
-    var badge = document.createElement('span');
-    badge.className = 'delta-badge ' + deltaClass;
-    if (delta !== null && colorHex) {
-        badge.style.background = cidColorToRgba(colorHex, 0.12);
-        badge.style.color = colorHex;
+    // Show values only when per-cid or both mode is active
+    if (deltaMode === 'per-cid' || deltaMode === 'both') {
+        var badge = document.createElement('span');
+        badge.className = 'delta-badge ' + deltaClass;
+        if (delta !== null && colorHex) {
+            badge.style.background = cidColorToRgba(colorHex, 0.12);
+            badge.style.color = colorHex;
+        }
+        badge.textContent = delta === null ? '\u2014' : '+' + delta + 'ms';
+        var dots = createSpeedDots(deltaClass);
+        if (dots) badge.appendChild(dots);
+        td.appendChild(badge);
     }
-    badge.textContent = delta === null ? '\u2014' : '+' + delta + 'ms';
-    var dots = createSpeedDots(deltaClass);
-    if (dots) badge.appendChild(dots);
-    td.appendChild(badge);
     return td;
 }
 
 function buildCrossDeltaCell(crossDelta, colorHex) {
     var td = document.createElement('td');
     td.className = 'col-cross-delta';
-    var crossClass = getDeltaClass(crossDelta);
-    var badge = document.createElement('span');
-    badge.className = 'cross-delta-badge ' + crossClass;
-    if (crossDelta !== null && colorHex) {
-        badge.style.background = cidColorToRgba(colorHex, 0.12);
-        badge.style.color = colorHex;
+    // Show values only when cross-cid or both mode is active
+    if (deltaMode === 'cross-cid' || deltaMode === 'both') {
+        var crossClass = getDeltaClass(crossDelta);
+        var badge = document.createElement('span');
+        badge.className = 'cross-delta-badge ' + crossClass;
+        if (crossDelta !== null && colorHex) {
+            badge.style.background = cidColorToRgba(colorHex, 0.12);
+            badge.style.color = colorHex;
+        }
+        badge.textContent = crossDelta === null ? '\u2014' : '+' + crossDelta + 'ms';
+        var dots = createSpeedDots(crossClass);
+        if (dots) badge.appendChild(dots);
+        td.appendChild(badge);
     }
-    badge.textContent = crossDelta === null ? '\u2014' : '+' + crossDelta + 'ms';
-    var dots = createSpeedDots(crossClass);
-    if (dots) badge.appendChild(dots);
-    td.appendChild(badge);
     return td;
 }
 
@@ -1027,17 +1040,14 @@ function renderSipRow(msg, firstTimestamp) {
     tdElapsed.className = 'col-elapsed';
     var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
     tdElapsed.textContent = elapsed + 'ms';
+    tdElapsed.style.color = cidColor;
     tr.appendChild(tdElapsed);
 
-    // Per-CID Delta
-    if (deltaMode === 'per-cid' || deltaMode === 'both') {
-        tr.appendChild(buildDeltaCell(msg.delta, cidColor, deltaClass));
-    }
+    // Per-CID Delta (always present, content controlled by deltaMode)
+    tr.appendChild(buildDeltaCell(msg.delta, cidColor, deltaClass));
 
-    // Cross-CID Delta
-    if (deltaMode === 'cross-cid' || deltaMode === 'both') {
-        tr.appendChild(buildCrossDeltaCell(msg.crossDelta, cidColor));
-    }
+    // Cross-CID Delta (always present, content controlled by deltaMode)
+    tr.appendChild(buildCrossDeltaCell(msg.crossDelta, cidColor));
 
     // Type
     var tdType = document.createElement('td');
@@ -1132,17 +1142,14 @@ function renderEventRequestRow(msg, firstTimestamp) {
     tdElapsed.className = 'col-elapsed';
     var elapsed = firstTimestamp !== undefined ? msg.timestamp - firstTimestamp : 0;
     tdElapsed.textContent = elapsed + 'ms';
+    tdElapsed.style.color = connidColor;
     tr.appendChild(tdElapsed);
 
-    // Per-CID Delta
-    if (deltaMode === 'per-cid' || deltaMode === 'both') {
-        tr.appendChild(buildDeltaCell(msg.delta, connidColor, deltaClass));
-    }
+    // Per-CID Delta (always present, content controlled by deltaMode)
+    tr.appendChild(buildDeltaCell(msg.delta, connidColor, deltaClass));
 
-    // Cross-CID Delta
-    if (deltaMode === 'cross-cid' || deltaMode === 'both') {
-        tr.appendChild(buildCrossDeltaCell(msg.crossDelta, connidColor));
-    }
+    // Cross-CID Delta (always present, content controlled by deltaMode)
+    tr.appendChild(buildCrossDeltaCell(msg.crossDelta, connidColor));
 
     // Type
     var tdType = document.createElement('td');
@@ -1213,22 +1220,23 @@ function updateTableHeader() {
     thead.textContent = '';
     var tr = document.createElement('tr');
 
-    function addTh(text) {
+    function addTh(text, tooltip) {
         var th = document.createElement('th');
         th.textContent = text;
+        if (tooltip) th.title = tooltip;
         tr.appendChild(th);
     }
 
-    addTh('Time');
-    addTh('Elapsed');
-    if (deltaMode === 'per-cid' || deltaMode === 'both') addTh('\u0394 Delta');
-    if (deltaMode === 'cross-cid' || deltaMode === 'both') addTh('\u0394 Selected CIDs');
-    addTh('Type');
-    addTh('Message');
-    addTh('From / DN');
-    addTh('To / ODN');
-    addTh('CSeq / RefID');
-    addTh('CID / ConnID');
+    addTh('Time', 'Absolute timestamp of the message');
+    addTh('Elapsed', 'Milliseconds since the first message in the log');
+    addTh('\u0394 Per-CID', 'Time since the previous message within the same CID/ConnID');
+    addTh('\u0394 Selected CIDs', 'Time since the previous visible message across all filtered CIDs');
+    addTh('Type', 'Message type: SIP, Event, or Request');
+    addTh('Message', 'Direction and method/event name');
+    addTh('From / DN', 'Source endpoint or Device Number');
+    addTh('To / ODN', 'Destination endpoint or Original Device Number');
+    addTh('CSeq / RefID', 'Call sequence number or Reference ID');
+    addTh('CID / ConnID', 'Call ID or Connection ID');
 
     thead.appendChild(tr);
 }
@@ -1434,16 +1442,17 @@ function renderEventsRequestsGrid() {
     thead.textContent = '';
     var headerRow = document.createElement('tr');
 
-    function addTh(text) {
+    function addTh(text, tooltip) {
         var th = document.createElement('th');
         th.textContent = text;
+        if (tooltip) th.title = tooltip;
         headerRow.appendChild(th);
     }
 
-    addTh('#');
-    addTh('Time');
-    addTh('Elapsed');
-    addTh('\u0394 Delta');
+    addTh('#', 'Row number');
+    addTh('Time', 'Absolute timestamp of the message');
+    addTh('Elapsed', 'Milliseconds since the first message in the log');
+    addTh('\u0394 Delta', 'Time since the previous message');
 
     if (hasNoDnColumn) {
         addTh('');
@@ -1805,7 +1814,7 @@ function handleClear() {
     eventsGridData = { messages: [], dnColumns: [], switchColumn: null, hasNoDnColumn: false, connids: [] };
     isParsed = false;
     currentView = 'messages';
-    deltaMode = 'per-cid';
+    deltaMode = 'both';
     sipSpanBookmarks = [];
     kazimirBookmarks = [];
     pendingSipBookmarks = [];

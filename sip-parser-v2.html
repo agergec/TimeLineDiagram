@@ -693,9 +693,11 @@
             white-space: nowrap;
         }
 
-        .col-delta {
+        .col-delta,
+        .col-cross-delta {
             text-align: right;
             white-space: nowrap;
+            min-width: 70px;
         }
 
         .delta-badge {
@@ -730,11 +732,6 @@
             white-space: nowrap;
             font-size: 10px;
             text-align: right;
-        }
-
-        .col-cross-delta {
-            text-align: right;
-            white-space: nowrap;
         }
 
         .cross-delta-badge {
@@ -973,6 +970,14 @@
 
         .bookmark-container::-webkit-scrollbar {
             display: none;
+        }
+
+        .bookmark-hint {
+            font-size: 9px;
+            color: var(--text-muted);
+            font-style: italic;
+            white-space: nowrap;
+            font-family: 'Inter', sans-serif;
         }
 
         .bookmark-label {
@@ -1380,32 +1385,32 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
 
         <!-- VIEW MODE TABS -->
         <div id="view-tabs" class="view-tabs hidden">
-            <button id="tab-messages" class="view-tab active">SIP Span</button>
-            <button id="tab-dn-grid" class="view-tab">Kazimir</button>
+            <button id="tab-messages" class="view-tab active" title="Chronological view of all SIP messages, Events, and Requests">SIP Span</button>
+            <button id="tab-dn-grid" class="view-tab" title="Events and Requests grid organized by Device Number columns">Kazimir</button>
         </div>
 
         <!-- FILTER BAR (Messages view only) -->
         <div id="filter-bar" class="filter-bar hidden">
             <div class="filter-group">
                 <span class="filter-label">Show:</span>
-                <button id="filter-sip" class="filter-btn active">SIP</button>
-                <button id="filter-events" class="filter-btn active">Events</button>
-                <button id="filter-requests" class="filter-btn active">Requests</button>
+                <button id="filter-sip" class="filter-btn active" title="Toggle SIP messages visibility">SIP</button>
+                <button id="filter-events" class="filter-btn active" title="Toggle Events visibility">Events</button>
+                <button id="filter-requests" class="filter-btn active" title="Toggle Requests visibility">Requests</button>
             </div>
             <div class="filter-divider"></div>
             <div class="filter-group">
                 <span class="filter-label">CIDs:</span>
-                <button id="cid-all-btn" class="filter-btn">All</button>
-                <button id="cid-none-btn" class="filter-btn">None</button>
+                <button id="cid-all-btn" class="filter-btn" title="Enable all CIDs">All</button>
+                <button id="cid-none-btn" class="filter-btn" title="Disable all CIDs">None</button>
             </div>
             <div class="filter-divider"></div>
             <div id="cid-legend" class="cid-legend"></div>
             <div class="filter-divider"></div>
             <div class="filter-group">
                 <span class="filter-label">Delta:</span>
-                <button id="delta-percid" class="filter-btn active">Per-CID</button>
-                <button id="delta-crosscid" class="filter-btn">Cross-CID</button>
-                <button id="delta-both" class="filter-btn">Both</button>
+                <button id="delta-percid" class="filter-btn" title="Show only Per-CID delta values">Per-CID</button>
+                <button id="delta-crosscid" class="filter-btn" title="Show only Selected CIDs delta values">Cross-CID</button>
+                <button id="delta-both" class="filter-btn active" title="Show both delta columns">Both</button>
             </div>
         </div>
 
