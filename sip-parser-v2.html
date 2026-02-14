@@ -5,8 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SIP Log Parser - Timeline Diagram</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
         /* ============================================
            THEME SYSTEM
@@ -111,7 +114,9 @@
             overflow: hidden;
         }
 
-        .hidden { display: none !important; }
+        .hidden {
+            display: none !important;
+        }
 
         /* ============================================
            HEADER BAR
@@ -300,7 +305,9 @@
             color: white;
         }
 
-        .badge.empty { opacity: 0.3; }
+        .badge.empty {
+            opacity: 0.3;
+        }
 
         /* ============================================
            COLLAPSIBLE INPUT SECTION
@@ -596,11 +603,6 @@
             flex-direction: column;
         }
 
-        .view-panel.auto-width {
-            flex: none;
-            max-width: 100%;
-        }
-
         .grid-header {
             display: flex;
             align-items: center;
@@ -631,11 +633,6 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 11px;
-        }
-
-        .view-panel.compact-mode {
-            flex: none;
-            max-width: 100%;
         }
 
         .view-panel.compact-mode .message-grid {
@@ -674,28 +671,87 @@
         .message-grid tr {
             border-left: 3px solid transparent;
         }
-        .message-grid tr[data-cid="0"] { border-left-color: var(--cid-0); }
-        .message-grid tr[data-cid="1"] { border-left-color: var(--cid-1); }
-        .message-grid tr[data-cid="2"] { border-left-color: var(--cid-2); }
-        .message-grid tr[data-cid="3"] { border-left-color: var(--cid-3); }
-        .message-grid tr[data-cid="4"] { border-left-color: var(--cid-4); }
-        .message-grid tr[data-cid="5"] { border-left-color: var(--cid-5); }
-        .message-grid tr[data-cid="6"] { border-left-color: var(--cid-6); }
-        .message-grid tr[data-cid="7"] { border-left-color: var(--cid-7); }
-        .message-grid tr[data-cid="8"] { border-left-color: var(--cid-8); }
-        .message-grid tr[data-cid="9"] { border-left-color: var(--cid-9); }
+
+        .message-grid tr[data-cid="0"] {
+            border-left-color: var(--cid-0);
+        }
+
+        .message-grid tr[data-cid="1"] {
+            border-left-color: var(--cid-1);
+        }
+
+        .message-grid tr[data-cid="2"] {
+            border-left-color: var(--cid-2);
+        }
+
+        .message-grid tr[data-cid="3"] {
+            border-left-color: var(--cid-3);
+        }
+
+        .message-grid tr[data-cid="4"] {
+            border-left-color: var(--cid-4);
+        }
+
+        .message-grid tr[data-cid="5"] {
+            border-left-color: var(--cid-5);
+        }
+
+        .message-grid tr[data-cid="6"] {
+            border-left-color: var(--cid-6);
+        }
+
+        .message-grid tr[data-cid="7"] {
+            border-left-color: var(--cid-7);
+        }
+
+        .message-grid tr[data-cid="8"] {
+            border-left-color: var(--cid-8);
+        }
+
+        .message-grid tr[data-cid="9"] {
+            border-left-color: var(--cid-9);
+        }
 
         /* ConnID-colored left border for Event/Request rows */
-        .message-grid tr[data-connid="0"] { border-left-color: var(--cid-0); }
-        .message-grid tr[data-connid="1"] { border-left-color: var(--cid-1); }
-        .message-grid tr[data-connid="2"] { border-left-color: var(--cid-2); }
-        .message-grid tr[data-connid="3"] { border-left-color: var(--cid-3); }
-        .message-grid tr[data-connid="4"] { border-left-color: var(--cid-4); }
-        .message-grid tr[data-connid="5"] { border-left-color: var(--cid-5); }
-        .message-grid tr[data-connid="6"] { border-left-color: var(--cid-6); }
-        .message-grid tr[data-connid="7"] { border-left-color: var(--cid-7); }
-        .message-grid tr[data-connid="8"] { border-left-color: var(--cid-8); }
-        .message-grid tr[data-connid="9"] { border-left-color: var(--cid-9); }
+        .message-grid tr[data-connid="0"] {
+            border-left-color: var(--cid-0);
+        }
+
+        .message-grid tr[data-connid="1"] {
+            border-left-color: var(--cid-1);
+        }
+
+        .message-grid tr[data-connid="2"] {
+            border-left-color: var(--cid-2);
+        }
+
+        .message-grid tr[data-connid="3"] {
+            border-left-color: var(--cid-3);
+        }
+
+        .message-grid tr[data-connid="4"] {
+            border-left-color: var(--cid-4);
+        }
+
+        .message-grid tr[data-connid="5"] {
+            border-left-color: var(--cid-5);
+        }
+
+        .message-grid tr[data-connid="6"] {
+            border-left-color: var(--cid-6);
+        }
+
+        .message-grid tr[data-connid="7"] {
+            border-left-color: var(--cid-7);
+        }
+
+        .message-grid tr[data-connid="8"] {
+            border-left-color: var(--cid-8);
+        }
+
+        .message-grid tr[data-connid="9"] {
+            border-left-color: var(--cid-9);
+        }
 
         /* Columns */
         .col-time {
@@ -770,20 +826,45 @@
             font-size: 10px;
         }
 
-        .direction.incoming { color: var(--incoming); }
-        .direction.outgoing { color: var(--outgoing); }
+        .direction.incoming {
+            color: var(--incoming);
+        }
+
+        .direction.outgoing {
+            color: var(--outgoing);
+        }
 
         .method {
             font-weight: 600;
         }
 
-        .method-invite { color: #22d3ee; }
-        .method-ack { color: #34d399; }
-        .method-bye { color: #f472b6; }
-        .method-cancel { color: #fb923c; }
-        .method-info { color: #a78bfa; }
-        .method-notify { color: #60a5fa; }
-        .method-response { color: var(--text-secondary); }
+        .method-invite {
+            color: #22d3ee;
+        }
+
+        .method-ack {
+            color: #34d399;
+        }
+
+        .method-bye {
+            color: #f472b6;
+        }
+
+        .method-cancel {
+            color: #fb923c;
+        }
+
+        .method-info {
+            color: #a78bfa;
+        }
+
+        .method-notify {
+            color: #60a5fa;
+        }
+
+        .method-response {
+            color: var(--text-secondary);
+        }
 
         .col-endpoint {
             color: var(--text-secondary);
@@ -793,7 +874,9 @@
             white-space: nowrap;
         }
 
-        .col-cseq { text-align: center; }
+        .col-cseq {
+            text-align: center;
+        }
 
         .cseq-badge {
             display: inline-block;
@@ -803,7 +886,9 @@
             font-size: 10px;
         }
 
-        .col-cid { white-space: nowrap; }
+        .col-cid {
+            white-space: nowrap;
+        }
 
         .cid-badge {
             display: inline-flex;
@@ -815,19 +900,61 @@
             font-weight: 500;
         }
 
-        .cid-badge[data-cid="0"] { background: rgba(96, 165, 250, 0.15); color: var(--cid-0); }
-        .cid-badge[data-cid="1"] { background: rgba(167, 139, 250, 0.15); color: var(--cid-1); }
-        .cid-badge[data-cid="2"] { background: rgba(34, 211, 238, 0.15); color: var(--cid-2); }
-        .cid-badge[data-cid="3"] { background: rgba(244, 114, 182, 0.15); color: var(--cid-3); }
-        .cid-badge[data-cid="4"] { background: rgba(45, 212, 191, 0.15); color: var(--cid-4); }
-        .cid-badge[data-cid="5"] { background: rgba(192, 132, 252, 0.15); color: var(--cid-5); }
-        .cid-badge[data-cid="6"] { background: rgba(56, 189, 248, 0.15); color: var(--cid-6); }
-        .cid-badge[data-cid="7"] { background: rgba(129, 140, 248, 0.15); color: var(--cid-7); }
-        .cid-badge[data-cid="8"] { background: rgba(232, 121, 249, 0.15); color: var(--cid-8); }
-        .cid-badge[data-cid="9"] { background: rgba(103, 232, 249, 0.15); color: var(--cid-9); }
+        .cid-badge[data-cid="0"] {
+            background: rgba(96, 165, 250, 0.15);
+            color: var(--cid-0);
+        }
+
+        .cid-badge[data-cid="1"] {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--cid-1);
+        }
+
+        .cid-badge[data-cid="2"] {
+            background: rgba(34, 211, 238, 0.15);
+            color: var(--cid-2);
+        }
+
+        .cid-badge[data-cid="3"] {
+            background: rgba(244, 114, 182, 0.15);
+            color: var(--cid-3);
+        }
+
+        .cid-badge[data-cid="4"] {
+            background: rgba(45, 212, 191, 0.15);
+            color: var(--cid-4);
+        }
+
+        .cid-badge[data-cid="5"] {
+            background: rgba(192, 132, 252, 0.15);
+            color: var(--cid-5);
+        }
+
+        .cid-badge[data-cid="6"] {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--cid-6);
+        }
+
+        .cid-badge[data-cid="7"] {
+            background: rgba(129, 140, 248, 0.15);
+            color: var(--cid-7);
+        }
+
+        .cid-badge[data-cid="8"] {
+            background: rgba(232, 121, 249, 0.15);
+            color: var(--cid-8);
+        }
+
+        .cid-badge[data-cid="9"] {
+            background: rgba(103, 232, 249, 0.15);
+            color: var(--cid-9);
+        }
 
         /* Type badges */
-        .col-type { width: 40px; text-align: center; }
+        .col-type {
+            width: 40px;
+            text-align: center;
+        }
 
         .type-badge {
             display: inline-block;
@@ -839,13 +966,33 @@
             letter-spacing: 0.2px;
         }
 
-        .type-badge.type-sip { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
-        .type-badge.type-event { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-        .type-badge.type-request { background: rgba(251, 146, 60, 0.2); color: #fb923c; }
+        .type-badge.type-sip {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
 
-        .event-type { font-weight: 500; font-size: 11px; }
-        .event-type.type-event { color: #34d399; }
-        .event-type.type-request { color: #fb923c; }
+        .type-badge.type-event {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+
+        .type-badge.type-request {
+            background: rgba(251, 146, 60, 0.2);
+            color: #fb923c;
+        }
+
+        .event-type {
+            font-weight: 500;
+            font-size: 11px;
+        }
+
+        .event-type.type-event {
+            color: #34d399;
+        }
+
+        .event-type.type-request {
+            color: #fb923c;
+        }
 
         .refid-badge {
             display: inline-block;
@@ -864,16 +1011,55 @@
             font-weight: 500;
         }
 
-        .connid-badge[data-connid="0"] { background: rgba(96, 165, 250, 0.15); color: var(--cid-0); }
-        .connid-badge[data-connid="1"] { background: rgba(167, 139, 250, 0.15); color: var(--cid-1); }
-        .connid-badge[data-connid="2"] { background: rgba(34, 211, 238, 0.15); color: var(--cid-2); }
-        .connid-badge[data-connid="3"] { background: rgba(244, 114, 182, 0.15); color: var(--cid-3); }
-        .connid-badge[data-connid="4"] { background: rgba(45, 212, 191, 0.15); color: var(--cid-4); }
-        .connid-badge[data-connid="5"] { background: rgba(192, 132, 252, 0.15); color: var(--cid-5); }
-        .connid-badge[data-connid="6"] { background: rgba(56, 189, 248, 0.15); color: var(--cid-6); }
-        .connid-badge[data-connid="7"] { background: rgba(129, 140, 248, 0.15); color: var(--cid-7); }
-        .connid-badge[data-connid="8"] { background: rgba(232, 121, 249, 0.15); color: var(--cid-8); }
-        .connid-badge[data-connid="9"] { background: rgba(103, 232, 249, 0.15); color: var(--cid-9); }
+        .connid-badge[data-connid="0"] {
+            background: rgba(96, 165, 250, 0.15);
+            color: var(--cid-0);
+        }
+
+        .connid-badge[data-connid="1"] {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--cid-1);
+        }
+
+        .connid-badge[data-connid="2"] {
+            background: rgba(34, 211, 238, 0.15);
+            color: var(--cid-2);
+        }
+
+        .connid-badge[data-connid="3"] {
+            background: rgba(244, 114, 182, 0.15);
+            color: var(--cid-3);
+        }
+
+        .connid-badge[data-connid="4"] {
+            background: rgba(45, 212, 191, 0.15);
+            color: var(--cid-4);
+        }
+
+        .connid-badge[data-connid="5"] {
+            background: rgba(192, 132, 252, 0.15);
+            color: var(--cid-5);
+        }
+
+        .connid-badge[data-connid="6"] {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--cid-6);
+        }
+
+        .connid-badge[data-connid="7"] {
+            background: rgba(129, 140, 248, 0.15);
+            color: var(--cid-7);
+        }
+
+        .connid-badge[data-connid="8"] {
+            background: rgba(232, 121, 249, 0.15);
+            color: var(--cid-8);
+        }
+
+        .connid-badge[data-connid="9"] {
+            background: rgba(103, 232, 249, 0.15);
+            color: var(--cid-9);
+        }
 
         /* ============================================
            EVENTS/REQUESTS DN GRID (DN Grid View)
@@ -1066,8 +1252,13 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         .modal-panel {
@@ -1187,14 +1378,17 @@
             width: 560px;
             max-height: 80vh;
         }
+
         .help-body {
             padding: 10px 14px;
             font-size: 11px;
             line-height: 1.5;
         }
+
         .help-section {
             margin-bottom: 10px;
         }
+
         .help-section h3 {
             font-size: 11px;
             font-weight: 600;
@@ -1205,32 +1399,38 @@
             padding-bottom: 2px;
             border-bottom: 1px solid var(--border-color);
         }
+
         .help-section dl {
             display: grid;
             grid-template-columns: auto 1fr;
             gap: 2px 10px;
             margin: 0;
         }
+
         .help-section dt {
             font-weight: 500;
             color: var(--text-primary);
             white-space: nowrap;
         }
+
         .help-section dd {
             color: var(--text-secondary);
             margin: 0;
         }
+
         .help-section dd code {
             background: var(--bg-tertiary);
             padding: 0 3px;
             border-radius: 2px;
             font-size: 10px;
         }
+
         .help-dots {
             display: inline-flex;
             gap: 2px;
             vertical-align: middle;
         }
+
         .help-dot {
             width: 5px;
             height: 5px;
@@ -1293,6 +1493,7 @@
                 transform: translateX(100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateX(0);
                 opacity: 1;
@@ -1360,11 +1561,13 @@
                     Clear
                 </button>
                 <div class="toolbar-divider"></div>
-                <button id="import-btn" class="toolbar-btn success" disabled title="Extract INVITE-ACK pairs from enabled CIDs and create a timeline diagram">
+                <button id="import-btn" class="toolbar-btn success" disabled
+                    title="Extract INVITE-ACK pairs from enabled CIDs and create a timeline diagram">
                     Import to Timeline
                 </button>
                 <div class="toolbar-divider"></div>
-                <a href="index.html" class="toolbar-btn back-link" title="Open Timeline Editor">&#8592; Timeline Editor</a>
+                <a href="index.html" class="toolbar-btn back-link" title="Open Timeline Editor">&#8592; Timeline
+                    Editor</a>
             </div>
             <div class="toolbar-right">
                 <button id="saved-logs-btn" class="toolbar-btn" title="View saved logs">
@@ -1395,8 +1598,10 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
 
         <!-- VIEW MODE TABS -->
         <div id="view-tabs" class="view-tabs hidden">
-            <button id="tab-messages" class="view-tab active" title="Chronological view of all SIP messages, Events, and Requests">SIP Span</button>
-            <button id="tab-dn-grid" class="view-tab" title="Events and Requests grid organized by Device Number columns">Kazimir</button>
+            <button id="tab-messages" class="view-tab active"
+                title="Chronological view of all SIP messages, Events, and Requests">SIP Span</button>
+            <button id="tab-dn-grid" class="view-tab"
+                title="Events and Requests grid organized by Device Number columns">Kazimir</button>
         </div>
 
         <!-- FILTER BAR (Messages view only) -->
@@ -1405,7 +1610,8 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                 <span class="filter-label">Show:</span>
                 <button id="filter-sip" class="filter-btn active" title="Toggle SIP messages visibility">SIP</button>
                 <button id="filter-events" class="filter-btn active" title="Toggle Events visibility">Events</button>
-                <button id="filter-requests" class="filter-btn active" title="Toggle Requests visibility">Requests</button>
+                <button id="filter-requests" class="filter-btn active"
+                    title="Toggle Requests visibility">Requests</button>
             </div>
             <div class="filter-divider"></div>
             <div class="filter-group">
@@ -1418,10 +1624,15 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
             <div class="filter-divider"></div>
             <div class="filter-group">
                 <span class="filter-label">Columns:</span>
-                <button id="toggle-elapsed" class="filter-btn active" title="Toggle Elapsed column (ms since first message)">Elapsed</button>
-                <button id="toggle-percid" class="filter-btn active" title="Toggle Per-CID delta column (time since previous message in same CID)">Per-CID</button>
-                <button id="toggle-crosscid" class="filter-btn" title="Toggle Selected CIDs delta column (time since previous visible message)">Selected CIDs</button>
-                <button id="toggle-compact" class="filter-btn" title="Compact view - hide detail columns (Type, From, To, CSeq, CID)">Compact</button>
+                <button id="toggle-elapsed" class="filter-btn active"
+                    title="Toggle Elapsed column (ms since first message)">Elapsed</button>
+                <button id="toggle-percid" class="filter-btn active"
+                    title="Toggle Per-CID delta column (time since previous message in same CID)">Per-CID</button>
+                <button id="toggle-crosscid" class="filter-btn"
+                    title="Toggle Selected CIDs delta column (time since previous visible message)">Selected
+                    CIDs</button>
+                <button id="toggle-compact" class="filter-btn"
+                    title="Compact view - hide detail columns (Type, From, To, CSeq, CID)">Compact</button>
             </div>
         </div>
 
@@ -1501,11 +1712,14 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                         <h3>Getting Started</h3>
                         <dl>
                             <dt>Input</dt>
-                            <dd>Paste <strong>Genesys SIP Span Quick Flow</strong> output and click <strong>Parse</strong>. Supports SIP messages, Events, and Requests.</dd>
+                            <dd>Paste <strong>Genesys SIP Span Quick Flow</strong> output and click
+                                <strong>Parse</strong>. Supports SIP messages, Events, and Requests.
+                            </dd>
                             <dt>Auto-load</dt>
                             <dd>If only one saved log exists, it loads automatically on page open.</dd>
                             <dt>Save / Load</dt>
-                            <dd>Save parsed logs to browser storage (up to 20). Access via <strong>Saved</strong> button.</dd>
+                            <dd>Save parsed logs to browser storage (up to 20). Access via <strong>Saved</strong>
+                                button.</dd>
                         </dl>
                     </div>
 
@@ -1515,7 +1729,8 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                             <dt>SIP Span</dt>
                             <dd>All messages in chronological order with full detail columns.</dd>
                             <dt>Kazimir</dt>
-                            <dd>Events &amp; Requests arranged in a grid by Device Number (DN). Each DN gets its own column.</dd>
+                            <dd>Events &amp; Requests arranged in a grid by Device Number (DN). Each DN gets its own
+                                column.</dd>
                         </dl>
                     </div>
 
@@ -1523,9 +1738,11 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                         <h3>Filters</h3>
                         <dl>
                             <dt>Type filters</dt>
-                            <dd><strong>SIP</strong>, <strong>Events</strong>, <strong>Requests</strong> &mdash; toggle each message type on/off.</dd>
+                            <dd><strong>SIP</strong>, <strong>Events</strong>, <strong>Requests</strong> &mdash; toggle
+                                each message type on/off.</dd>
                             <dt>CID tags</dt>
-                            <dd>Click a CID tag to enable/disable it. Use <strong>All</strong> / <strong>None</strong> for bulk toggle. Tags are disabled (greyed) when SIP filter is off.</dd>
+                            <dd>Click a CID tag to enable/disable it. Use <strong>All</strong> / <strong>None</strong>
+                                for bulk toggle. Tags are disabled (greyed) when SIP filter is off.</dd>
                         </dl>
                     </div>
 
@@ -1535,9 +1752,12 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                             <dt>Elapsed</dt>
                             <dd>Toggle the Elapsed column (ms since first message). On by default.</dd>
                             <dt>Per-CID</dt>
-                            <dd>Toggle the &Delta; Per-CID column (time since previous message <em>within the same CID</em>). On by default.</dd>
+                            <dd>Toggle the &Delta; Per-CID column (time since previous message <em>within the same
+                                    CID</em>). On by default.</dd>
                             <dt>Selected CIDs</dt>
-                            <dd>Toggle the &Delta; Selected CIDs column (time since previous visible message across <em>all filtered CIDs</em>). Off by default.</dd>
+                            <dd>Toggle the &Delta; Selected CIDs column (time since previous visible message across
+                                <em>all filtered CIDs</em>). Off by default.
+                            </dd>
                         </dl>
                     </div>
 
@@ -1564,11 +1784,17 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                     <div class="help-section">
                         <h3>Speed Dots</h3>
                         <dl>
-                            <dt><span class="help-dots"><span class="help-dot" style="background:var(--success)"></span></span> Fast</dt>
+                            <dt><span class="help-dots"><span class="help-dot"
+                                        style="background:var(--success)"></span></span> Fast</dt>
                             <dd>&lt; 100 ms</dd>
-                            <dt><span class="help-dots"><span class="help-dot" style="background:var(--warning)"></span><span class="help-dot" style="background:var(--warning)"></span></span> Medium</dt>
+                            <dt><span class="help-dots"><span class="help-dot"
+                                        style="background:var(--warning)"></span><span class="help-dot"
+                                        style="background:var(--warning)"></span></span> Medium</dt>
                             <dd>100 &ndash; 499 ms</dd>
-                            <dt><span class="help-dots"><span class="help-dot" style="background:var(--danger)"></span><span class="help-dot" style="background:var(--danger)"></span><span class="help-dot" style="background:var(--danger)"></span></span> Slow</dt>
+                            <dt><span class="help-dots"><span class="help-dot"
+                                        style="background:var(--danger)"></span><span class="help-dot"
+                                        style="background:var(--danger)"></span><span class="help-dot"
+                                        style="background:var(--danger)"></span></span> Slow</dt>
                             <dd>&ge; 500 ms</dd>
                         </dl>
                     </div>
@@ -1579,9 +1805,11 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                             <dt>Click a row</dt>
                             <dd>Toggle bookmark on that message. Bookmarked rows are highlighted.</dd>
                             <dt>Bookmark bar</dt>
-                            <dd>Appears in the header showing bookmarked times with step deltas (<code>&rarr; +Xms</code>) and cumulative time (<code>&Sigma;Xms</code>).</dd>
+                            <dd>Appears in the header showing bookmarked times with step deltas
+                                (<code>&rarr; +Xms</code>) and cumulative time (<code>&Sigma;Xms</code>).</dd>
                             <dt>Persistence</dt>
-                            <dd>Bookmarks auto-save with the log and restore on load. They persist across SIP Span / Kazimir tab switches.</dd>
+                            <dd>Bookmarks auto-save with the log and restore on load. They persist across SIP Span /
+                                Kazimir tab switches.</dd>
                             <dt>Clear</dt>
                             <dd><strong>&times;</strong> button removes all bookmarks.</dd>
                         </dl>
@@ -1591,7 +1819,8 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                         <h3>Info Bar</h3>
                         <dl>
                             <dt>Stats</dt>
-                            <dd>Shows ConnID, total count, SIP/Events/Requests breakdown, error count, CID count, INVITE count, and total time span.</dd>
+                            <dd>Shows ConnID, total count, SIP/Events/Requests breakdown, error count, CID count, INVITE
+                                count, and total time span.</dd>
                         </dl>
                     </div>
 
@@ -1599,7 +1828,8 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                         <h3>Export</h3>
                         <dl>
                             <dt>Import to Timeline</dt>
-                            <dd>Extracts INVITE&rarr;ACK pairs from enabled CIDs and creates a timeline diagram in the Timeline Editor.</dd>
+                            <dd>Extracts INVITE&rarr;ACK pairs from enabled CIDs and creates a timeline diagram in the
+                                Timeline Editor.</dd>
                             <dt>&larr; Timeline Editor</dt>
                             <dd>Opens the Timeline Diagram Editor app.</dd>
                         </dl>
