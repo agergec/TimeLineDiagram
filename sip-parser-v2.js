@@ -51,6 +51,7 @@ let isInputExpanded = false;
 let showElapsed = true;
 let showPerCid = true;
 let showCrossCid = false;
+let compactView = false;
 // Per-view bookmark state (separate dictionaries)
 let sipSpanBookmarks = [];   // Array of { timestamp, timeStr, element }
 let kazimirBookmarks = [];   // Array of { timestamp, timeStr, element }
@@ -1393,15 +1394,19 @@ function updateFilterButtons() {
     var elapsedBtn = document.getElementById('toggle-elapsed');
     var percidBtn = document.getElementById('toggle-percid');
     var crosscidBtn = document.getElementById('toggle-crosscid');
+    var compactBtn = document.getElementById('toggle-compact');
     if (elapsedBtn) elapsedBtn.classList.toggle('active', showElapsed);
     if (percidBtn) percidBtn.classList.toggle('active', showPerCid);
     if (crosscidBtn) crosscidBtn.classList.toggle('active', showCrossCid);
+    if (compactBtn) compactBtn.classList.toggle('active', compactView);
 }
 
 function toggleColumnVisibility(col) {
     if (col === 'elapsed') showElapsed = !showElapsed;
     else if (col === 'percid') showPerCid = !showPerCid;
     else if (col === 'crosscid') showCrossCid = !showCrossCid;
+    else if (col === 'compact') compactView = !compactView;
+    document.getElementById('messages-view').classList.toggle('compact-mode', compactView);
     updateFilterButtons();
     renderFilteredGrid();
 }
@@ -1827,6 +1832,8 @@ function handleClear() {
     showElapsed = true;
     showPerCid = true;
     showCrossCid = false;
+    compactView = false;
+    document.getElementById('messages-view').classList.remove('compact-mode');
     sipSpanBookmarks = [];
     kazimirBookmarks = [];
     pendingSipBookmarks = [];
@@ -1869,6 +1876,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('toggle-elapsed').addEventListener('click', function() { toggleColumnVisibility('elapsed'); });
     document.getElementById('toggle-percid').addEventListener('click', function() { toggleColumnVisibility('percid'); });
     document.getElementById('toggle-crosscid').addEventListener('click', function() { toggleColumnVisibility('crosscid'); });
+    document.getElementById('toggle-compact').addEventListener('click', function() { toggleColumnVisibility('compact'); });
 
     // Saved logs modal
     document.getElementById('saved-logs-btn').addEventListener('click', openSavedLogsModal);

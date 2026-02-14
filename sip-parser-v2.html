@@ -597,6 +597,7 @@
         }
 
         .view-panel.auto-width {
+            flex: none;
             max-width: 100%;
         }
 
@@ -630,6 +631,15 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 11px;
+        }
+
+        .view-panel.compact-mode {
+            flex: none;
+            max-width: 100%;
+        }
+
+        .view-panel.compact-mode .message-grid {
+            width: auto;
         }
 
         .message-grid th {
@@ -1411,6 +1421,7 @@ Requests: 02:41:48.968  RequestUpdateUserDa(dn='3010'|odn=null|connid=006e03a646
                 <button id="toggle-elapsed" class="filter-btn active" title="Toggle Elapsed column (ms since first message)">Elapsed</button>
                 <button id="toggle-percid" class="filter-btn active" title="Toggle Per-CID delta column (time since previous message in same CID)">Per-CID</button>
                 <button id="toggle-crosscid" class="filter-btn" title="Toggle Selected CIDs delta column (time since previous visible message)">Selected CIDs</button>
+                <button id="toggle-compact" class="filter-btn" title="Compact view - hide detail columns (Type, From, To, CSeq, CID)">Compact</button>
             </div>
         </div>
 
