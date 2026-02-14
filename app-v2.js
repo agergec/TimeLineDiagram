@@ -5441,6 +5441,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 showLanePropertiesPanel(lane.id);
             });
 
+            // Add double-click inline editing for lane name
+            const laneNameDiv = item.querySelector('.lane-name-div');
+            laneNameDiv.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (!isEditingAllowed()) return;
+
+                // Create textarea for editing
+                const textarea = document.createElement('textarea');
+                textarea.className = 'lane-name-edit-textarea';
+                textarea.value = lane.name;
+                textarea.rows = 3;
+
+                // Replace div with textarea
+                laneNameDiv.replaceWith(textarea);
+                textarea.focus();
+                textarea.select();
+
+                const saveEdit = () => {
+                    const newName = textarea.value.trim() || 'Unnamed Lane';
+                    app.diagram.renameLane(lane.id, newName);
+                    renderLaneList();
+                    renderLanesCanvas();
+                    autoSave();
+                };
+
+                textarea.addEventListener('blur', saveEdit);
+                textarea.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        renderLaneList(); // Cancel edit
+                    }
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        saveEdit();
+                    }
+                });
+            });
+
             container.appendChild(item);
         });
 
