@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Diagram Editor</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
+    <link rel="stylesheet" href="styles.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+</head>
+
+<body class="dark-theme">
+    <div class="app-container">
+
+        <!-- HEADER BAR (sip-parser-v2 style) -->
+        <header class="header-bar">
+            <div class="header-left">
+                <div class="logo-icon">⏱</div>
+                <input type="text" id="diagram-title" class="title-input-v2" value="Timeline Diagram"
+                    placeholder="Enter diagram title..." maxlength="150" title="Page title (max 150 characters)">
+            </div>
+            <div class="header-right">
+                <span class="header-badge" id="lock-badge" title="Diagram is locked">🔒</span>
+            </div>
+        </header>
+
+        <!-- TOOLBAR -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <!-- File Group -->
+                <button id="diagrams-toggle" class="toolbar-btn" title="Manage diagrams">
+                    📁 Diagrams <span id="diagrams-badge" class="badge empty">0</span>
+                </button>
+                <div class="toolbar-divider"></div>
+                <button id="save-json" class="toolbar-btn" title="Save diagram as JSON file">Save</button>
+                <button id="load-json" class="toolbar-btn" title="Load diagram from JSON file">Load</button>
+                <div class="toolbar-divider"></div>
+                <!-- Export Group -->
+                <button id="share-url" class="toolbar-btn primary"
+                    title="Copy shareable URL to clipboard">Share</button>
+                <button id="export-png" class="toolbar-btn" title="Export as PNG image">PNG</button>
+                <button id="export-svg" class="toolbar-btn" title="Export as SVG vector">SVG</button>
+                <div class="toolbar-divider"></div>
+                <!-- Tools Group -->
+                <a href="sip-parser-v2.html" class="toolbar-btn" title="Parse SIP logs to create timeline">SIP
+                    Parser</a>
+            </div>
+            <div class="toolbar-right">
+                <!-- Zoom Controls -->
+                <div class="zoom-controls-v2">
+                    <button id="zoom-out" class="toolbar-btn icon-btn" title="Zoom Out">−</button>
+                    <span id="zoom-level" class="zoom-label">100%</span>
+                    <button id="zoom-in" class="toolbar-btn icon-btn" title="Zoom In">+</button>
+                    <button id="zoom-fit" class="toolbar-btn" title="Fit to View">Fit</button>
+                </div>
+                <button id="compress-toggle" class="toolbar-btn icon-btn" title="Compress Empty Spaces">⇄</button>
+                <button id="measure-tool-btn" class="toolbar-btn icon-btn"
+                    title="Measurement Tool (⌘+Click & Drag)">📏</button>
+                <div class="toolbar-divider"></div>
+                <button id="settings-btn" class="toolbar-btn icon-btn" title="Diagram Settings">⚙️</button>
+                <button id="theme-toggle-btn" class="toolbar-btn icon-btn" title="Toggle dark/light theme">☽</button>
+                <a href="help.html" class="toolbar-btn icon-btn" title="Help & Tutorial">?</a>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="main-content">
+            <!-- Sidebar - Lane Management -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h3>Lanes</h3>
+                    <button id="add-lane" class="toolbar-btn primary" title="Add Lane">+ Add</button>
+                </div>
+                <div id="lane-list" class="lane-list">
+                    <!-- Lanes will be dynamically added here -->
+                </div>
+                <div class="sidebar-footer">
+                    <div class="made-by">Made by UCS with 💙</div>
+                </div>
+            </aside>
+
+            <!-- Toast Container -->
+            <div id="toast-container" class="toast-container"></div>
+
+            <!-- Canvas Area -->
+            <main class="canvas-container" id="canvas-container">
+                <!-- Timeline Ruler -->
+                <div class="timeline-ruler-container">
+                    <div class="lane-label-spacer"></div>
+                    <div id="timeline-ruler" class="timeline-ruler">
+                        <!-- Ruler marks will be dynamically generated -->
+                    </div>
+                </div>
+
+                <!-- Lanes Canvas -->
+                <div id="lanes-canvas" class="lanes-canvas">
+                    <!-- Lane rows will be dynamically added here -->
+                </div>
+
+                <!-- Time Markers (vertical labels for box start/end times) -->
+                <div class="time-markers-container">
+                    <div class="lane-label-spacer"></div>
+                    <div id="time-markers" class="time-markers">
+                        <!-- Time markers will be dynamically generated -->
+                    </div>
+                </div>
+
+                <!-- Timeline Footer with Minimap -->
+                <div class="timeline-footer">
+                    <div class="lane-label-spacer"></div>
+                    <div class="minimap-container">
+                        <canvas id="minimap-canvas"></canvas>
+                        <div id="minimap-viewport" class="minimap-viewport"></div>
+                    </div>
+                    <div class="footer-info">
+                        <span class="duration-label">Total:</span>
+                        <span id="total-duration">0ms</span>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Right Sidebar — Properties/Settings Panel -->
+            <aside id="right-sidebar" class="right-sidebar hidden">
+                <div class="right-sidebar-header">
+                    <h4 id="right-sidebar-title">Properties</h4>
+                    <button id="close-right-sidebar" class="toolbar-btn icon-btn" title="Close">×</button>
+                </div>
+                <div class="right-sidebar-content">
+                    <!-- Diagram Settings Mode -->
+                    <div id="settings-props" class="props-section hidden">
+                        <div class="form-group">
+                            <label for="config-page-title">Page Title</label>
+                            <input type="text" id="config-page-title" class="form-input" maxlength="150"
+                                placeholder="Enter diagram title...">
+                            <small class="text-muted">Displayed at the top of the page (max 150 chars)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-start-time">Start Time</label>
+                            <input type="text" id="start-time" class="form-input time-input-v2" value="00:00:00 000"
+                                placeholder="HH:MM:SS sss">
+                            <small class="text-muted">Absolute start time for the diagram</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-timeline-duration">Timeline Duration</label>
+                            <div class="input-with-unit">
+                                <input type="number" id="config-timeline-duration" class="form-input" value="8000"
+                                    min="1000" max="600000" step="1000" style="width: 100px;">
+                                <span class="unit">ms</span>
+                            </div>
+                            <small class="text-muted">Total canvas width in ms. Cannot be less than last box
+                                end.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-time-threshold">Time Format Threshold</label>
+                            <select id="config-time-threshold" class="form-input">
+                                <option value="0">Always ms</option>
+                                <option value="1000" selected>Auto (> 1s)</option>
+                                <option value="5000">Auto (> 5s)</option>
+                                <option value="60000">Auto (> 1m)</option>
+                            </select>
+                            <small class="text-muted">Switch from ms to seconds/minutes if duration exceeds
+                                this.</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-show-alignment" checked>
+                                <span>Show Vertical Alignment Lines</span>
+                            </label>
+                            <small class="text-muted">Display dashed lines at box start/end times</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-show-labels">
+                                <span>Show Box Labels</span>
+                            </label>
+                            <small class="text-muted">Display persistent labels above narrow boxes</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-compact-view">
+                                <span>Compact View (Hide Lane Labels)</span>
+                            </label>
+                            <small class="text-muted">Hide left lane headers to gain space</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-auto-open-properties">
+                                <span>Auto-open Box Properties</span>
+                            </label>
+                            <small class="text-muted">Automatically open properties panel when creating a new
+                                box</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-lock-diagram">
+                                <span>🔒 Lock Diagram</span>
+                            </label>
+                            <small class="text-muted">Prevent accidental edits</small>
+                        </div>
+
+                        <!-- Timeline Display Settings -->
+                        <hr class="section-divider">
+                        <div class="form-group">
+                            <label for="config-trailing-space">Trailing Space</label>
+                            <div class="input-with-unit">
+                                <input type="range" id="config-trailing-slider" min="0" max="30000" value="1000"
+                                    step="500">
+                                <input type="number" id="config-trailing-space" class="form-input" value="1000" min="0"
+                                    max="100000" style="width: 80px;">
+                                <span class="unit">ms</span>
+                            </div>
+                            <small class="text-muted">Extra space after the last box</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-compression-threshold">Gap Compression Threshold</label>
+                            <div class="input-with-unit">
+                                <input type="range" id="config-compression-slider" min="50" max="2000" value="500"
+                                    step="50">
+                                <input type="number" id="config-compression-threshold" class="form-input" value="500"
+                                    min="10" max="10000" style="width: 70px;">
+                                <span class="unit">ms</span>
+                            </div>
+                            <small class="text-muted">Gaps larger than this are compressed (when enabled)</small>
+                        </div>
+
+                        <!-- Duration Scaling Section (PoC - Removable) -->
+                        <hr class="section-divider">
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="config-scaling-enabled">
+                                <span>Enable Duration Scaling</span>
+                            </label>
+                            <small class="text-muted">Apply visual scaling to make small boxes more visible</small>
+                        </div>
+                        <div id="scaling-options" class="scaling-options hidden">
+                            <div class="form-group">
+                                <label for="config-scaling-mode">Scaling Mode</label>
+                                <select id="config-scaling-mode" class="form-input">
+                                    <option value="floor">A: Duration Floor</option>
+                                    <option value="logarithmic">B: Logarithmic</option>
+                                    <option value="compression">C: Compression</option>
+                                    <option value="minWidth">D: Min Box Width</option>
+                                </select>
+                            </div>
+                            <!-- Mode A: Floor -->
+                            <div id="scaling-floor-opts" class="scaling-mode-opts">
+                                <div class="form-group">
+                                    <label for="config-floor-value">Minimum Visual Duration</label>
+                                    <div class="input-with-unit">
+                                        <input type="range" id="config-floor-slider" min="10" max="500" value="100"
+                                            step="10">
+                                        <input type="number" id="config-floor-value" class="form-input" value="100"
+                                            min="1" max="1000" style="width: 80px;">
+                                        <span class="unit">ms</span>
+                                    </div>
+                                    <small class="text-muted">All boxes will appear at least this wide</small>
+                                </div>
+                            </div>
+                            <!-- Mode B: Logarithmic -->
+                            <div id="scaling-log-opts" class="scaling-mode-opts hidden">
+                                <div class="form-group">
+                                    <label for="config-log-base">Log Base</label>
+                                    <div class="input-with-unit">
+                                        <input type="range" id="config-log-base-slider" min="2" max="20" value="10"
+                                            step="1">
+                                        <input type="number" id="config-log-base" class="form-input" value="10" min="2"
+                                            max="100" style="width: 80px;">
+                                    </div>
+                                    <small class="text-muted">Higher = more compression of large values</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="config-log-min">Base Duration</label>
+                                    <div class="input-with-unit">
+                                        <input type="number" id="config-log-min" class="form-input" value="10" min="1"
+                                            max="100" style="width: 80px;">
+                                        <span class="unit">ms</span>
+                                    </div>
+                                    <small class="text-muted">Reference point for scaling calculation</small>
+                                </div>
+                            </div>
+                            <!-- Mode C: Compression -->
+                            <div id="scaling-compression-opts" class="scaling-mode-opts hidden">
+                                <div class="form-group">
+                                    <label for="config-compression-factor">Compression Factor</label>
+                                    <div class="input-with-unit">
+                                        <input type="range" id="config-compression-factor-slider" min="0" max="1"
+                                            value="0.5" step="0.1">
+                                        <input type="number" id="config-compression-factor" class="form-input"
+                                            value="0.5" min="0" max="1" step="0.1" style="width: 80px;">
+                                    </div>
+                                    <small class="text-muted">0 = all same size, 1 = no compression</small>
+                                </div>
+                            </div>
+                            <!-- Mode D: Min Width -->
+                            <div id="scaling-minwidth-opts" class="scaling-mode-opts hidden">
+                                <div class="form-group">
+                                    <label for="config-min-width">Minimum Box Width</label>
+                                    <div class="input-with-unit">
+                                        <input type="range" id="config-minwidth-slider" min="20" max="200" value="20"
+                                            step="10">
+                                        <input type="number" id="config-min-width" class="form-input" value="20"
+                                            min="10" max="500" style="width: 80px;">
+                                        <span class="unit">px</span>
+                                    </div>
+                                    <small class="text-muted">Override default 20px minimum box width</small>
+                                </div>
+                            </div>
+                            <!-- Preview info -->
+                            <div id="scaling-preview" class="scaling-preview">
+                                <small class="text-muted">Scaling: <span id="scaling-mode-info">None</span></small>
+                            </div>
+                        </div>
+                        <!-- End Duration Scaling Section -->
+
+                        <hr class="section-divider">
+                        <div class="form-group">
+                            <label>Danger Zone</label>
+                            <button id="purge-app-btn" class="toolbar-btn danger"
+                                style="width: 100%; margin-top: 8px;">Purge Application</button>
+                            <small class="text-muted">Completely removes all diagrams and settings from browser
+                                storage.</small>
+                        </div>
+                    </div>
+
+                    <!-- Lane Mode -->
+                    <div id="lane-props" class="props-section hidden">
+                        <div class="form-group">
+                            <label for="lane-name">Lane Name</label>
+                            <textarea id="lane-name" class="form-input" rows="3" style="resize: vertical;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Lane Color Theme</label>
+                            <div id="lane-palette" class="palette-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- Box Mode -->
+                    <div id="box-props" class="props-section hidden">
+                        <div class="form-group">
+                            <label for="box-label">Label</label>
+                            <input type="text" id="box-label" class="form-input" placeholder="Enter label...">
+                        </div>
+                        <div class="form-group">
+                            <label for="box-color">Color</label>
+                            <div class="color-picker-group">
+                                <input type="color" id="box-color" class="color-picker" value="#4CAF50">
+                                <div id="box-palette" class="palette-grid"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="box-start">Start (ms) <button id="pick-start-btn" class="icon-btn tiny"
+                                        title="Set start from another box's end">📍</button></label>
+                                <input type="number" id="box-start" class="form-input" min="0" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="box-duration">Duration (ms)</label>
+                                <input type="number" id="box-duration" class="form-input" min="1" step="1">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="box-end">End (ms)</label>
+                            <input type="number" id="box-end" class="form-input" min="0" step="1" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Time Range (Absolute)</label>
+                            <div class="time-range-display">
+                                <span id="box-time-start">00:00:00 000</span>
+                                <span>→</span>
+                                <span id="box-time-end">00:00:00 000</span>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button id="delete-box" class="toolbar-btn danger">Delete Box</button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Diagrams Modal -->
+        <div id="diagrams-modal" class="modal-overlay hidden">
+            <div class="modal-panel">
+                <div class="modal-header">
+                    <span>📁 My Diagrams</span>
+                    <button id="close-diagrams-modal" class="modal-close">×</button>
+                </div>
+                <div id="diagrams-list" class="modal-body">
+                    <!-- Diagrams will be dynamically added here -->
+                </div>
+                <div class="modal-footer">
+                    <button id="new-diagram-btn" class="toolbar-btn primary">
+                        <span id="new-diagram-btn-text">+ New Diagram</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alignment Markers Container -->
+        <svg id="alignment-markers" class="alignment-markers"></svg>
+
+        <!-- Measurement Overlay -->
+        <svg id="measurement-overlay" class="measurement-overlay">
+            <defs>
+                <!-- Start marker: simple | vertical line -->
+                <marker id="measure-arrow-start" markerWidth="2" markerHeight="10" refX="1" refY="5" orient="auto">
+                    <line x1="1" y1="0" x2="1" y2="10" stroke="#39FF14" stroke-width="1.5" />
+                </marker>
+                <!-- End marker: elegant > arrow with | line -->
+                <marker id="measure-arrow-end" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+                    <path d="M2,2 L8,5 L2,8" fill="none" stroke="#39FF14" stroke-width="1.5" stroke-linejoin="miter" />
+                    <line x1="10" y1="0" x2="10" y2="10" stroke="#39FF14" stroke-width="1.5" />
+                </marker>
+            </defs>
+            <line id="measurement-line" class="measurement-line" x1="0" y1="0" x2="0" y2="0"
+                marker-start="url(#measure-arrow-start)" marker-end="url(#measure-arrow-end)" />
+            <text id="measurement-label" class="measurement-label" x="0" y="0"></text>
+        </svg>
+        <div id="measurement-info" class="measurement-info"></div>
+
+        <!-- Hidden File Input for Load -->
+        <input type="file" id="file-input" accept=".json" style="display: none;">
+    </div>
+
+    <!-- Dummies for app.js attributes to prevent init crash -->
+    <!-- Include html2canvas for PNG export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="app-v2.js"></script>
+</body>
+
+</html>

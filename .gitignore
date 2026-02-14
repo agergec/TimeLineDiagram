@@ -4,6 +4,8 @@
 # Except these project files
 !index.html
 !app.js
+!index-v2.html
+!app-v2.js
 !styles.css
 !help.html
 !sip-parser.html
