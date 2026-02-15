@@ -2,27 +2,39 @@
    Timeline Diagram Editor - Premium Styling
    ===================================================== */
 
+/* Import distinctive fonts for Timeline Precision aesthetic */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+
 :root {
-    /* Color Palette */
-    --bg-primary: #0f1419;
-    --bg-secondary: #1a1f2e;
-    --bg-tertiary: #252b3b;
-    --bg-card: rgba(30, 37, 52, 0.9);
+    /* Color Palette - Timeline Precision Aesthetic */
+    --bg-primary: #0a0e14;
+    --bg-secondary: #141b2a;
+    --bg-tertiary: #1f2937;
+    --bg-card: rgba(20, 27, 42, 0.95);
+    --bg-layer: rgba(31, 41, 55, 0.5);
 
-    --text-primary: #ffffff;
-    --text-secondary: #a8b2c1;
-    --text-muted: #6b7280;
+    --text-primary: #f5f7fa;
+    --text-secondary: #b8c5d6;
+    --text-muted: #6b7589;
+    --text-time: #d4a574;  /* Serif font warmth for time labels */
 
-    --accent-primary: #6366f1;
-    --accent-secondary: #8b5cf6;
-    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --accent-primary: #3b82f6;
+    --accent-secondary: #60a5fa;
+    --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+    --accent-warm: #d97706;
 
-    --border-color: rgba(255, 255, 255, 0.1);
-    --border-focus: rgba(99, 102, 241, 0.5);
+    --border-color: rgba(255, 255, 255, 0.08);
+    --border-focus: rgba(59, 130, 246, 0.6);
+    --border-highlight: rgba(217, 119, 6, 0.4);
 
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
+
+    /* Alignment markers - enhanced visibility */
+    --marker-opacity: 0.7;
+    --marker-glow: 4px;
+    --marker-color-primary: #3b82f6;
 
     /* Spacing */
     --spacing-xs: 4px;
@@ -39,17 +51,25 @@
     --box-gap: 4px;
     --ruler-height: 40px;
     --footer-height: 40px;
+    --properties-width: 320px;
 
     /* Effects */
-    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+    --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
     --glass-blur: blur(12px);
 
     /* Animation */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.25s ease;
-    --transition-slow: 0.4s ease;
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Typography */
+    --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-time: 'Crimson Text', Georgia, serif;
 }
 
 /* Reset & Base */
@@ -67,12 +87,28 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--font-body);
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-primary);
     background: var(--bg-primary);
     overflow: hidden;
+    letter-spacing: 0.3px;
+}
+
+/* Typography enhancements */
+h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+/* Time labels use serif for precision/authority */
+.time-label, .time-value, .time-marker-label {
+    font-family: var(--font-time);
+    color: var(--text-time);
+    font-weight: 500;
+    font-size: 12px;
 }
 
 /* App Container */
@@ -456,14 +492,13 @@ body {
     pointer-events: none;
 }
 
-.lane-controls:hover {
+.lane-controls.open {
     width: 160px;
-    /* Expand to fit all buttons */
     background: var(--bg-card);
     box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3);
 }
 
-.lane-controls:hover::before {
+.lane-controls.open::before {
     opacity: 0;
 }
 
@@ -475,12 +510,11 @@ body {
     transition: opacity 0.2s, transform 0.2s;
     pointer-events: none;
     flex-shrink: 0;
-    /* Ensure they don't break layout when hidden */
 }
 
-/* Reveal on hover */
-.lane-controls:hover .lane-control-btn,
-.lane-controls:hover .lane-delete-btn {
+/* Reveal when open */
+.lane-controls.open .lane-control-btn,
+.lane-controls.open .lane-delete-btn {
     opacity: 1;
     transform: translateX(0);
     pointer-events: auto;
@@ -865,7 +899,6 @@ body.show-box-labels .lane-row {
 .time-markers-container {
     display: flex;
     min-height: 80px;
-    max-height: 120px;
     background: var(--bg-primary);
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
@@ -897,9 +930,7 @@ body.show-box-labels .lane-row {
     position: absolute;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    transform: translateX(-50%);
-    /* Center align */
+    align-items: flex-start;
     pointer-events: none;
     transition: left 0.05s linear, bottom 0.2s ease;
     white-space: nowrap;
@@ -910,8 +941,7 @@ body.show-box-labels .lane-row {
 .time-marker-line {
     position: absolute;
     bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
     width: 1px;
     opacity: 0.4;
     pointer-events: none;
@@ -932,6 +962,7 @@ body.show-box-labels .lane-row {
     border-radius: 2px;
     line-height: 1.2;
     border: 1px solid var(--border-color);
+    margin-left: 2px;
 }
 
 .time-marker.row-1 .time-marker-line {
@@ -1426,14 +1457,30 @@ body.show-box-labels .lane-row {
    Alignment Markers
    ===================================================== */
 .alignment-markers {
-    /* Legacy SVG overlay - hidden, alignment lines now rendered per-track */
+    /* SVG overlay for continuous alignment lines across all lanes */
     display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;  /* Behind boxes (z-index: 10-20) */
 }
 
 .alignment-line {
-    /* stroke color is set dynamically per-line via inline attribute */
-    stroke-width: 1;
+    /* SVG line styling - continuous dashed lines */
+    stroke-width: 1.5;
     stroke-dasharray: 4 4;
+    /* stroke color set dynamically per-line via inline attribute */
+}
+
+/* Alignment Canvas Overlay - scrollable SVG layer inside lanes-canvas */
+.alignment-canvas-overlay {
+    position: absolute;
+    top: 0;
+    left: var(--lane-label-width);
+    pointer-events: none;
+    /* No z-index — SVG is first child in DOM, paints before lane-rows naturally */
+    overflow: visible;
 }
 
 /* Dashed alignment marker lines — rendered per-track for correct alignment */
@@ -1442,9 +1489,190 @@ body.show-box-labels .lane-row {
     top: 0;
     bottom: 0;
     width: 0;
-    border-left: 1px dashed currentColor;
-    opacity: 0.5;
+    border-left: 1.5px dashed currentColor;
+    opacity: var(--marker-opacity);
     pointer-events: none;
+    transition: opacity var(--transition-fast), filter var(--transition-fast);
+    z-index: 1;  /* Behind boxes */
+}
+
+/* Hover effect for alignment lines - enhance visibility */
+.lane-track:hover .alignment-marker-line {
+    opacity: 1;
+    filter: drop-shadow(0 0 var(--marker-glow) rgba(59, 130, 246, 0.4));
+}
+
+
+/* =====================================================
+   Enhanced Properties Panel - Floating Card
+   ===================================================== */
+
+/* Container for floating properties card */
+.properties-panel-floating {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: var(--properties-width);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: var(--spacing-lg);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    z-index: 1000;
+    backdrop-filter: var(--glass-blur);
+    animation: slideInUp var(--transition-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
+    max-height: 70vh;
+    overflow-y: auto;
+    transition: all var(--transition-normal);
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Properties panel header */
+.properties-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.properties-header-title {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Property section grouping */
+.property-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.property-section-title {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: var(--spacing-md);
+}
+
+/* Property field styling */
+.property-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.property-field label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.property-field input,
+.property-field textarea,
+.property-field select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 13px;
+    transition: all var(--transition-fast);
+}
+
+.property-field input:focus,
+.property-field textarea:focus,
+.property-field select:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+/* Time display with serif font */
+.property-time-display {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    background: var(--bg-layer);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-warm);
+}
+
+.property-time-label {
+    font-family: var(--font-body);
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.property-time-value {
+    font-family: var(--font-time);
+    font-size: 16px;
+    color: var(--text-time);
+    font-weight: 600;
+}
+
+/* Color picker styling */
+.property-color-picker {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all var(--transition-fast);
+}
+
+.color-swatch:hover {
+    transform: scale(1.1);
+    border-color: var(--border-focus);
+}
+
+.color-swatch.active {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 8px rgba(59, 130, 246, 0.4);
+}
+
+/* Properties close button */
+.properties-close {
+    position: absolute;
+    top: var(--spacing-md);
+    right: var(--spacing-md);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+    transition: all var(--transition-fast);
+}
+
+.properties-close:hover {
+    color: var(--text-primary);
 }
 
 /* =====================================================
@@ -1568,11 +1796,12 @@ body.show-box-labels .lane-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-sm) 36px var(--spacing-sm) var(--spacing-md);
+    gap: 8px;
+    padding: 8px 10px 8px 12px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: 6px;
     cursor: pointer;
     transition: var(--transition-fast);
 }
@@ -1717,12 +1946,13 @@ body.show-box-labels .lane-row {
    ===================================================== */
 .toast-container {
     position: fixed;
-    bottom: 64px;
-    right: 24px;
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 1000;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     gap: var(--spacing-sm);
     pointer-events: none;
 }
@@ -1740,8 +1970,8 @@ body.show-box-labels .lane-row {
     min-width: 300px;
     max-width: 420px;
     pointer-events: auto;
-    animation: toastSlideInRight 0.3s ease-out;
-    text-align: right;
+    animation: toastSlideDown 0.3s ease-out;
+    text-align: left;
     box-sizing: border-box;
 }
 
@@ -1773,7 +2003,7 @@ body.show-box-labels .lane-row {
 .toast-content {
     flex: 1;
     min-width: 0;
-    text-align: right;
+    text-align: left;
     overflow-wrap: break-word;
 }
 
@@ -1782,7 +2012,7 @@ body.show-box-labels .lane-row {
     font-size: 13px;
     color: var(--text-primary);
     margin-bottom: 2px;
-    text-align: right;
+    text-align: left;
     word-break: break-word;
 }
 
@@ -1864,15 +2094,15 @@ body.show-box-labels .lane-row {
     }
 }
 
-@keyframes toastSlideInRight {
+@keyframes toastSlideDown {
     from {
         opacity: 0;
-        transform: translateX(100px);
+        transform: translateY(-20px);
     }
 
     to {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateY(0);
     }
 }
 
@@ -1943,8 +2173,8 @@ body.show-box-labels .lane-row {
 }
 
 .measurement-overlay.active+.measurement-info {
-    opacity: 1;
-    pointer-events: auto;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .measure-row {
@@ -1977,8 +2207,48 @@ body.show-box-labels .lane-row {
     border-bottom: 1px solid var(--border-color);
 }
 
-.measure-pin-btn,
-.measure-close-btn {
+/* Measurement toolbar bar */
+.measurement-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: rgba(57, 255, 20, 0.08);
+    border: 1px solid rgba(57, 255, 20, 0.3);
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+    color: #39FF14;
+    white-space: nowrap;
+}
+
+.measurement-bar.hidden {
+    display: none !important;
+}
+
+.measure-bar-label {
+    color: #ced2db;
+    font-size: 11px;
+}
+
+.measure-bar-sep {
+    color: var(--border-color);
+    margin: 0 2px;
+}
+
+.measure-bar-pin {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 11px !important;
+    padding: 0 !important;
+}
+
+.measure-bar-pin.active {
+    background: #39FF14 !important;
+    color: #000 !important;
+}
+
+.measure-pin-btn {
     width: 24px;
     height: 24px;
     border: none;
@@ -2130,6 +2400,14 @@ body.diagram-locked .box-resize-handle {
 
 body.diagram-locked .header-badge {
     display: inline;
+}
+
+.version-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.6;
+    user-select: none;
 }
 
 /* --- Toolbar (sip-parser-v2 style) --- */
@@ -2424,11 +2702,104 @@ body.diagram-locked .header-badge {
 }
 
 .modal-footer {
-    padding: 10px 16px;
+    padding: 12px 16px;
     border-top: 1px solid var(--border-color);
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
     flex-shrink: 0;
+}
+
+.modal-footer .toolbar-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: 6px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+.modal-footer .toolbar-btn.danger {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.modal-footer .toolbar-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.modal-footer .toolbar-btn.primary {
+    background: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+    color: #fff;
+}
+
+.modal-footer .toolbar-btn.primary:hover {
+    filter: brightness(1.15);
+}
+
+/* Diagram item: click name to load */
+.diagram-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.diagram-info:hover .diagram-title {
+    color: var(--accent-primary);
+}
+
+.diagram-title {
+    font-size: 13px;
+    font-weight: 500;
+    transition: color 0.15s;
+}
+
+.diagram-date {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.diagram-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.diagram-actions .icon-btn {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    transition: var(--transition-fast);
+    padding: 0;
+}
+
+.diagram-actions .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.diagram-actions .delete-btn {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.diagram-actions .delete-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #ef4444;
 }
 
 /* --- Lane Controls: Click-to-Activate --- */
@@ -2619,26 +2990,18 @@ body.hide-lane-labels .lane-row {
 
 .lane-item {
     height: auto;
-    /* Allow growth */
     min-height: 50px;
-    padding: 8px;
+    padding: 0 8px;
     gap: 8px;
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-wrap: nowrap;
+    align-items: center;
 }
 
 .lane-controls {
     position: absolute;
-    top: 8px;
-    right: 8px;
-}
-
-.lane-drag-handle {
-    margin-top: 4px;
-}
-
-.lane-color-btn {
-    margin-top: 2px;
+    top: 0;
+    right: 0;
+    height: 100%;
 }
 
 /* Fixes for V2 Refinements */
@@ -2680,10 +3043,10 @@ body.hide-lane-labels .lane-label-spacer {
 
 .lane-item {
     height: 50px !important;
-    /* Match row height */
     min-height: 50px !important;
     padding: 0 8px !important;
     overflow: hidden;
+    align-items: center !important;
 }
 
 /* Lane Name Div: Multi-line but constrained */

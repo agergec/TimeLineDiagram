@@ -1,5 +1,7 @@
-// SIP Log Parser v2 - Redesigned UI
+// SIP Log Parser - Redesigned UI
 // Parses SIP logs, Events, and Requests - saves to Timeline Diagram app storage
+
+const SIP_PARSER_VERSION = '2.0.0';
 
 // =====================================================
 // Constants

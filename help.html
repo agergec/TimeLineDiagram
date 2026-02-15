@@ -427,6 +427,8 @@
             <li><a href="#sip-parser" class="nav-link"><span class="nav-icon">📞</span> SIP Log Parser</a></li>
             <li><a href="#auto-save" class="nav-link"><span class="nav-icon">💾</span> Auto-Save</a></li>
             <li><a href="#sharing-export" class="nav-link"><span class="nav-icon">🔗</span> Sharing & Export</a></li>
+            <li><a href="#theme" class="nav-link"><span class="nav-icon">🎨</span> Theme</a></li>
+            <li><a href="#alignment" class="nav-link"><span class="nav-icon">📐</span> Alignment Lines</a></li>
             <li><a href="#settings" class="nav-link"><span class="nav-icon">⚙️</span> Settings</a></li>
             <li><a href="#keyboard" class="nav-link"><span class="nav-icon">⌨️</span> Keyboard Shortcuts</a></li>
         </ul>
@@ -449,7 +451,7 @@
                 <li>
                     <div class="step-content">
                         <strong>Add Lanes</strong>
-                        Click <kbd class="kbd">+ Add</kbd> in the sidebar. Each lane represents a component, service, or actor.
+                        Click <kbd class="kbd">+ Add</kbd> in the toolbar. Each lane represents a component, service, or actor.
                     </div>
                 </li>
                 <li>
@@ -519,10 +521,10 @@
             <p>Click <kbd class="kbd">+ Add</kbd> in the sidebar to create a new lane. Lanes represent components in your system: services, users, databases, or any logical grouping.</p>
 
             <h3>Editing Lane Names</h3>
-            <p>Click the lane name in the sidebar list to edit it. Press <kbd class="kbd">Enter</kbd> to apply the change and exit editing. The name also appears in the lane properties panel when you select a box in that lane.</p>
+            <p>Double-click the lane name in the sidebar list to edit it inline. Press <kbd class="kbd">Enter</kbd> to apply or click outside to cancel. Lane names support multiple lines. You can also edit the name in the right sidebar Lane Properties panel.</p>
 
             <h3>Reordering Lanes</h3>
-            <p>Drag lanes by the handle (⋮⋮) to reorder them. Alternatively, use the up/down arrows (↑ ↓) that appear on hover.</p>
+            <p>Click a lane in the sidebar to expand its controls. Use the up/down arrows (↑ ↓) to reorder, or drag by the handle (⋮⋮).</p>
 
             <h3>Inserting Lanes</h3>
             <p>Use the insert buttons (+↑ and +↓) to add a new lane above or below an existing lane.</p>
@@ -590,7 +592,9 @@
             <ul>
                 <li><kbd class="kbd">−</kbd> Zoom out (wider time range)</li>
                 <li><kbd class="kbd">+</kbd> Zoom in (narrower time range, more detail)</li>
+                <li><strong>Click the % label</strong> to reset zoom to 100%</li>
                 <li><kbd class="kbd">Fit</kbd> Automatically fit the entire diagram in view</li>
+                <li><kbd class="kbd">⇄</kbd> Toggle gap compression (in the zoom group)</li>
             </ul>
 
             <h3>Zoom Range</h3>
@@ -642,18 +646,18 @@
             </ul>
 
             <h3>Measuring</h3>
-            <p>Click and drag between two points. A green line with arrow markers shows the measurement. The info box displays:</p>
+            <p>Click and drag between two points. A green line with arrow markers shows the measurement. The toolbar bar displays:</p>
             <ul>
                 <li><strong>Duration</strong>: Time difference between the two points</li>
-                <li><strong>Start</strong>: Time offset of the start point</li>
-                <li><strong>End</strong>: Time offset of the end point</li>
+                <li><strong>S (Start)</strong>: Time offset of the start point</li>
+                <li><strong>E (End)</strong>: Time offset of the end point</li>
             </ul>
 
             <h3>Snapping</h3>
             <p>The measurement endpoints snap to box edges within 8 pixels. This enables precise measurements between box start/end points.</p>
 
             <h3>Pinning Measurements</h3>
-            <p>Click the 📌 button in the info box to pin the measurement. Pinned measurements:</p>
+            <p>Click the 📌 button in the toolbar measurement bar to pin the measurement. Pinned measurements:</p>
             <ul>
                 <li>Stay visible until unpinned or closed</li>
                 <li>Display a glowing green border</li>
@@ -661,7 +665,7 @@
             </ul>
 
             <h3>Closing Measurements</h3>
-            <p>Click × in the info box, or press <kbd class="kbd">Escape</kbd>. Unpinned measurements fade after 2 seconds.</p>
+            <p>Press <kbd class="kbd">Escape</kbd> or click elsewhere to dismiss. Unpinned measurements fade after 2 seconds.</p>
         </section>
 
         <!-- Minimap -->
@@ -689,7 +693,7 @@
             <h2><span class="icon">📞</span> SIP Log Parser</h2>
 
             <h3>Accessing the Parser</h3>
-            <p>Click the <kbd class="kbd">SIP</kbd> button in the top toolbar to open the SIP Log Parser page.</p>
+            <p>Click the <kbd class="kbd">SIP Parser</kbd> link in the toolbar to open the SIP Log Parser page.</p>
 
             <h3>Supported Log Formats</h3>
             <p>The parser recognizes three types of log entries:</p>
@@ -725,14 +729,14 @@
             <h3>Automatic Saving</h3>
             <p>Changes save automatically to browser local storage within 1 second. Refreshing the page or closing the browser preserves your work.</p>
 
-            <h3>My Diagrams Panel</h3>
-            <p>Click "📁 My Diagrams" in the sidebar to expand the diagram list. Actions:</p>
+            <h3>My Diagrams Modal</h3>
+            <p>Click the <kbd class="kbd">📁 Diagrams</kbd> button in the toolbar to open the diagrams modal. Actions:</p>
             <ul>
-                <li><strong>Click diagram</strong>: Load that diagram</li>
+                <li><strong>Click diagram name</strong>: Load that diagram</li>
                 <li><strong>+ New Diagram</strong>: Create a blank diagram</li>
                 <li><strong>🔒 Lock</strong>: Protect from edits and purging</li>
-                <li><strong>↺ Reset</strong>: Clear all lanes and boxes</li>
-                <li><strong>× Delete</strong>: Remove the diagram</li>
+                <li><strong>× Delete</strong>: Click the red × to remove the diagram</li>
+                <li><strong>Purge</strong>: Button in modal footer to remove all unlocked diagrams</li>
             </ul>
 
             <h3>Locking Diagrams</h3>
@@ -769,10 +773,35 @@
             <p>Exports include the title, all lanes, boxes, time markers, and any pinned measurements.</p>
         </section>
 
+        <!-- Theme -->
+        <section id="theme">
+            <h2><span class="icon">🎨</span> Theme</h2>
+
+            <h3>Dark / Light Toggle</h3>
+            <p>Click the <kbd class="kbd">☽</kbd> button in the toolbar to switch between dark and light themes. The preference is saved to browser storage and persists across sessions.</p>
+
+            <h3>Scope</h3>
+            <p>The theme applies globally to the entire application, including the header, toolbar, sidebar, canvas, and all modals.</p>
+        </section>
+
+        <!-- Alignment Lines -->
+        <section id="alignment">
+            <h2><span class="icon">📐</span> Alignment Lines</h2>
+
+            <h3>What They Are</h3>
+            <p>Vertical dashed lines rendered as an SVG overlay on the canvas. They appear at the start and end times of each box, making it easy to see temporal alignment across lanes.</p>
+
+            <h3>Lane Colors</h3>
+            <p>Each alignment line uses the color of the lane it belongs to, so you can identify which lane an alignment originates from at a glance.</p>
+
+            <h3>Toggling</h3>
+            <p>Open Settings (<kbd class="kbd">⚙️</kbd>) and toggle "Show Vertical Alignment Lines" on or off.</p>
+        </section>
+
         <!-- Settings -->
         <section id="settings">
             <h2><span class="icon">⚙️</span> Settings</h2>
-            <p>Click the ⚙️ button in the header to access global settings:</p>
+            <p>Click the <kbd class="kbd">⚙️</kbd> button in the toolbar to open the settings panel in the right sidebar:</p>
 
             <table class="shortcut-table">
                 <tr>
@@ -794,6 +823,14 @@
                 <tr>
                     <td>Show Box Labels</td>
                     <td>Persistent labels above narrow boxes</td>
+                </tr>
+                <tr>
+                    <td>Compact View</td>
+                    <td>Hide left lane labels to maximize canvas space</td>
+                </tr>
+                <tr>
+                    <td>Timeline Duration</td>
+                    <td>Total canvas width in milliseconds (cannot be less than last box end)</td>
                 </tr>
                 <tr>
                     <td>Auto-Open Box Properties</td>
@@ -833,7 +870,7 @@
                 </tr>
                 <tr>
                     <td><span class="kbd">Escape</span></td>
-                    <td>Deselect box, cancel measurement, close panel</td>
+                    <td>Deselect box, cancel measurement, close properties pane / sidebar</td>
                 </tr>
                 <tr>
                     <td><span class="kbd">Enter</span></td>

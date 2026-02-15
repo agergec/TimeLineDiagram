@@ -1,7 +1,7 @@
 # Ignore everything
 *
 
-# Except these project files
+# Project files
 !index.html
 !app.js
 !styles.css
@@ -15,9 +15,3 @@
 !.github/
 !.github/workflows/
 !.github/workflows/deploy.yml
-
-# V1 backups
-!index-v1.html
-!app-v1.js
-!sip-parser-v1.html
-!sip-parser-v1.js

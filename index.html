@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="version" content="2.0.0">
     <title>Timeline Diagram Editor</title>
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
@@ -24,6 +25,7 @@
                     placeholder="Enter diagram title..." maxlength="150" title="Page title (max 150 characters)">
             </div>
             <div class="header-right">
+                <span class="version-label">v2.0.0</span>
                 <span class="header-badge" id="lock-badge" title="Diagram is locked">🔒</span>
             </div>
         </header>
@@ -51,13 +53,25 @@
             </div>
             <div class="toolbar-right">
                 <!-- Zoom Controls -->
+                <!-- Measurement Info (shown when measuring) -->
+                <div id="measurement-bar" class="measurement-bar hidden">
+                    <span class="measure-bar-label">Duration:</span>
+                    <strong id="measure-bar-duration">—</strong>
+                    <span class="measure-bar-sep">|</span>
+                    <span class="measure-bar-label">S:</span>
+                    <span id="measure-bar-start">—</span>
+                    <span class="measure-bar-sep">|</span>
+                    <span class="measure-bar-label">E:</span>
+                    <span id="measure-bar-end">—</span>
+                    <button id="measure-bar-pin" class="toolbar-btn icon-btn measure-bar-pin" title="Pin measurement">📌</button>
+                </div>
                 <div class="zoom-controls-v2">
                     <button id="zoom-out" class="toolbar-btn icon-btn" title="Zoom Out">−</button>
                     <span id="zoom-level" class="zoom-label">100%</span>
                     <button id="zoom-in" class="toolbar-btn icon-btn" title="Zoom In">+</button>
                     <button id="zoom-fit" class="toolbar-btn" title="Fit to View">Fit</button>
+                    <button id="compress-toggle" class="toolbar-btn icon-btn" title="Compress Empty Spaces">⇄</button>
                 </div>
-                <button id="compress-toggle" class="toolbar-btn icon-btn" title="Compress Empty Spaces">⇄</button>
                 <button id="measure-tool-btn" class="toolbar-btn icon-btn"
                     title="Measurement Tool (⌘+Click & Drag)">📏</button>
                 <div class="toolbar-divider"></div>
@@ -98,6 +112,9 @@
 
                 <!-- Lanes Canvas -->
                 <div id="lanes-canvas" class="lanes-canvas">
+                    <!-- Alignment Markers Overlay (SVG) -->
+                    <svg id="alignment-canvas-overlay" class="alignment-canvas-overlay"></svg>
+
                     <!-- Lane rows will be dynamically added here -->
                 </div>
 
@@ -393,6 +410,7 @@
                     <!-- Diagrams will be dynamically added here -->
                 </div>
                 <div class="modal-footer">
+                    <button id="purge-diagrams-btn" class="toolbar-btn danger" title="Purge unlocked diagrams">Purge</button>
                     <button id="new-diagram-btn" class="toolbar-btn primary">
                         <span id="new-diagram-btn-text">+ New Diagram</span>
                     </button>
@@ -424,6 +442,71 @@
 
         <!-- Hidden File Input for Load -->
         <input type="file" id="file-input" accept=".json" style="display: none;">
+    </div>
+
+    <!-- Floating Properties Card (Timeline Precision Design) -->
+    <div id="properties-card" class="properties-panel-floating hidden">
+        <button class="properties-close" id="properties-close-btn">×</button>
+        <div class="properties-header">
+            <div class="properties-header-title">Properties</div>
+        </div>
+
+        <!-- Box Properties Section -->
+        <div id="box-properties-section" class="hidden">
+            <!-- Box Label -->
+            <div class="property-section">
+                <div class="property-section-title">Label</div>
+                <div class="property-field">
+                    <input type="text" id="props-box-label" placeholder="Box label" maxlength="50">
+                </div>
+            </div>
+
+            <!-- Timing Section -->
+            <div class="property-section">
+                <div class="property-section-title">Timing</div>
+                <div class="property-time-display">
+                    <span class="property-time-label">Duration</span>
+                    <span class="property-time-value" id="props-duration-display">—</span>
+                </div>
+                <div class="property-field" style="margin-top: var(--spacing-md);">
+                    <label>Start Offset (ms)</label>
+                    <input type="number" id="props-box-start" min="0" step="10">
+                </div>
+                <div class="property-field">
+                    <label>Duration (ms)</label>
+                    <input type="number" id="props-box-duration" min="10" step="10">
+                </div>
+                <div class="property-time-display" style="margin-top: var(--spacing-md); border-left-color: var(--accent-secondary);">
+                    <span class="property-time-label">Absolute Time</span>
+                    <span class="property-time-value" id="props-absolute-time">—</span>
+                </div>
+            </div>
+
+            <!-- Color Section -->
+            <div class="property-section">
+                <div class="property-section-title">Appearance</div>
+                <div class="property-field">
+                    <label>Color</label>
+                    <input type="color" id="props-box-color">
+                </div>
+            </div>
+        </div>
+
+        <!-- Lane Properties Section -->
+        <div id="lane-properties-section" class="hidden">
+            <div class="property-section">
+                <div class="property-section-title">Lane Name</div>
+                <div class="property-field">
+                    <input type="text" id="props-lane-name" placeholder="Lane name" maxlength="50">
+                </div>
+            </div>
+            <div class="property-section">
+                <div class="property-section-title">Color</div>
+                <div class="property-field">
+                    <input type="color" id="props-lane-color">
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Dummies for app.js attributes to prevent init crash -->

@@ -3,6 +3,7 @@
 A web-based toolkit for creating timeline diagrams and analyzing Genesys SIP call flows.
 
 ![Made by UCS](https://img.shields.io/badge/Made%20by-UCS-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-6366f1)
 
 ---
 
@@ -15,17 +16,24 @@ Visual tool for creating timeline diagrams to map processes, API calls, and sequ
 - **Visual Timeline Creation** - Click and drag to create time boxes on lanes
 - **Multiple Lanes** - Organize events by component, service, or actor
 - **Drag & Resize** - Move and resize boxes to adjust timing
-- **Smart Colors** - Auto-assigned contrasting colors for better readability
-- **Measurement Tool** - Cmd/Ctrl + Click to measure time distances with smart snapping
-- **Pin Measurements** - Keep measurements visible, included in exports
+- **Right Sidebar** - Properties panel for settings, lane, and box editing
+- **Dark/Light Theme** - Toggle with persistent preference
+- **Measurement Tool** - Cmd/Ctrl + Click to measure time distances with snapping
+- **Pin Measurements** - Keep measurements visible in the toolbar bar, included in exports
+- **SVG Alignment Overlay** - Colored per-lane dashed lines at box start/end times
+- **Gap Compression** - Compress empty gaps to focus on activity periods
+- **Compact View** - Hide lane labels to maximize canvas space
+- **Minimap** - Draggable overview for navigating large diagrams
+- **Zoom** - 1% to 666,666% with click-to-reset zoom label
+- **Diagrams Modal** - Manage up to 10 auto-saved diagrams
 - **Sharing & Export** - URL sharing, PNG (2x), SVG, and JSON save/load
-- **Auto-Save** - Up to 10 diagrams saved to browser localStorage
+- **Click-Outside-Close** - Sidebar and modals close on outside click
 
 ### Quick Start
 
-1. **Add Lanes** - Click `+ Add` to create lanes
-2. **Create Boxes** - Click and drag on any lane
-3. **Customize** - Click boxes to edit labels, colors, and timing
+1. **Add Lanes** - Click `+ Add` in the toolbar
+2. **Create Boxes** - Click and drag on any lane track
+3. **Customize** - Click boxes to edit labels, colors, and timing in the right sidebar
 4. **Share** - Click `Share` to copy a shareable URL
 
 ### Keyboard Shortcuts
@@ -34,7 +42,7 @@ Visual tool for creating timeline diagrams to map processes, API calls, and sequ
 |-----|--------|
 | `Cmd/Ctrl` + Click + Drag | Measure time distance |
 | `Delete` / `Backspace` | Delete selected box |
-| `Escape` | Deselect / Cancel / Close |
+| `Escape` | Deselect / Cancel / Close sidebar |
 
 ---
 
@@ -102,8 +110,8 @@ GitHub Pages - push to `main` to trigger automatic deployment.
 ├── app.js              # Editor logic
 ├── styles.css          # Editor styling
 ├── help.html           # Editor help & tutorial
-├── sip-parser-v2.html  # SIP Log Parser (HTML + CSS)
-├── sip-parser-v2.js    # SIP Log Parser (JS)
+├── sip-parser.html     # SIP Log Parser (HTML + CSS)
+├── sip-parser.js       # SIP Log Parser (JS)
 └── .github/
     └── workflows/
         └── deploy.yml  # GitHub Pages deployment
