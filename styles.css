@@ -798,7 +798,7 @@ body.show-box-labels .lane-row {
     padding: 0 var(--spacing-md);
     background: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
-    font-size: 11px;
+    font-size: 10px;
     /* Decreased font size */
     font-weight: 500;
     color: var(--text-primary);
@@ -3051,7 +3051,7 @@ body.hide-lane-labels .lane-label-spacer {
 
 /* Lane Name Div: Multi-line but constrained */
 .lane-name-div {
-    font-size: 13px;
+    font-size: 11px;
     line-height: 1.1;
     max-height: 100%;
     overflow: hidden;
