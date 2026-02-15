@@ -958,7 +958,7 @@ body.show-box-labels .lane-row {
     font-family: 'Monaco', 'Menlo', monospace;
     font-weight: 600;
     background: var(--bg-primary);
-    padding: 0 4px;
+    padding: 0 0px;
     border-radius: 2px;
     line-height: 1.2;
     border: 1px solid var(--border-color);

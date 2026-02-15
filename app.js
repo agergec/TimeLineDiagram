@@ -3728,7 +3728,7 @@ function exportToPNG() {
 
         // Draw label
         ctx.fillStyle = m.color;
-        ctx.textAlign = 'center';
+        ctx.textAlign = 'left';
         ctx.fillText(m.text, m.x, yPos);
     });
     ctx.textAlign = 'left';
@@ -4033,7 +4033,7 @@ function exportToSVG() {
         // Tick line in time markers area
         svg += `  <line x1="${Math.round(m.x)}" y1="${timeMarkersY + 2}" x2="${Math.round(m.x)}" y2="${yPos - 6}" stroke="${m.color}"/>\n`;
         // Label
-        svg += `  <text x="${Math.round(m.x)}" y="${yPos}" text-anchor="middle" class="time-marker" fill="${m.color}">${m.text}</text>\n`;
+        svg += `  <text x="${Math.round(m.x)}" y="${yPos}" text-anchor="left" class="time-marker" fill="${m.color}">${m.text}</text>\n`;
     });
 
     // Draw pinned measurement if active
