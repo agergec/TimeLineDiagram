@@ -2451,6 +2451,22 @@ body.diagram-locked .header-badge {
     line-height: 1.4;
 }
 
+.toolbar-icon {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+}
+
+.toolbar-has-badge {
+    padding: 4px 8px;
+    gap: 4px;
+}
+
 .toolbar-btn:hover {
     background: var(--bg-primary);
     color: var(--text-primary);
@@ -2492,7 +2508,68 @@ body.diagram-locked .header-badge {
     font-size: 14px;
 }
 
+.toolbar-btn.icon-only,
+.toolbar-toggle-btn.icon-only {
+    width: 30px;
+    height: 28px;
+    padding: 0;
+    justify-content: center;
+}
+
 .toolbar-btn.active {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.toolbar-select {
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 0 8px;
+    min-width: 88px;
+}
+
+.toolbar-select:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+
+.toolbar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    line-height: 1.4;
+    position: relative;
+}
+
+.toolbar-toggle-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.toolbar-toggle-btn input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.toolbar-toggle-btn.active {
     background: var(--accent-gradient);
     border-color: transparent;
     color: #fff;
@@ -2523,6 +2600,30 @@ body.diagram-locked .header-badge {
 .badge.empty {
     background: var(--bg-primary);
     color: var(--text-muted);
+}
+
+#theme-toggle-btn .icon-sun {
+    display: none;
+}
+
+#theme-toggle-btn.is-light .icon-sun {
+    display: block;
+}
+
+#theme-toggle-btn.is-light .icon-moon {
+    display: none;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* Zoom controls in toolbar */
@@ -3135,4 +3236,44 @@ html, body,
 .box-alignment-line {
     border-left-style: dashed !important;
     z-index: 100;
+}
+
+/* =====================================================
+   Lane Row Actions (No Kebab Menu)
+   ===================================================== */
+.lane-item > .lane-delete-btn {
+    margin-left: auto;
+    opacity: 0.45 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: var(--text-muted) !important;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.lane-item:hover > .lane-delete-btn,
+.lane-item:focus-within > .lane-delete-btn {
+    opacity: 1 !important;
+    color: var(--text-secondary) !important;
+}
+
+.lane-item > .lane-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.12) !important;
+    border-color: rgba(239, 68, 68, 0.35) !important;
+    color: var(--danger) !important;
+}
+
+@media (max-width: 900px) {
+    .lane-item > .lane-delete-btn {
+        opacity: 1 !important;
+    }
 }

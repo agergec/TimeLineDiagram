@@ -6,6 +6,40 @@ const APP_VERSION = '2.0.0';
 
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
+const DEFAULT_TIMELINE_SETTINGS = {
+    timeFormatThreshold: 1000,
+    showAlignmentLines: true,
+    showBoxLabels: false,
+    autoOpenBoxProperties: false,
+    trailingSpace: 1000,
+    compressionThreshold: 500,
+    compactView: true,
+    timelineDuration: 8000
+};
+
+function getDefaultTimelineSettings() {
+    return { ...DEFAULT_TIMELINE_SETTINGS };
+}
+
+function normalizeTimelineSettings(settings = {}) {
+    const merged = { ...getDefaultTimelineSettings(), ...(settings || {}) };
+    return {
+        timeFormatThreshold: Math.max(0, parseInt(merged.timeFormatThreshold, 10) || 0),
+        showAlignmentLines: !!merged.showAlignmentLines,
+        showBoxLabels: !!merged.showBoxLabels,
+        autoOpenBoxProperties: !!merged.autoOpenBoxProperties,
+        trailingSpace: Math.max(0, parseInt(merged.trailingSpace, 10) || 0),
+        compressionThreshold: Math.max(10, parseInt(merged.compressionThreshold, 10) || 500),
+        compactView: !!merged.compactView,
+        timelineDuration: Math.max(1000, parseInt(merged.timelineDuration, 10) || 8000)
+    };
+}
+
+function readImportedLaneColor(lane, fallback) {
+    const candidate = lane.baseColor || lane.color || lane.laneColor || lane.lane_color;
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    return fallback;
+}
 
 // =====================================================
 // Data Model
@@ -24,9 +58,10 @@ class TimelineDiagram {
     addLane(name, baseColor = null) {
         // If no color provided, assign one from PALETTE based on current lane count
         const color = baseColor || PALETTE[this.lanes.length % PALETTE.length];
+        const laneName = (typeof name === 'string' && name.trim()) ? name : `Lane ${this.lanes.length + 1}`;
         const lane = {
             id: this.nextLaneId++,
-            name: name,
+            name: laneName,
             order: this.lanes.length,
             baseColor: color
         };
@@ -46,16 +81,17 @@ class TimelineDiagram {
     renameLane(laneId, newName) {
         const lane = this.lanes.find(l => l.id === laneId);
         if (lane) {
-            lane.name = newName;
+            lane.name = (typeof newName === 'string' && newName.trim()) ? newName : `Lane ${lane.order + 1}`;
         }
     }
 
     insertLaneAt(position, name, baseColor = null) {
         // If no color provided, assign one from PALETTE based on position
-        const color = baseColor || PALETTE[position % PALETTE.length];
+        const color = baseColor || PALETTE[(this.lanes.length) % PALETTE.length];
+        const laneName = (typeof name === 'string' && name.trim()) ? name : `Lane ${position + 1}`;
         const lane = {
             id: this.nextLaneId++,
-            name: name,
+            name: laneName,
             order: position,
             baseColor: color
         };
@@ -146,8 +182,8 @@ class TimelineDiagram {
     fromJSON(data) {
         this.title = data.title || 'Timeline Diagram';
         this.startTime = data.startTime || '00:00:00 000';
-        this.lanes = data.lanes || [];
-        this.boxes = data.boxes || [];
+        this.lanes = Array.isArray(data.lanes) ? data.lanes.map(l => ({ ...l })) : [];
+        this.boxes = Array.isArray(data.boxes) ? data.boxes.map(b => ({ ...b })) : [];
         // Calculate safe next IDs from actual data to prevent ID collisions
         const maxLaneId = this.lanes.length > 0 ? Math.max(...this.lanes.map(l => l.id)) + 1 : 1;
         const maxBoxId = this.boxes.length > 0 ? Math.max(...this.boxes.map(b => b.id)) + 1 : 1;
@@ -155,18 +191,48 @@ class TimelineDiagram {
         this.nextBoxId = Math.max(data.nextBoxId || 1, maxBoxId);
         this.locked = data.locked || false;
 
-        // Migration: Ensure all lanes have baseColor (for old saved diagrams)
+        // Migration: Ensure all lanes have required fields (for old saved diagrams)
         this.lanes.forEach((lane, index) => {
-            if (!lane.baseColor) {
-                lane.baseColor = PALETTE[index % PALETTE.length];
+            if (typeof lane.name !== 'string' || !lane.name.trim()) {
+                lane.name = `Lane ${index + 1}`;
+            }
+            if (typeof lane.order !== 'number') {
+                lane.order = index;
+            }
+            lane.baseColor = readImportedLaneColor(lane, PALETTE[index % PALETTE.length]);
+        });
+
+        // Migration: Ensure boxes have required fields and preserve imported colors.
+        // If box color is missing, derive it from lane base color for compatibility with lane-color-only JSON.
+        const laneBoxIndexMap = new Map();
+        const hueShifts = [0, 15, -12, 25, -20, 35, -30, 10];
+        this.boxes.forEach((box, idx) => {
+            if (typeof box.startOffset !== 'number') {
+                box.startOffset = parseInt(box.startOffset, 10) || 0;
+            }
+            if (typeof box.duration !== 'number') {
+                box.duration = Math.max(1, parseInt(box.duration, 10) || 100);
+            }
+            if (typeof box.label !== 'string') {
+                box.label = '';
+            }
+            if (typeof box.laneId !== 'number') {
+                box.laneId = parseInt(box.laneId, 10) || (this.lanes[0]?.id || 1);
+            }
+
+            if (!(typeof box.color === 'string' && box.color.trim())) {
+                const lane = this.lanes.find(l => l.id === box.laneId);
+                const laneBase = lane?.baseColor || PALETTE[idx % PALETTE.length];
+                const boxIdxInLane = laneBoxIndexMap.get(box.laneId) || 0;
+                box.color = adjustHue(laneBase, hueShifts[boxIdxInLane % hueShifts.length]);
+                laneBoxIndexMap.set(box.laneId, boxIdxInLane + 1);
             }
         });
+
         // Restore compression state (default to false for new/old diagrams)
         Compression.setEnabled(data.compressionEnabled || false);
-        // Restore settings if present
-        if (data.settings) {
-            app.settings = { ...app.settings, ...data.settings };
-        }
+        // Restore settings with code defaults when absent.
+        app.settings = normalizeTimelineSettings(data.settings);
         // Restore measurement if present
         if (data.measurement) {
             app.pinnedMeasurementData = data.measurement;
@@ -200,15 +266,7 @@ const app = {
     pinnedMeasurementData: null, // Stored measurement from loaded diagram
 
     // Global settings
-    settings: {
-        timeFormatThreshold: 1000, // Switch from ms to seconds when duration > this value (0 = always ms)
-        showAlignmentLines: true,  // Toggle vertical alignment lines
-        showBoxLabels: false,      // Toggle persistent floating labels above boxes
-        autoOpenBoxProperties: false, // Auto-open box properties panel after creating a new box
-        trailingSpace: 1000,       // Extra space after last box in milliseconds
-        compressionThreshold: 500, // Gaps larger than this (ms) get compressed
-        compactView: true          // Hide lane labels by default
-    },
+    settings: getDefaultTimelineSettings(),
 
     // Duration scaling settings (for PoC - can be removed if not needed)
     durationScaling: {
@@ -1219,6 +1277,7 @@ function loadDiagram(diagramId) {
     app.diagram.fromJSON(diagram.data);
     app.elements.diagramTitle.value = app.diagram.title;
     app.elements.startTime.value = app.diagram.startTime;
+    syncToolbarSettingsControls();
 
     deselectBox();
     renderLaneList();
@@ -1448,17 +1507,13 @@ function purgeApplication() {
                 app.diagram.addLane('Lane 1');
                 app.selectedBoxId = null;
                 app.selectedLaneId = null;
-                app.settings = {
-                    timeFormatThreshold: 1000,
-                    showAlignmentLines: true,
-                    showBoxLabels: false,
-                    autoOpenBoxProperties: false
-                };
+                app.settings = getDefaultTimelineSettings();
 
                 closeMeasurement();
 
                 app.elements.diagramTitle.value = app.diagram.title;
                 app.elements.startTime.value = app.diagram.startTime;
+                syncToolbarSettingsControls();
 
                 deselectBox();
                 renderLaneList();
@@ -1514,6 +1569,7 @@ function createNewDiagram() {
 
     app.elements.diagramTitle.value = app.diagram.title;
     app.elements.startTime.value = app.diagram.startTime;
+    syncToolbarSettingsControls();
 
     deselectBox();
     renderLaneList();
@@ -1566,9 +1622,6 @@ function renderDiagramsList() {
         container.innerHTML = '<div class="empty-state">No saved diagrams found.</div>';
         return;
     }
-
-    // Sort by updated at desc
-    diagrams.sort((a, b) => b.updatedAt - a.updatedAt);
 
     diagrams.forEach(d => {
         const item = document.createElement('div');
@@ -1820,22 +1873,93 @@ function getContrastColor(hexColor) {
     return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
+function deleteLaneWithUndo(laneId) {
+    const laneIndex = app.diagram.lanes.findIndex(l => l.id === laneId);
+    if (laneIndex === -1) return;
+
+    const laneSnapshot = { ...app.diagram.lanes[laneIndex] };
+    const removedBoxes = app.diagram.boxes
+        .filter(b => b.laneId === laneId)
+        .map(b => ({ ...b }));
+    const removedBoxIds = new Set(removedBoxes.map(b => b.id));
+
+    app.diagram.lanes.splice(laneIndex, 1);
+    app.diagram.boxes = app.diagram.boxes.filter(b => b.laneId !== laneId);
+    app.diagram.lanes.forEach((lane, index) => { lane.order = index; });
+
+    if (parseInt(app.selectedLaneId, 10) === laneId) {
+        app.selectedLaneId = null;
+    }
+    if (app.selectedBoxId && removedBoxIds.has(app.selectedBoxId)) {
+        app.selectedBoxId = null;
+        document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+    }
+
+    renderLaneList();
+    renderLanesCanvas();
+    updateTotalDuration();
+    autoSave();
+
+    const removedCountText = removedBoxes.length > 0
+        ? ` Restored lane will include ${removedBoxes.length} box${removedBoxes.length > 1 ? 'es' : ''}.`
+        : '';
+
+    showToast({
+        type: 'warning',
+        title: 'Lane Deleted',
+        message: `"${laneSnapshot.name || 'Lane'}" was removed.${removedCountText}`,
+        actions: [
+            {
+                label: 'Undo',
+                type: 'confirm',
+                onClick: () => {
+                    let restoredLaneId = laneSnapshot.id;
+                    if (app.diagram.lanes.some(l => l.id === restoredLaneId)) {
+                        restoredLaneId = app.diagram.nextLaneId++;
+                    }
+
+                    const insertionIndex = Math.min(Math.max(laneIndex, 0), app.diagram.lanes.length);
+                    app.diagram.lanes.splice(insertionIndex, 0, { ...laneSnapshot, id: restoredLaneId });
+                    app.diagram.lanes.forEach((lane, index) => { lane.order = index; });
+
+                    const usedBoxIds = new Set(app.diagram.boxes.map(b => b.id));
+                    let nextBoxId = app.diagram.nextBoxId || 1;
+                    removedBoxes.forEach(box => {
+                        let restoredBoxId = box.id;
+                        if (usedBoxIds.has(restoredBoxId)) {
+                            while (usedBoxIds.has(nextBoxId)) nextBoxId++;
+                            restoredBoxId = nextBoxId++;
+                        }
+                        usedBoxIds.add(restoredBoxId);
+                        app.diagram.boxes.push({ ...box, id: restoredBoxId, laneId: restoredLaneId });
+                    });
+
+                    app.diagram.nextLaneId = Math.max(app.diagram.nextLaneId || 1, restoredLaneId + 1);
+                    app.diagram.nextBoxId = Math.max(app.diagram.nextBoxId || 1, nextBoxId);
+
+                    renderLaneList();
+                    renderLanesCanvas();
+                    updateTotalDuration();
+                    autoSave();
+                    showToast({ type: 'success', title: 'Restored', message: `"${laneSnapshot.name || 'Lane'}" restored.`, duration: 1800 });
+                }
+            }
+        ]
+    });
+}
+
 // =====================================================
 // Rendering Functions
 // =====================================================
 function renderLaneList() {
     const container = app.elements.laneList;
     container.innerHTML = '';
-    const totalLanes = app.diagram.lanes.length;
 
     app.diagram.lanes.forEach((lane, index) => {
         const item = document.createElement('div');
         item.className = 'lane-item';
         item.dataset.laneId = lane.id;
         item.draggable = true;
-
-        const isFirst = index === 0;
-        const isLast = index === totalLanes - 1;
 
         const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -1844,18 +1968,12 @@ function renderLaneList() {
             <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
             <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
             <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
-            <div class="lane-controls">
-                <button class="lane-control-btn move-up" data-lane-id="${lane.id}" title="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
-                <button class="lane-control-btn move-down" data-lane-id="${lane.id}" title="Move down" ${isLast ? 'disabled' : ''}>↓</button>
-                <button class="lane-control-btn insert-before" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane before">+↑</button>
-                <button class="lane-control-btn insert-after" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane after">+↓</button>
-                <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane">×</button>
-            </div>
+            <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane" aria-label="Delete lane">🗑</button>
         `;
 
         // Add click listener to open properties on the item (excluding controls)
         item.addEventListener('click', (e) => {
-            if (e.target.closest('.lane-control-btn') || e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+            if (e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
             showLanePropertiesPanel(lane.id);
         });
 
@@ -1904,7 +2022,7 @@ function renderLaneList() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!isEditingAllowed()) return;
-            const laneId = parseInt(e.target.dataset.laneId, 10);
+            const laneId = parseInt(btn.dataset.laneId, 10);
             const lane = app.diagram.lanes.find(l => l.id === laneId);
             const boxCount = app.diagram.getBoxesForLane(laneId).length;
 
@@ -1912,62 +2030,9 @@ function renderLaneList() {
                 title: 'Delete Lane?',
                 message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
                 onConfirm: () => {
-                    app.diagram.removeLane(laneId);
-                    renderLaneList();
-                    renderLanesCanvas();
-                    updateTotalDuration();
+                    deleteLaneWithUndo(laneId);
                 }
             });
-        });
-    });
-
-    // Move-up buttons
-    container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!isEditingAllowed()) return;
-            const laneId = parseInt(e.target.dataset.laneId, 10);
-            if (app.diagram.moveLane(laneId, 'up')) {
-                renderLaneList();
-                renderLanesCanvas();
-            }
-        });
-    });
-
-    // Move-down buttons
-    container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!isEditingAllowed()) return;
-            const laneId = parseInt(e.target.dataset.laneId, 10);
-            if (app.diagram.moveLane(laneId, 'down')) {
-                renderLaneList();
-                renderLanesCanvas();
-            }
-        });
-    });
-
-    // Insert-before buttons
-    container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!isEditingAllowed()) return;
-            const index = parseInt(e.target.dataset.index, 10);
-            app.diagram.insertLaneAt(index);
-            renderLaneList();
-            renderLanesCanvas();
-        });
-    });
-
-    // Insert-after buttons
-    container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!isEditingAllowed()) return;
-            const index = parseInt(e.target.dataset.index, 10);
-            app.diagram.insertLaneAt(index + 1);
-            renderLaneList();
-            renderLanesCanvas();
         });
     });
 
@@ -2036,24 +2101,24 @@ function setupLaneDragAndDrop() {
             const targetLaneId = parseInt(item.dataset.laneId, 10);
 
             const draggedIndex = app.diagram.lanes.findIndex(l => l.id === draggedLaneId);
-            let targetIndex = app.diagram.lanes.findIndex(l => l.id === targetLaneId);
+            const targetIndex = app.diagram.lanes.findIndex(l => l.id === targetLaneId);
 
             if (draggedIndex === -1 || targetIndex === -1) return;
 
-            // Remove the dragged lane
-            const [draggedLane] = app.diagram.lanes.splice(draggedIndex, 1);
-
-            // Recalculate target index after removal
-            targetIndex = app.diagram.lanes.findIndex(l => l.id === targetLaneId);
-
             const rect = item.getBoundingClientRect();
             const insertAfter = e.clientY > rect.top + rect.height / 2;
+            let insertionIndex = insertAfter ? targetIndex + 1 : targetIndex;
 
-            if (insertAfter) {
-                app.diagram.lanes.splice(targetIndex + 1, 0, draggedLane);
-            } else {
-                app.diagram.lanes.splice(targetIndex, 0, draggedLane);
+            // Removing the dragged lane shifts insertion index when moving downward.
+            if (draggedIndex < insertionIndex) {
+                insertionIndex--;
             }
+
+            // No-op drops should not trigger re-render/save.
+            if (insertionIndex === draggedIndex) return;
+
+            const [draggedLane] = app.diagram.lanes.splice(draggedIndex, 1);
+            app.diagram.lanes.splice(insertionIndex, 0, draggedLane);
 
             // Update order
             app.diagram.lanes.forEach((l, i) => {
@@ -2062,6 +2127,7 @@ function setupLaneDragAndDrop() {
 
             renderLaneList();
             renderLanesCanvas();
+            autoSave();
         });
     });
 }
@@ -2858,11 +2924,12 @@ function handleMouseUp(e) {
             Compression.invalidate();
             renderTimelineRuler();
             renderLanesCanvas();
-            renderTimeMarkers();
-            Minimap.render();
         } else {
             renderTimelineRuler();
         }
+        // Always finalize marker and minimap positions after drag/resize.
+        renderTimeMarkers();
+        Minimap.render();
         renderAlignmentCanvasOverlay();
         updateTotalDuration();
 
@@ -3309,6 +3376,7 @@ function loadFromJSON(file) {
 
             app.elements.diagramTitle.value = app.diagram.title;
             app.elements.startTime.value = app.diagram.startTime;
+            syncToolbarSettingsControls();
 
             deselectBox();
             renderLaneList();
@@ -3388,7 +3456,7 @@ function shareAsURL() {
         showToast({
             type: 'warning',
             title: 'Diagram Too Large',
-            message: 'Use Save/Load to share large diagrams.'
+            message: 'Use Download/Load to share large diagrams.'
         });
         return;
     }
@@ -3397,8 +3465,10 @@ function shareAsURL() {
     navigator.clipboard.writeText(url).then(() => {
         // Show enhanced success message
         const btn = document.getElementById('share-url');
-        const originalText = btn.textContent;
-        btn.textContent = '✓ Copied!';
+        const originalHtml = btn.innerHTML;
+        const originalTitle = btn.title;
+        btn.innerHTML = `<svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg><span class="sr-only">Copied</span>`;
+        btn.title = 'Copied';
         btn.style.background = 'var(--success)';
 
         // Show instructive toast
@@ -3410,7 +3480,8 @@ function shareAsURL() {
         });
 
         setTimeout(() => {
-            btn.textContent = originalText;
+            btn.innerHTML = originalHtml;
+            btn.title = originalTitle;
             btn.style.background = '';
         }, 2500);
     }).catch(err => {
@@ -3427,23 +3498,34 @@ function shareAsURL() {
 
 // Helper function to wrap text in canvas
 function wrapText(ctx, text, maxWidth, lineHeight) {
-    const words = text.split(' ');
     const lines = [];
-    let currentLine = '';
+    const paragraphs = String(text || '').split(/\r?\n/);
 
-    for (let word of words) {
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-        } else {
-            currentLine = testLine;
+    paragraphs.forEach(paragraph => {
+        const words = paragraph.split(' ');
+        let currentLine = '';
+
+        // Preserve intentional blank lines
+        if (paragraph.trim() === '') {
+            lines.push('');
+            return;
         }
-    }
-    if (currentLine) {
-        lines.push(currentLine);
-    }
+
+        for (let word of words) {
+            const testLine = currentLine ? currentLine + ' ' + word : word;
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+    });
+
     return lines;
 }
 
@@ -3568,14 +3650,14 @@ function exportToPNG() {
         ctx.fillText(formatDuration(time), x + 4, rulerY + rulerHeight - 8);
     }
 
-    // Draw lanes backgrounds first (so alignment lines can be drawn on top)
+    // Draw lane backgrounds first (alignment lines/boxes are layered above this)
     lanes.forEach((lane, index) => {
         const y = lanesStartY + (index * laneHeight);
         ctx.fillStyle = index % 2 === 0 ? '#0f1419' : '#101520';
         ctx.fillRect(laneLabelWidth, y, width - laneLabelWidth, laneHeight);
     });
 
-    // Draw alignment lines if enabled (with box colors)
+    // Draw alignment lines as background guides before boxes
     if (app.settings.showAlignmentLines && boxes.length > 0) {
         // Collect time points with their colors
         const timePointsMap = new Map();
@@ -3829,22 +3911,33 @@ function exportToPNG() {
 // Helper function to wrap text for SVG (returns array of lines)
 function wrapTextSVG(text, maxWidth, charWidth) {
     const maxChars = Math.floor(maxWidth / charWidth);
-    const words = text.split(' ');
     const lines = [];
-    let currentLine = '';
+    const paragraphs = String(text || '').split(/\r?\n/);
 
-    for (let word of words) {
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        if (testLine.length > maxChars && currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-        } else {
-            currentLine = testLine;
+    paragraphs.forEach(paragraph => {
+        const words = paragraph.split(' ');
+        let currentLine = '';
+
+        // Preserve intentional blank lines
+        if (paragraph.trim() === '') {
+            lines.push('');
+            return;
         }
-    }
-    if (currentLine) {
-        lines.push(currentLine);
-    }
+
+        for (let word of words) {
+            const testLine = currentLine ? currentLine + ' ' + word : word;
+            if (testLine.length > maxChars && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+    });
+
     return lines;
 }
 
@@ -3953,7 +4046,7 @@ function exportToSVG() {
         svg += `  <rect x="${laneLabelWidth}" y="${y}" width="${width - laneLabelWidth}" height="${laneHeight}" fill="${index % 2 === 0 ? '#0f1419' : '#101520'}"/>\n`;
     });
 
-    // Alignment lines if enabled (with box colors)
+    // Alignment lines as background guides before boxes
     if (app.settings.showAlignmentLines && boxes.length > 0) {
         // Collect time points with their colors
         const timePointsMap = new Map();
@@ -4168,6 +4261,97 @@ function handleLaneNameChange() {
     }
 }
 
+const PRESET_TIME_THRESHOLDS = [0, 1000, 5000, 60000];
+
+function updateToolbarToggleButtons() {
+    const toggleIds = [
+        'config-show-alignment',
+        'config-show-labels',
+        'config-compact-view',
+        'config-auto-open-properties',
+        'config-lock-diagram'
+    ];
+
+    toggleIds.forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        const label = input.closest('.toolbar-toggle-btn');
+        if (label) {
+            label.classList.toggle('active', !!input.checked);
+        }
+    });
+}
+
+function syncTimeThresholdControl() {
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    if (!thresholdSelect) return;
+
+    const threshold = Number(app.settings.timeFormatThreshold || 0);
+    const customOption = thresholdSelect.querySelector('option[value="-1"]');
+    const isPreset = PRESET_TIME_THRESHOLDS.includes(threshold);
+
+    if (customOption) {
+        customOption.textContent = isPreset
+            ? 'Custom - Threshold'
+            : `Custom - Threshold (${threshold}ms)`;
+    }
+
+    thresholdSelect.value = isPreset ? String(threshold) : '-1';
+}
+
+function syncToolbarSettingsControls() {
+    const alignmentCheckbox = document.getElementById('config-show-alignment');
+    if (alignmentCheckbox) alignmentCheckbox.checked = !!app.settings.showAlignmentLines;
+
+    const labelsCheckbox = document.getElementById('config-show-labels');
+    if (labelsCheckbox) labelsCheckbox.checked = !!app.settings.showBoxLabels;
+
+    const compactCheckbox = document.getElementById('config-compact-view');
+    if (compactCheckbox) compactCheckbox.checked = !!app.settings.compactView;
+
+    const autoOpenCheckbox = document.getElementById('config-auto-open-properties');
+    if (autoOpenCheckbox) autoOpenCheckbox.checked = !!app.settings.autoOpenBoxProperties;
+
+    const lockCheckbox = document.getElementById('config-lock-diagram');
+    if (lockCheckbox) lockCheckbox.checked = !!app.diagram.locked;
+
+    syncTimeThresholdControl();
+    updateToolbarToggleButtons();
+}
+
+function handleTimeThresholdChange() {
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    if (!thresholdSelect) return;
+
+    if (thresholdSelect.value === '-1') {
+        const currentValue = Number(app.settings.timeFormatThreshold || 1000);
+        const input = prompt('Enter custom time threshold in milliseconds:', String(currentValue));
+
+        if (input === null) {
+            syncTimeThresholdControl();
+            return;
+        }
+
+        const customValue = parseInt(input, 10);
+        if (Number.isFinite(customValue) && customValue >= 0) {
+            app.settings.timeFormatThreshold = customValue;
+        } else {
+            showToast({
+                type: 'warning',
+                title: 'Invalid Threshold',
+                message: 'Please enter a non-negative number (milliseconds).',
+                duration: 2500
+            });
+        }
+    } else {
+        app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+    }
+
+    syncTimeThresholdControl();
+    handleSettingsChange();
+    autoSave();
+}
+
 // =====================================================
 // Settings Panel Functions
 // =====================================================
@@ -4200,10 +4384,7 @@ function showSettingsPanel() {
         pageTitleInput.value = app.diagram.title;
     }
 
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    if (thresholdSelect) {
-        thresholdSelect.value = app.settings.timeFormatThreshold.toString();
-    }
+    syncTimeThresholdControl();
 
     const alignmentCheckbox = document.getElementById('config-show-alignment');
     if (alignmentCheckbox) {
@@ -4219,6 +4400,8 @@ function showSettingsPanel() {
     if (autoOpenCheckbox) {
         autoOpenCheckbox.checked = app.settings.autoOpenBoxProperties;
     }
+
+    updateToolbarToggleButtons();
 
     // Deselect any box/lane
     app.selectedBoxId = null;
@@ -4240,7 +4423,9 @@ function handleSettingsChange() {
     // Time format threshold
     const thresholdSelect = document.getElementById('config-time-threshold');
     if (thresholdSelect) {
-        app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+        if (thresholdSelect.value !== '-1') {
+            app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+        }
     }
 
     // Alignment lines toggle
@@ -4261,6 +4446,9 @@ function handleSettingsChange() {
     if (autoOpenCheckbox) {
         app.settings.autoOpenBoxProperties = autoOpenCheckbox.checked;
     }
+
+    updateToolbarToggleButtons();
+    syncTimeThresholdControl();
 
     // Re-render to apply changes
     renderLanesCanvas();
@@ -4284,7 +4472,7 @@ function isEditingAllowed() {
         showToast({
             type: 'warning',
             title: 'Diagram Locked',
-            message: 'Unlock in Settings to edit.',
+            message: 'Disable Lock in the toolbar to edit.',
             duration: 2000
         });
         return false;
@@ -4294,7 +4482,6 @@ function isEditingAllowed() {
 
 function updateLockState() {
     const body = document.body;
-    const lockIndicator = document.getElementById('lock-indicator');
 
     if (app.diagram.locked) {
         body.classList.add('diagram-locked');
@@ -4306,6 +4493,12 @@ function updateLockState() {
         app.elements.diagramTitle.readOnly = false;
         app.elements.startTime.readOnly = false;
     }
+
+    const lockCheckbox = document.getElementById('config-lock-diagram');
+    if (lockCheckbox) {
+        lockCheckbox.checked = !!app.diagram.locked;
+    }
+    updateToolbarToggleButtons();
 }
 
 // =====================================================
@@ -4613,7 +4806,7 @@ function init() {
 
     const thresholdSelect = document.getElementById('config-time-threshold');
     if (thresholdSelect) {
-        thresholdSelect.addEventListener('change', handleSettingsChange);
+        thresholdSelect.addEventListener('change', handleTimeThresholdChange);
     }
 
     const alignmentCheckbox = document.getElementById('config-show-alignment');
@@ -4631,11 +4824,18 @@ function init() {
         autoOpenCheckbox.addEventListener('change', handleSettingsChange);
     }
 
+    ['config-show-alignment', 'config-show-labels', 'config-compact-view', 'config-auto-open-properties', 'config-lock-diagram']
+        .forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.addEventListener('change', updateToolbarToggleButtons);
+        });
+
     // Duration Scaling controls (PoC - Removable)
     initDurationScalingUI();
 
     // Initialize Minimap
     Minimap.init();
+    syncToolbarSettingsControls();
 
     // Click zoom label to reset to 100%
     app.elements.zoomLevel.style.cursor = 'pointer';
@@ -4935,7 +5135,7 @@ document.addEventListener('DOMContentLoaded', init);
 // - Right sidebar replaces floating properties panel
 // - Modal for diagram management
 // - Theme toggle (dark/light)
-// - Click-to-activate lane controls
+// - Lane list refinements
 // - Timeline Duration setting
 // - Lane color sync fix
 // =====================================================
@@ -4967,7 +5167,6 @@ const V2 = {
         this.initRightSidebar();
         this.initDiagramsModal();
         this.initThemeToggle();
-        this.initLaneControlsClick();
         this.initTimelineDuration();
         this.initLockToggle();
 
@@ -5015,8 +5214,8 @@ const V2 = {
             if (sBtn && sBtn.contains(e.target)) return;
             // Don't close if clicking on a box (that opens box properties)
             if (e.target.closest('.box')) return;
-            // Don't close if clicking on lane controls (that opens lane properties)
-            if (e.target.closest('.lane-controls')) return;
+            // Don't close if clicking on lane list items/actions
+            if (e.target.closest('.lane-item')) return;
             this.hideRightSidebar();
         });
 
@@ -5158,30 +5357,20 @@ const V2 = {
         if (theme === 'light') {
             document.body.classList.remove('dark-theme');
             document.body.classList.add('light-theme');
-            if (btn) btn.textContent = '☀';
+            if (btn) {
+                btn.classList.add('is-light');
+                btn.title = 'Switch to dark theme';
+                btn.setAttribute('aria-label', 'Switch to dark theme');
+            }
         } else {
             document.body.classList.remove('light-theme');
             document.body.classList.add('dark-theme');
-            if (btn) btn.textContent = '☽';
-        }
-    },
-
-    /**
-     * Lane controls: click-to-activate instead of hover
-     */
-    initLaneControlsClick() {
-        // Use event delegation on lane-list
-        const laneList = document.getElementById('lane-list');
-        if (!laneList) return;
-
-        // Close any open lane menu when clicking elsewhere
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.lane-controls')) {
-                document.querySelectorAll('.lane-controls.active').forEach(el => {
-                    el.classList.remove('active');
-                });
+            if (btn) {
+                btn.classList.remove('is-light');
+                btn.title = 'Switch to light theme';
+                btn.setAttribute('aria-label', 'Switch to light theme');
             }
-        });
+        }
     },
 
     /**
@@ -5264,8 +5453,7 @@ const V2 = {
             const pageTitleInput = document.getElementById('config-page-title');
             if (pageTitleInput) pageTitleInput.value = app.diagram.title;
 
-            const thresholdSelect = document.getElementById('config-time-threshold');
-            if (thresholdSelect) thresholdSelect.value = app.settings.timeFormatThreshold.toString();
+            syncTimeThresholdControl();
 
             const alignmentCb = document.getElementById('config-show-alignment');
             if (alignmentCb) alignmentCb.checked = app.settings.showAlignmentLines;
@@ -5278,6 +5466,7 @@ const V2 = {
 
             const lockCb = document.getElementById('config-lock-diagram');
             if (lockCb) lockCb.checked = app.diagram.locked;
+            updateToolbarToggleButtons();
 
             const durationInput = document.getElementById('config-timeline-duration');
             if (durationInput) durationInput.value = app.settings.timelineDuration || 8000;
@@ -5444,31 +5633,6 @@ function updateDiagramsBadge() {
     }
 }
 
-// Attach lane-controls click handler via event delegation
-document.addEventListener('click', (e) => {
-    if (!V2.isV2) return;
-
-    const controls = e.target.closest('.lane-controls');
-    if (controls) {
-        // If clicking the kebab area (the pseudo-element trigger zone)
-        // but NOT a button inside
-        if (!e.target.closest('.lane-control-btn') && !e.target.closest('.lane-delete-btn')) {
-            e.stopPropagation();
-            const wasActive = controls.classList.contains('active');
-
-            // Close all other open menus
-            document.querySelectorAll('.lane-controls.active').forEach(el => {
-                el.classList.remove('active');
-            });
-
-            // Toggle this one
-            if (!wasActive) {
-                controls.classList.add('active');
-            }
-        }
-    }
-});
-
 // Initialize V2 after the main init
 document.addEventListener('DOMContentLoaded', () => {
     // Small delay to ensure init() has completed
@@ -5513,16 +5677,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const container = app.elements.laneList;
         container.innerHTML = '';
-        const totalLanes = app.diagram.lanes.length;
 
         app.diagram.lanes.forEach((lane, index) => {
             const item = document.createElement('div');
             item.className = 'lane-item';
             item.dataset.laneId = lane.id;
             item.draggable = true;
-
-            const isFirst = index === 0;
-            const isLast = index === totalLanes - 1;
 
             const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -5531,18 +5691,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
                 <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
                 <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
-                <div class="lane-controls">
-                    <button class="lane-control-btn move-up" data-lane-id="${lane.id}" title="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
-                    <button class="lane-control-btn move-down" data-lane-id="${lane.id}" title="Move down" ${isLast ? 'disabled' : ''}>↓</button>
-                    <button class="lane-control-btn insert-before" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane before">+↑</button>
-                    <button class="lane-control-btn insert-after" data-lane-id="${lane.id}" data-index="${index}" title="Insert lane after">+↓</button>
-                    <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane">×</button>
-                </div>
+                <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane" aria-label="Delete lane">🗑</button>
             `;
 
             // Add click listener to open properties on the item (excluding controls)
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.lane-control-btn') || e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+                if (e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
                 showLanePropertiesPanel(lane.id);
             });
 
@@ -5591,7 +5745,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
-                const laneId = parseInt(e.target.dataset.laneId, 10);
+                const laneId = parseInt(btn.dataset.laneId, 10);
                 const lane = app.diagram.lanes.find(l => l.id === laneId);
                 const boxCount = app.diagram.getBoxesForLane(laneId).length;
 
@@ -5599,91 +5753,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     title: 'Delete Lane?',
                     message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
                     onConfirm: () => {
-                        app.diagram.removeLane(laneId);
-                        renderLaneList();
-                        renderLanesCanvas();
-                        updateTotalDuration();
+                        deleteLaneWithUndo(laneId);
                     }
                 });
             });
         });
 
-        // Move-up buttons
-        container.querySelectorAll('.lane-control-btn.move-up').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!isEditingAllowed()) return;
-                const laneId = parseInt(e.target.dataset.laneId, 10);
-                if (app.diagram.moveLane(laneId, 'up')) {
-                    renderLaneList();
-                    renderLanesCanvas();
-                }
-            });
-        });
+        // Attach lane drag/drop ordering handlers in V2 as well.
+        setupLaneDragAndDrop();
 
-        // Move-down buttons
-        container.querySelectorAll('.lane-control-btn.move-down').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!isEditingAllowed()) return;
-                const laneId = parseInt(e.target.dataset.laneId, 10);
-                if (app.diagram.moveLane(laneId, 'down')) {
-                    renderLaneList();
-                    renderLanesCanvas();
-                }
-            });
-        });
-
-        // Insert-before buttons
-        container.querySelectorAll('.lane-control-btn.insert-before').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!isEditingAllowed()) return;
-                const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.insertLaneAt(index);
-                renderLaneList();
-                renderLanesCanvas();
-            });
-        });
-
-        // Insert-after buttons
-        container.querySelectorAll('.lane-control-btn.insert-after').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!isEditingAllowed()) return;
-                const index = parseInt(e.target.dataset.index, 10);
-                app.diagram.insertLaneAt(index + 1);
-                renderLaneList();
-                renderLanesCanvas();
-            });
-        });
-
-        // Lane controls click-to-toggle (kebab menu)
-        container.querySelectorAll('.lane-controls').forEach(ctrl => {
-            ctrl.addEventListener('click', (e) => {
-                // If clicking the controls div itself (not a button inside), toggle open
-                if (!e.target.closest('.lane-control-btn') && !e.target.closest('.lane-delete-btn')) {
-                    e.stopPropagation();
-                    const wasOpen = ctrl.classList.contains('open');
-                    // Close all other open menus
-                    container.querySelectorAll('.lane-controls.open').forEach(c => c.classList.remove('open'));
-                    if (!wasOpen) {
-                        ctrl.classList.add('open');
-                    }
-                }
-            });
-        });
-
-        // Close lane menus when clicking outside
-        const closeLaneMenus = (e) => {
-            if (!e.target.closest('.lane-controls')) {
-                container.querySelectorAll('.lane-controls.open').forEach(c => c.classList.remove('open'));
-            }
-        };
-        document.removeEventListener('click', closeLaneMenus);
-        document.addEventListener('click', closeLaneMenus);
-
-        // Invoke global drag init if available (it attaches to container #lane-list)
+        // Invoke global drag init if available (legacy hook)
         if (typeof initDragAndDrop === 'function') initDragAndDrop();
     };
 
@@ -6477,10 +6556,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ruler) return;
         ruler.innerHTML = '';
 
-        // Fix: Use total settings duration
+        // Fix: Use settings duration while preserving compression ruler markers.
         const totalDuration = app.diagram.getTotalDuration();
         const settingsDuration = app.settings.timelineDuration || 8000;
-        const displayDuration = Math.max(totalDuration, settingsDuration);
+        const actualDuration = Math.max(totalDuration, settingsDuration);
+        const compressedDuration = Compression.enabled ? Compression.getCompressedDuration() : actualDuration;
+        const displayDuration = Math.max(compressedDuration, settingsDuration);
 
         let interval = 100;
         const intervals = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 600000];
@@ -6500,13 +6581,38 @@ document.addEventListener('DOMContentLoaded', () => {
         innerWrapper.style.height = '100%';
         ruler.appendChild(innerWrapper);
 
-        // Correct loop logic
-        for (let time = 0; time <= endTime; time += interval) {
-            const mark = document.createElement('div');
-            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
-            mark.style.left = `${msToPixels(time)}px`;
-            mark.innerHTML = `<span>${formatDuration(time)}</span>`;
-            innerWrapper.appendChild(mark);
+        if (Compression.enabled) {
+            const breakMarkers = Compression.getBreakMarkers();
+
+            // Draw marks at compressed positions while showing actual times.
+            for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
+                const actualTime = Compression.compressedToActual(compressedTime);
+                const mark = document.createElement('div');
+                mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
+                mark.style.left = `${msToPixels(compressedTime)}px`;
+                mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
+                innerWrapper.appendChild(mark);
+            }
+
+            // Restore orange compression break lines and labels on ruler.
+            breakMarkers.forEach(marker => {
+                const breakMark = document.createElement('div');
+                breakMark.className = 'ruler-break-marker';
+                breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
+                const actualGapSize = marker.actualEnd - marker.actualStart;
+                breakMark.title = `Gap: ${formatDuration(actualGapSize)} (${formatDuration(marker.actualStart)} → ${formatDuration(marker.actualEnd)})`;
+                breakMark.innerHTML = `<span class="break-label">${formatDuration(actualGapSize)}</span>`;
+                innerWrapper.appendChild(breakMark);
+            });
+        } else {
+            // Correct loop logic
+            for (let time = 0; time <= endTime; time += interval) {
+                const mark = document.createElement('div');
+                mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+                mark.style.left = `${msToPixels(time)}px`;
+                mark.innerHTML = `<span>${formatDuration(time)}</span>`;
+                innerWrapper.appendChild(mark);
+            }
         }
     };
 
@@ -6580,12 +6686,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const line = document.createElement('div');
             line.className = 'time-marker-line';
             line.style.backgroundColor = m.color;
-            line.style.height = `${lanesCanvasHeight + 2000}px`; // Ensure it covers scrollable height 
-            // IMPORTANT: dashed style? The user mentioned "dashed trailing lines".
-            // If they are dashed, we need border-style. 
-            // Assuming "time-marker-line" is solid usually. 
-            // If user meant "alignment lines" (guides), they are separate.
-            // But just in case, let's make sure these move with the container (which they do as they are children).
+            line.style.height = `${lanesCanvasHeight + 80}px`;
 
             const tick = document.createElement('div');
             tick.className = 'time-marker-tick';
