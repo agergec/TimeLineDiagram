@@ -103,11 +103,18 @@ npx serve .
 
 GitHub Pages - push to `main` to trigger automatic deployment.
 
+## JSON Format
+
+Diagram JSON structure, defaults, and import compatibility examples are documented in:
+
+- `JSON_FORMAT.md`
+
 ## Files
 
 ```
 ├── index.html          # Timeline Diagram Editor
 ├── app.js              # Editor logic
+├── JSON_FORMAT.md      # Diagram JSON schema, defaults, and examples
 ├── styles.css          # Editor styling
 ├── help.html           # Editor help & tutorial
 ├── sip-parser.html     # SIP Log Parser (HTML + CSS)

@@ -15,6 +15,16 @@
 </head>
 
 <body class="dark-theme">
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem('tld-theme') === 'light') {
+                    document.body.classList.remove('dark-theme');
+                    document.body.classList.add('light-theme');
+                }
+            } catch (_) {}
+        })();
+    </script>
     <div class="app-container">
 
         <!-- HEADER BAR (sip-parser-v2 style) -->
@@ -34,22 +44,67 @@
         <div class="toolbar">
             <div class="toolbar-left">
                 <!-- File Group -->
-                <button id="diagrams-toggle" class="toolbar-btn" title="Manage diagrams">
-                    📁 Diagrams <span id="diagrams-badge" class="badge empty">0</span>
+                <button id="diagrams-toggle" class="toolbar-btn toolbar-has-badge" title="Manage diagrams" aria-label="Manage diagrams">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    </svg>
+                    <span class="sr-only">Diagrams</span>
+                    <span id="diagrams-badge" class="badge empty">0</span>
                 </button>
                 <div class="toolbar-divider"></div>
-                <button id="save-json" class="toolbar-btn" title="Save diagram as JSON file">Save</button>
-                <button id="load-json" class="toolbar-btn" title="Load diagram from JSON file">Load</button>
+                <button id="save-json" class="toolbar-btn icon-btn icon-only" title="Download diagram as JSON file" aria-label="Download diagram as JSON file">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 4v10"></path>
+                        <path d="m8 10 4 4 4-4"></path>
+                        <path d="M5 19h14"></path>
+                    </svg>
+                    <span class="sr-only">Download</span>
+                </button>
+                <button id="load-json" class="toolbar-btn icon-btn icon-only" title="Load diagram from JSON file" aria-label="Load diagram from JSON file">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <path d="M12 16v-6"></path>
+                        <path d="m9 13 3-3 3 3"></path>
+                    </svg>
+                    <span class="sr-only">Load</span>
+                </button>
                 <div class="toolbar-divider"></div>
                 <!-- Export Group -->
-                <button id="share-url" class="toolbar-btn primary"
-                    title="Copy shareable URL to clipboard">Share</button>
-                <button id="export-png" class="toolbar-btn" title="Export as PNG image">PNG</button>
-                <button id="export-svg" class="toolbar-btn" title="Export as SVG vector">SVG</button>
+                <button id="share-url" class="toolbar-btn primary icon-btn icon-only"
+                    title="Copy shareable URL to clipboard" aria-label="Copy shareable URL to clipboard">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M10 14a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 1 0-7.07-7.07L10 6"></path>
+                        <path d="M14 10a5 5 0 0 0-7.07 0L5.52 11.4a5 5 0 0 0 7.07 7.08L14 17"></path>
+                    </svg>
+                    <span class="sr-only">Share</span>
+                </button>
+                <button id="export-png" class="toolbar-btn icon-btn icon-only" title="Export as PNG image" aria-label="Export as PNG image">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                        <circle cx="8" cy="10" r="1.5"></circle>
+                        <path d="m21 15-4-4-5 5-3-3-6 6"></path>
+                    </svg>
+                    <span class="sr-only">PNG</span>
+                </button>
+                <button id="export-svg" class="toolbar-btn icon-btn icon-only" title="Export as SVG vector" aria-label="Export as SVG vector">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="6" cy="7" r="2"></circle>
+                        <circle cx="18" cy="7" r="2"></circle>
+                        <circle cx="12" cy="17" r="2"></circle>
+                        <path d="M8 8.3 10.7 15"></path>
+                        <path d="M16 8.3 13.3 15"></path>
+                        <path d="M8 7h8"></path>
+                    </svg>
+                    <span class="sr-only">SVG</span>
+                </button>
                 <div class="toolbar-divider"></div>
                 <!-- Tools Group -->
-                <a href="sip-parser.html" class="toolbar-btn" title="Parse SIP logs to create timeline">SIP
-                    Parser</a>
+                <a href="sip-parser.html" class="toolbar-btn icon-btn icon-only" title="Open SIP Parser" aria-label="Open SIP Parser">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 12h4l2-4 4 8 2-4h6"></path>
+                    </svg>
+                    <span class="sr-only">SIP Parser</span>
+                </a>
             </div>
             <div class="toolbar-right">
                 <!-- Zoom Controls -->
@@ -63,21 +118,152 @@
                     <span class="measure-bar-sep">|</span>
                     <span class="measure-bar-label">E:</span>
                     <span id="measure-bar-end">—</span>
-                    <button id="measure-bar-pin" class="toolbar-btn icon-btn measure-bar-pin" title="Pin measurement">📌</button>
+                    <button id="measure-bar-pin" class="toolbar-btn icon-btn measure-bar-pin" title="Pin measurement" aria-label="Pin measurement">📌</button>
                 </div>
                 <div class="zoom-controls-v2">
-                    <button id="zoom-out" class="toolbar-btn icon-btn" title="Zoom Out">−</button>
+                    <button id="zoom-out" class="toolbar-btn icon-btn icon-only" title="Zoom Out" aria-label="Zoom Out">
+                        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                            <path d="M8 11h6"></path>
+                        </svg>
+                        <span class="sr-only">Zoom out</span>
+                    </button>
                     <span id="zoom-level" class="zoom-label">100%</span>
-                    <button id="zoom-in" class="toolbar-btn icon-btn" title="Zoom In">+</button>
-                    <button id="zoom-fit" class="toolbar-btn" title="Fit to View">Fit</button>
-                    <button id="compress-toggle" class="toolbar-btn icon-btn" title="Compress Empty Spaces">⇄</button>
+                    <button id="zoom-in" class="toolbar-btn icon-btn icon-only" title="Zoom In" aria-label="Zoom In">
+                        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                            <path d="M11 8v6"></path>
+                            <path d="M8 11h6"></path>
+                        </svg>
+                        <span class="sr-only">Zoom in</span>
+                    </button>
+                    <button id="zoom-fit" class="toolbar-btn icon-btn icon-only" title="Fit to View" aria-label="Fit to View">
+                        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M4 9V4h5"></path>
+                            <path d="M20 9V4h-5"></path>
+                            <path d="M4 15v5h5"></path>
+                            <path d="M20 15v5h-5"></path>
+                        </svg>
+                        <span class="sr-only">Fit</span>
+                    </button>
+                    <button id="compress-toggle" class="toolbar-btn icon-btn icon-only" title="Compress Empty Spaces" aria-label="Compress Empty Spaces">
+                        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6v12"></path>
+                            <path d="M21 6v12"></path>
+                            <path d="m9 8-4 4 4 4"></path>
+                            <path d="m15 8 4 4-4 4"></path>
+                        </svg>
+                        <span class="sr-only">Compress</span>
+                    </button>
                 </div>
-                <button id="measure-tool-btn" class="toolbar-btn icon-btn"
-                    title="Measurement Tool (⌘+Click & Drag)">📏</button>
+                <button id="measure-tool-btn" class="toolbar-btn icon-btn icon-only"
+                    title="Measurement Tool (⌘+Click & Drag)" aria-label="Measurement Tool">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="7" width="18" height="10" rx="2"></rect>
+                        <path d="M7 9v2"></path>
+                        <path d="M10 9v3"></path>
+                        <path d="M13 9v2"></path>
+                        <path d="M16 9v3"></path>
+                    </svg>
+                    <span class="sr-only">Measure</span>
+                </button>
                 <div class="toolbar-divider"></div>
-                <button id="settings-btn" class="toolbar-btn icon-btn" title="Diagram Settings">⚙️</button>
-                <button id="theme-toggle-btn" class="toolbar-btn icon-btn" title="Toggle dark/light theme">☽</button>
-                <a href="help.html" class="toolbar-btn icon-btn" title="Help & Tutorial">?</a>
+                <select id="config-time-threshold" class="toolbar-select"
+                    title="Switch from ms to seconds/minutes when duration exceeds this threshold">
+                    <option value="0">ms</option>
+                    <option value="1000" selected>>1s</option>
+                    <option value="5000">>5s</option>
+                    <option value="60000">>1m</option>
+                    <option value="-1">Custom - Threshold</option>
+                </select>
+                <label class="toolbar-toggle-btn icon-only" title="Display dashed lines at box start/end times">
+                    <input type="checkbox" id="config-show-alignment" checked>
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 4v2"></path>
+                        <path d="M12 9v2"></path>
+                        <path d="M12 14v2"></path>
+                        <path d="M12 19v1"></path>
+                    </svg>
+                    <span class="sr-only">Align</span>
+                </label>
+                <label class="toolbar-toggle-btn icon-only" title="Display persistent labels above narrow boxes">
+                    <input type="checkbox" id="config-show-labels">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 7h12"></path>
+                        <path d="M12 7v10"></path>
+                        <path d="M8 17h8"></path>
+                    </svg>
+                    <span class="sr-only">Labels</span>
+                </label>
+                <label class="toolbar-toggle-btn icon-only" title="Hide left lane headers to gain space">
+                    <input type="checkbox" id="config-compact-view">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="4" y="6" width="5" height="12" rx="1"></rect>
+                        <rect x="11" y="6" width="9" height="12" rx="1"></rect>
+                    </svg>
+                    <span class="sr-only">Compact</span>
+                </label>
+                <label class="toolbar-toggle-btn icon-only" title="Automatically open properties panel when creating a new box">
+                    <input type="checkbox" id="config-auto-open-properties">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3.5" y="5" width="10.5" height="14" rx="2"></rect>
+                        <path d="M6.5 9h4.5"></path>
+                        <path d="M6.5 12h4.5"></path>
+                        <path d="M6.5 15h4.5"></path>
+                        <path d="M13 12h8"></path>
+                        <path d="m17 8 4 4-4 4"></path>
+                    </svg>
+                    <span class="sr-only">Auto Open</span>
+                </label>
+                <label class="toolbar-toggle-btn icon-only" title="Prevent accidental edits">
+                    <input type="checkbox" id="config-lock-diagram">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+                        <path d="M8 10V7a4 4 0 1 1 8 0v3"></path>
+                    </svg>
+                    <span class="sr-only">Lock</span>
+                </label>
+                <div class="toolbar-divider"></div>
+                <button id="settings-btn" class="toolbar-btn icon-btn icon-only" title="Diagram Settings" aria-label="Diagram Settings">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 0 0-.59.22L3.05 9.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.39.3.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z" fill="currentColor" stroke="none"></path>
+                    </svg>
+                    <span class="sr-only">Settings</span>
+                </button>
+                <button id="theme-toggle-btn" class="toolbar-btn icon-btn icon-only" title="Toggle dark/light theme" aria-label="Toggle theme">
+                    <svg class="toolbar-icon icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M20 15.5A8.5 8.5 0 1 1 11.5 4a7 7 0 1 0 8.5 11.5z"></path>
+                    </svg>
+                    <svg class="toolbar-icon icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <path d="M12 2v2"></path>
+                        <path d="M12 20v2"></path>
+                        <path d="m4.9 4.9 1.4 1.4"></path>
+                        <path d="m17.7 17.7 1.4 1.4"></path>
+                        <path d="M2 12h2"></path>
+                        <path d="M20 12h2"></path>
+                        <path d="m4.9 19.1 1.4-1.4"></path>
+                        <path d="m17.7 6.3 1.4-1.4"></path>
+                    </svg>
+                    <span class="sr-only">Theme</span>
+                </button>
+                <a href="JSON_FORMAT.html" target="_blank" rel="noopener" class="toolbar-btn icon-btn icon-only" title="Open JSON format documentation" aria-label="Open JSON format documentation">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 4c-2 0-2 2-2 2v2c0 1-1 2-2 2 1 0 2 1 2 2v2s0 2 2 2"></path>
+                        <path d="M16 4c2 0 2 2 2 2v2c0 1 1 2 2 2-1 0-2 1-2 2v2s0 2-2 2"></path>
+                    </svg>
+                    <span class="sr-only">JSON Format</span>
+                </a>
+                <a href="help.html" class="toolbar-btn icon-btn icon-only" title="Help & Tutorial" aria-label="Help and tutorial">
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.7c-.8.8-1.8 1.3-1.8 2.8"></path>
+                        <circle cx="12" cy="17" r="0.8"></circle>
+                    </svg>
+                    <span class="sr-only">Help</span>
+                </a>
             </div>
         </div>
 
@@ -171,54 +357,6 @@
                             <small class="text-muted">Total canvas width in ms. Cannot be less than last box
                                 end.</small>
                         </div>
-                        <div class="form-group">
-                            <label for="config-time-threshold">Time Format Threshold</label>
-                            <select id="config-time-threshold" class="form-input">
-                                <option value="0">Always ms</option>
-                                <option value="1000" selected>Auto (> 1s)</option>
-                                <option value="5000">Auto (> 5s)</option>
-                                <option value="60000">Auto (> 1m)</option>
-                            </select>
-                            <small class="text-muted">Switch from ms to seconds/minutes if duration exceeds
-                                this.</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="config-show-alignment" checked>
-                                <span>Show Vertical Alignment Lines</span>
-                            </label>
-                            <small class="text-muted">Display dashed lines at box start/end times</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="config-show-labels">
-                                <span>Show Box Labels</span>
-                            </label>
-                            <small class="text-muted">Display persistent labels above narrow boxes</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="config-compact-view">
-                                <span>Compact View (Hide Lane Labels)</span>
-                            </label>
-                            <small class="text-muted">Hide left lane headers to gain space</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="config-auto-open-properties">
-                                <span>Auto-open Box Properties</span>
-                            </label>
-                            <small class="text-muted">Automatically open properties panel when creating a new
-                                box</small>
-                        </div>
-                        <div class="form-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="config-lock-diagram">
-                                <span>🔒 Lock Diagram</span>
-                            </label>
-                            <small class="text-muted">Prevent accidental edits</small>
-                        </div>
-
                         <!-- Timeline Display Settings -->
                         <hr class="section-divider">
                         <div class="form-group">
@@ -352,6 +490,9 @@
                         <div class="form-group">
                             <label>Lane Color Theme</label>
                             <div id="lane-palette" class="palette-grid"></div>
+                        </div>
+                        <div class="form-actions">
+                            <button id="delete-lane" class="toolbar-btn danger">Delete Lane</button>
                         </div>
                     </div>
 

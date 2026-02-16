@@ -1135,9 +1135,8 @@ function showToast(options) {
 
     if (actions) {
         html += `<div class="toast-actions"></div>`;
-    } else {
-        html += `<button class="toast-close">×</button>`;
     }
+    html += `<button class="toast-close" aria-label="Close notification" title="Close">×</button>`;
 
     toast.innerHTML = html;
 
@@ -1154,9 +1153,12 @@ function showToast(options) {
             });
             actionsContainer.appendChild(btn);
         });
-    } else {
-        // Close button
-        toast.querySelector('.toast-close').addEventListener('click', () => hideToast(toast));
+    }
+
+    // Close button (available for both action and non-action toasts)
+    const closeBtn = toast.querySelector('.toast-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => hideToast(toast));
     }
 
     container.appendChild(toast);
@@ -1889,6 +1891,12 @@ function deleteLaneWithUndo(laneId) {
 
     if (parseInt(app.selectedLaneId, 10) === laneId) {
         app.selectedLaneId = null;
+        const laneNameInput = document.getElementById('lane-name');
+        if (laneNameInput) laneNameInput.value = '';
+        if (typeof V2 !== 'undefined' && V2.isV2 && V2.currentMode === 'lane' && typeof V2.hideRightSidebar === 'function') {
+            V2.hideRightSidebar();
+        }
+        syncSelectedLaneUI();
     }
     if (app.selectedBoxId && removedBoxIds.has(app.selectedBoxId)) {
         app.selectedBoxId = null;
@@ -1948,6 +1956,30 @@ function deleteLaneWithUndo(laneId) {
     });
 }
 
+function syncSelectedLaneUI() {
+    const selectedLaneId = parseInt(app.selectedLaneId, 10);
+    const hasSelectedLane = Number.isInteger(selectedLaneId);
+
+    document.querySelectorAll('.lane-item').forEach(item => {
+        const laneId = parseInt(item.dataset.laneId, 10);
+        item.classList.toggle('is-selected', hasSelectedLane && laneId === selectedLaneId);
+    });
+
+    document.querySelectorAll('.lane-row').forEach(row => {
+        const laneId = parseInt(row.dataset.laneId, 10);
+        const isSelected = hasSelectedLane && laneId === selectedLaneId;
+        row.classList.toggle('is-selected', isSelected);
+        const label = row.querySelector('.lane-label');
+        if (label) label.classList.toggle('is-selected', isSelected);
+    });
+}
+
+function clearSelectedLaneSelection() {
+    if (app.selectedLaneId === null || typeof app.selectedLaneId === 'undefined') return;
+    app.selectedLaneId = null;
+    syncSelectedLaneUI();
+}
+
 // =====================================================
 // Rendering Functions
 // =====================================================
@@ -1958,6 +1990,7 @@ function renderLaneList() {
     app.diagram.lanes.forEach((lane, index) => {
         const item = document.createElement('div');
         item.className = 'lane-item';
+        if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
         item.dataset.laneId = lane.id;
         item.draggable = true;
 
@@ -1968,12 +2001,11 @@ function renderLaneList() {
             <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
             <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
             <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
-            <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane" aria-label="Delete lane">🗑</button>
         `;
 
         // Add click listener to open properties on the item (excluding controls)
         item.addEventListener('click', (e) => {
-            if (e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+            if (e.target.closest('.lane-color-btn')) return;
             showLanePropertiesPanel(lane.id);
         });
 
@@ -2017,25 +2049,6 @@ function renderLaneList() {
         container.appendChild(item);
     });
 
-    // Re-attach Delete buttons
-    container.querySelectorAll('.lane-delete-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!isEditingAllowed()) return;
-            const laneId = parseInt(btn.dataset.laneId, 10);
-            const lane = app.diagram.lanes.find(l => l.id === laneId);
-            const boxCount = app.diagram.getBoxesForLane(laneId).length;
-
-            showConfirmToast({
-                title: 'Delete Lane?',
-                message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
-                onConfirm: () => {
-                    deleteLaneWithUndo(laneId);
-                }
-            });
-        });
-    });
-
     // Invoke global drag init if available (it attaches to container #lane-list)
     if (typeof initDragAndDrop === 'function') initDragAndDrop();
     container.querySelectorAll('.lane-color-btn').forEach(btn => {
@@ -2049,6 +2062,7 @@ function renderLaneList() {
 
     // Drag and drop for reordering
     setupLaneDragAndDrop();
+    syncSelectedLaneUI();
 }
 
 function setupLaneDragAndDrop() {
@@ -2248,6 +2262,7 @@ function renderLanesCanvas() {
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
         row.className = 'lane-row';
+        if (parseInt(app.selectedLaneId, 10) === lane.id) row.classList.add('is-selected');
         row.dataset.laneId = lane.id;
         // Min-width for scrolling - considering sticky label
         // Note: If labels are hidden, --lane-label-width is 0px
@@ -2255,6 +2270,7 @@ function renderLanesCanvas() {
 
         const label = document.createElement('div');
         label.className = 'lane-label';
+        if (parseInt(app.selectedLaneId, 10) === lane.id) label.classList.add('is-selected');
         label.innerHTML = escapeHtml(lane.name).replace(/\n/g, '<br>');
         label.title = lane.name;
 
@@ -2299,6 +2315,7 @@ function renderLanesCanvas() {
     renderAlignmentCanvasOverlay();
     renderTimeMarkers();
     Minimap.render();
+    syncSelectedLaneUI();
 }
 
 function createBoxElement(box) {
@@ -2614,6 +2631,10 @@ function selectBox(boxId, isNewBox = false) {
     });
 
     app.selectedBoxId = boxId;
+    if (app.selectedLaneId !== null) {
+        app.selectedLaneId = null;
+        syncSelectedLaneUI();
+    }
 
     // Select new
     const boxEl = document.querySelector(`.timeline-box[data-box-id="${boxId}"]`);
@@ -2645,6 +2666,7 @@ function deselectBox() {
     // Remove glimpsed state from pick-start button
     const pickBtn = document.getElementById('pick-start-btn');
     if (pickBtn) pickBtn.classList.remove('glimpsed');
+    syncSelectedLaneUI();
 }
 
 function handleTrackMouseDown(e) {
@@ -3329,6 +3351,25 @@ function handleDeleteBox() {
     deselectBox();
     renderLanesCanvas();
     updateTotalDuration();
+}
+
+function handleDeleteLane(laneId = null) {
+    if (!isEditingAllowed()) return;
+
+    const resolvedLaneId = laneId !== null ? parseInt(laneId, 10) : parseInt(app.selectedLaneId, 10);
+    if (!Number.isInteger(resolvedLaneId)) return;
+
+    const lane = app.diagram.lanes.find(l => l.id === resolvedLaneId);
+    if (!lane) return;
+
+    const boxCount = app.diagram.getBoxesForLane(resolvedLaneId).length;
+    showConfirmToast({
+        title: 'Delete Lane?',
+        message: `"${lane.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
+        onConfirm: () => {
+            deleteLaneWithUndo(resolvedLaneId);
+        }
+    });
 }
 
 // =====================================================
@@ -4219,6 +4260,7 @@ function showLanePropertiesPanel(laneId) {
     app.selectedBoxId = null;
     app.selectedLaneId = laneId;
     document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+    syncSelectedLaneUI();
 
     // Set current lane name
     const laneNameInput = document.getElementById('lane-name');
@@ -4407,6 +4449,7 @@ function showSettingsPanel() {
     app.selectedBoxId = null;
     app.selectedLaneId = null;
     document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+    syncSelectedLaneUI();
 
     panel.classList.remove('hidden');
     if (settingsBtn) settingsBtn.classList.add('active');
@@ -4999,6 +5042,10 @@ function init() {
     }
 
     document.getElementById('delete-box').addEventListener('click', handleDeleteBox);
+    const deleteLaneBtn = document.getElementById('delete-lane');
+    if (deleteLaneBtn) {
+        deleteLaneBtn.addEventListener('click', () => handleDeleteLane());
+    }
 
     // Global mouse events for dragging
     document.addEventListener('mousemove', handleMouseMove);
@@ -5052,11 +5099,43 @@ function init() {
         }
     });
 
+    // Click-away lane deselection
+    document.addEventListener('mousedown', (e) => {
+        if (app.selectedLaneId === null || typeof app.selectedLaneId === 'undefined') return;
+
+        // Keep selection when interacting with lane-specific controls/areas
+        if (
+            e.target.closest('.lane-item') ||
+            e.target.closest('.lane-label') ||
+            e.target.closest('#lane-props')
+        ) {
+            return;
+        }
+
+        clearSelectedLaneSelection();
+    });
+
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            if (app.selectedBoxId && document.activeElement.tagName !== 'INPUT') {
+            const active = document.activeElement;
+            const isTextInputActive = !!active && (
+                active.tagName === 'INPUT' ||
+                active.tagName === 'TEXTAREA' ||
+                active.tagName === 'SELECT' ||
+                active.isContentEditable
+            );
+            if (isTextInputActive) return;
+
+            if (app.selectedBoxId) {
+                e.preventDefault();
                 handleDeleteBox();
+                return;
+            }
+            if (app.selectedLaneId) {
+                e.preventDefault();
+                handleDeleteLane();
+                return;
             }
         }
         if (e.key === 'Escape') {
@@ -5448,6 +5527,7 @@ const V2 = {
             app.selectedBoxId = null;
             app.selectedLaneId = null;
             document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+            syncSelectedLaneUI();
 
             // Populate settings values
             const pageTitleInput = document.getElementById('config-page-title');
@@ -5555,6 +5635,7 @@ const V2 = {
             app.selectedBoxId = null;
             app.selectedLaneId = laneId;
             document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
+            syncSelectedLaneUI();
 
             // Set lane name
             const laneNameInput = document.getElementById('lane-name');
@@ -5681,6 +5762,7 @@ document.addEventListener('DOMContentLoaded', () => {
         app.diagram.lanes.forEach((lane, index) => {
             const item = document.createElement('div');
             item.className = 'lane-item';
+            if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
             item.dataset.laneId = lane.id;
             item.draggable = true;
 
@@ -5691,12 +5773,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="lane-drag-handle" title="Drag to reorder">⋮⋮</span>
                 <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
                 <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
-                <button class="lane-delete-btn" data-lane-id="${lane.id}" title="Delete lane" aria-label="Delete lane">🗑</button>
             `;
 
             // Add click listener to open properties on the item (excluding controls)
             item.addEventListener('click', (e) => {
-                if (e.target.closest('.lane-delete-btn') || e.target.closest('.lane-color-btn')) return;
+                if (e.target.closest('.lane-color-btn')) return;
                 showLanePropertiesPanel(lane.id);
             });
 
@@ -5740,27 +5821,19 @@ document.addEventListener('DOMContentLoaded', () => {
             container.appendChild(item);
         });
 
-        // Re-attach Delete buttons
-        container.querySelectorAll('.lane-delete-btn').forEach(btn => {
+        // Attach lane drag/drop ordering handlers in V2 as well.
+        setupLaneDragAndDrop();
+        syncSelectedLaneUI();
+
+        // Lane color swatch should open lane properties in V2
+        container.querySelectorAll('.lane-color-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (!isEditingAllowed()) return;
-                const laneId = parseInt(btn.dataset.laneId, 10);
-                const lane = app.diagram.lanes.find(l => l.id === laneId);
-                const boxCount = app.diagram.getBoxesForLane(laneId).length;
-
-                showConfirmToast({
-                    title: 'Delete Lane?',
-                    message: `"${lane?.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
-                    onConfirm: () => {
-                        deleteLaneWithUndo(laneId);
-                    }
-                });
+                const laneId = parseInt(e.target.dataset.laneId, 10);
+                showLanePropertiesPanel(laneId);
             });
         });
-
-        // Attach lane drag/drop ordering handlers in V2 as well.
-        setupLaneDragAndDrop();
 
         // Invoke global drag init if available (legacy hook)
         if (typeof initDragAndDrop === 'function') initDragAndDrop();
@@ -5796,6 +5869,7 @@ document.addEventListener('DOMContentLoaded', () => {
         app.diagram.lanes.forEach(lane => {
             const row = document.createElement('div');
             row.className = 'lane-row';
+            if (parseInt(app.selectedLaneId, 10) === lane.id) row.classList.add('is-selected');
             row.dataset.laneId = lane.id;
             // Min-width for scrolling - considering sticky label
             // Note: If labels are hidden, --lane-label-width is 0px
@@ -5803,6 +5877,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const label = document.createElement('div');
             label.className = 'lane-label';
+            if (parseInt(app.selectedLaneId, 10) === lane.id) label.classList.add('is-selected');
             label.innerHTML = escapeHtml(lane.name).replace(/\n/g, '<br>');
             label.title = lane.name;
 
@@ -5847,6 +5922,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAlignmentCanvasOverlay();
         renderTimeMarkers();
         Minimap.render();
+        syncSelectedLaneUI();
     };
 
     // Compact View (Hide Labels)

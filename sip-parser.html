@@ -1544,6 +1544,16 @@
 </head>
 
 <body class="dark-theme">
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem('sip_parser_theme') === 'light') {
+                    document.body.classList.remove('dark-theme');
+                    document.body.classList.add('light-theme');
+                }
+            } catch (_) {}
+        })();
+    </script>
     <div class="app-shell">
 
         <!-- HEADER BAR -->

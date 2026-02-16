@@ -676,6 +676,13 @@ body.show-box-labels .lane-row {
     overflow: visible;
 }
 
+/* Keep first-lane persistent labels inside the canvas viewport. */
+body.show-box-labels .lanes-canvas .lane-row:first-of-type .box-floating-label {
+    bottom: calc(100% - 10px);
+    margin-bottom: 0;
+    z-index: 30;
+}
+
 /* =====================================================
    Canvas Container
    ===================================================== */
@@ -1208,6 +1215,11 @@ body.show-box-labels .lane-row {
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-md);
     border-top: 1px solid var(--border-color);
+}
+
+#delete-box,
+#delete-lane {
+    width: 100%;
 }
 
 /* Pick Start Button */
@@ -2072,6 +2084,8 @@ body.show-box-labels .lane-row {
     cursor: pointer;
     padding: 0;
     line-height: 1;
+    margin-left: 4px;
+    flex-shrink: 0;
 }
 
 .toast-close:hover {
@@ -3152,8 +3166,8 @@ body.hide-lane-labels .lane-label-spacer {
 
 /* Lane Name Div: Multi-line but constrained */
 .lane-name-div {
-    font-size: 11px;
-    line-height: 1.1;
+    font-size: 10px;
+    line-height: 1.0;
     max-height: 100%;
     overflow: hidden;
     display: -webkit-box;
@@ -3239,41 +3253,52 @@ html, body,
 }
 
 /* =====================================================
-   Lane Row Actions (No Kebab Menu)
+   Lane Selection & Alignment Refinements
    ===================================================== */
 .lane-item > .lane-delete-btn {
-    margin-left: auto;
-    opacity: 0.45 !important;
-    transform: none !important;
-    pointer-events: auto !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: var(--text-muted) !important;
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    display: inline-flex;
+    display: none !important;
+}
+
+.lane-row,
+.lane-item {
+    height: 46px !important;
+    min-height: 46px !important;
+}
+
+.lane-label {
+    min-height: 46px !important;
+    display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    line-height: 1;
-    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-.lane-item:hover > .lane-delete-btn,
-.lane-item:focus-within > .lane-delete-btn {
-    opacity: 1 !important;
-    color: var(--text-secondary) !important;
+.lane-item {
+    align-items: center !important;
 }
 
-.lane-item > .lane-delete-btn:hover {
-    background: rgba(239, 68, 68, 0.12) !important;
-    border-color: rgba(239, 68, 68, 0.35) !important;
-    color: var(--danger) !important;
+.lane-color-btn {
+    align-self: center !important;
 }
 
-@media (max-width: 900px) {
-    .lane-item > .lane-delete-btn {
-        opacity: 1 !important;
-    }
+.lane-name-div {
+    margin-bottom: 0 !important;
+    min-height: 20px !important;
+    align-self: center !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+}
+
+.lane-item.is-selected {
+    box-shadow: inset 3px 0 0 var(--accent-primary);
+    background: rgba(99, 102, 241, 0.16) !important;
+}
+
+.lane-item.is-selected .lane-name-div {
+    border-color: rgba(129, 140, 248, 0.55) !important;
+    background: rgba(99, 102, 241, 0.12) !important;
+}
+
+.lane-row.is-selected .lane-label,
+.lane-label.is-selected {
+    box-shadow: inset 3px 0 0 var(--accent-primary);
+    background: rgba(99, 102, 241, 0.12) !important;
 }
