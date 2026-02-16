@@ -6,6 +6,7 @@ const APP_VERSION = '2.0.0';
 
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
+const DEFAULT_LANE_HEIGHT = 46;
 const DEFAULT_TIMELINE_SETTINGS = {
     timeFormatThreshold: 1000,
     showAlignmentLines: true,
@@ -33,6 +34,47 @@ function normalizeTimelineSettings(settings = {}) {
         compactView: !!merged.compactView,
         timelineDuration: Math.max(1000, parseInt(merged.timelineDuration, 10) || 8000)
     };
+}
+
+function getLaneHeightPx() {
+    const cssLaneHeight = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--lane-height'),
+        10
+    );
+    return Number.isFinite(cssLaneHeight) && cssLaneHeight > 0
+        ? cssLaneHeight
+        : DEFAULT_LANE_HEIGHT;
+}
+
+function bindLaneNameInputOnce() {
+    const laneNameInput = document.getElementById('lane-name');
+    if (!laneNameInput || laneNameInput.dataset.v2LaneNameBound === '1') return;
+
+    // Clone once to clear pre-V2 listeners, then bind a single listener set.
+    const newInput = laneNameInput.cloneNode(true);
+    newInput.dataset.v2LaneNameBound = '1';
+    laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
+
+    const syncLaneName = () => {
+        if (app.selectedLaneId) {
+            app.diagram.renameLane(parseInt(app.selectedLaneId, 10), newInput.value);
+            renderLaneList();
+            renderLanesCanvas();
+            autoSave();
+        }
+    };
+
+    newInput.addEventListener('input', syncLaneName);
+    newInput.addEventListener('change', syncLaneName);
+    newInput.addEventListener('keydown', (e) => {
+        // Enter = apply/blur, Shift+Enter = newline.
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            newInput.blur();
+        }
+    });
 }
 
 function readImportedLaneColor(lane, fallback) {
@@ -263,6 +305,7 @@ const app = {
     measureToolActive: false, // Toggle measurement mode without holding Ctrl/Cmd
     measureStart: null,
     measureEnd: null,
+    measureSnapPoints: null,
     pinnedMeasurementData: null, // Stored measurement from loaded diagram
 
     // Global settings
@@ -2890,8 +2933,10 @@ function handleMouseMove(e) {
 
 function handleMouseUp(e) {
     if (!app.isDragging || !app.dragData) return;
+    const dragType = app.dragData.type;
+    const didMove = !!app.dragData.didMove;
 
-    if (app.dragData.type === 'create') {
+    if (dragType === 'create') {
         const rect = app.dragData.track.getBoundingClientRect();
         const endX = e.clientX - rect.left;
         const dist = Math.abs(endX - app.dragData.startX);
@@ -2940,45 +2985,54 @@ function handleMouseUp(e) {
             // Select the box (and open properties if auto-open is enabled)
             selectBox(box.id, true);
         }
-    } else if (app.dragData.type === 'move' || app.dragData.type === 'resize') {
-        // Recalculate compression gaps after moving/resizing
-        if (Compression.enabled) {
-            Compression.invalidate();
-            renderTimelineRuler();
-            renderLanesCanvas();
-        } else {
-            renderTimelineRuler();
-        }
-        // Always finalize marker and minimap positions after drag/resize.
-        renderTimeMarkers();
-        Minimap.render();
-        renderAlignmentCanvasOverlay();
-        updateTotalDuration();
+    } else if (dragType === 'move' || dragType === 'resize') {
+        // Only finalize drag visuals when there was real movement.
+        // This prevents compression-mode re-renders from swallowing a simple click.
+        if (didMove) {
+            // Recalculate compression gaps after moving/resizing
+            if (Compression.enabled) {
+                Compression.invalidate();
+                renderTimelineRuler();
+                renderLanesCanvas();
+            } else {
+                renderTimelineRuler();
+            }
+            // Always finalize marker and minimap positions after drag/resize.
+            renderTimeMarkers();
+            Minimap.render();
+            renderAlignmentCanvasOverlay();
+            updateTotalDuration();
 
-        // After drag/resize: only update properties values if sidebar already shows box props.
-        // Do NOT auto-open the sidebar — that should only happen on deliberate click.
-        if (V2 && V2.isV2) {
-            if (V2.currentMode === 'box' && app.selectedBoxId) {
-                // Sidebar already open in box mode — just refresh values
-                const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
-                if (box) {
-                    app.elements.boxLabel.value = box.label;
-                    app.elements.boxColor.value = box.color;
-                    app.elements.boxStart.value = box.startOffset;
-                    app.elements.boxDuration.value = box.duration;
-                    if (app.elements.boxEnd) app.elements.boxEnd.value = box.startOffset + box.duration;
-                    const baseTime = parseTime(app.diagram.startTime);
-                    app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
-                    app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+            // After drag/resize: only update properties values if sidebar already shows box props.
+            // Do NOT auto-open the sidebar — that should only happen on deliberate click.
+            if (V2 && V2.isV2) {
+                if (V2.currentMode === 'box' && app.selectedBoxId) {
+                    // Sidebar already open in box mode — just refresh values
+                    const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+                    if (box) {
+                        app.elements.boxLabel.value = box.label;
+                        app.elements.boxColor.value = box.color;
+                        app.elements.boxStart.value = box.startOffset;
+                        app.elements.boxDuration.value = box.duration;
+                        if (app.elements.boxEnd) app.elements.boxEnd.value = box.startOffset + box.duration;
+                        const baseTime = parseTime(app.diagram.startTime);
+                        app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
+                        app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
+                    }
                 }
+            } else {
+                updatePropertiesPanel();
             }
         } else {
-            updatePropertiesPanel();
+            // No movement: keep DOM stable and let the click handler open properties.
+            if (typeof renderAlignmentCanvasOverlay === 'function') {
+                renderAlignmentCanvasOverlay();
+            }
         }
     }
 
     // Preserve didMove flag for the click handler (fires after mouseup)
-    app.lastDragDidMove = !!(app.dragData && app.dragData.didMove);
+    app.lastDragDidMove = didMove;
     app.isDragging = false;
     app.isActivelyDraggingOrResizing = false;
     app.dragData = null;
@@ -2989,31 +3043,51 @@ function handleMouseUp(e) {
 // =====================================================
 const SNAP_THRESHOLD = 8; // pixels
 
-function getSnapPoints() {
-    // Get lane label width for offset calculation
-    const laneLabelWidth = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--lane-label-width').replace('px', ''), 10) || 160;
-
-    // Collect all unique visual edge points from boxes
-    const snapPoints = [];
-    app.diagram.boxes.forEach(box => {
-        const visualOffset = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-        const startX = msToPixels(visualOffset) + laneLabelWidth;
-        const endX = startX + getBoxVisualWidth(box.duration);
-        snapPoints.push({ x: startX, time: box.startOffset });
-        snapPoints.push({ x: endX, time: box.startOffset + box.duration });
-    });
-
-    return snapPoints;
+function getLaneLabelWidthPx() {
+    return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width'), 10) || 160;
 }
 
-function snapToAlignmentLine(x) {
-    const snapPoints = getSnapPoints();
+function visualMsToActualMs(visualMs) {
+    const safeVisualMs = Math.max(0, visualMs);
+    return Compression.enabled ? Compression.compressedToActual(safeVisualMs) : safeVisualMs;
+}
+
+function getMeasurementSnapPoints() {
+    const canvas = app.elements.lanesCanvas;
+    if (!canvas) return [];
+    const canvasRect = canvas.getBoundingClientRect();
+    const pointsByX = new Map();
+
+    const addPoint = (x, actualTime) => {
+        const key = Math.round(x * 1000) / 1000;
+        if (!pointsByX.has(key)) {
+            pointsByX.set(key, { x, actualTime });
+        }
+    };
+
+    // Snap to actual rendered box edges (same geometry user sees),
+    // independent from alignment overlay layer coordinates.
+    canvas.querySelectorAll('.timeline-box[data-box-id]').forEach(boxEl => {
+        const boxId = parseInt(boxEl.dataset.boxId, 10);
+        const box = app.diagram.boxes.find(b => b.id === boxId);
+        if (!box) return;
+
+        const boxRect = boxEl.getBoundingClientRect();
+        const leftX = boxRect.left - canvasRect.left + canvas.scrollLeft;
+        const rightX = boxRect.right - canvasRect.left + canvas.scrollLeft;
+        addPoint(leftX, box.startOffset);
+        addPoint(rightX, box.startOffset + box.duration);
+    });
+
+    return Array.from(pointsByX.values()).sort((a, b) => a.x - b.x);
+}
+
+function getClosestMeasurementSnapPoint(rawX, snapPoints = getMeasurementSnapPoints()) {
     let closestPoint = null;
     let closestDist = SNAP_THRESHOLD;
 
     for (const point of snapPoints) {
-        const dist = Math.abs(point.x - x);
+        const dist = Math.abs(point.x - rawX);
         if (dist < closestDist) {
             closestDist = dist;
             closestPoint = point;
@@ -3023,23 +3097,31 @@ function snapToAlignmentLine(x) {
     return closestPoint;
 }
 
-function startMeasurement(e) {
+function resolveMeasurementPoint(clientX, clientY, snapPoints = getMeasurementSnapPoints()) {
     const canvas = app.elements.lanesCanvas;
     const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left + canvas.scrollLeft;
-    const y = e.clientY - rect.top + canvas.scrollTop;
-    let clientX = e.clientX;
+    const rawX = clientX - rect.left + canvas.scrollLeft;
+    const y = clientY - rect.top + canvas.scrollTop;
+    const snapPoint = getClosestMeasurementSnapPoint(rawX, snapPoints);
+    const resolvedX = snapPoint ? snapPoint.x : rawX;
 
-    // Try to snap to alignment line
-    const snapPoint = snapToAlignmentLine(x);
-    if (snapPoint) {
-        x = snapPoint.x;
-        clientX = rect.left + snapPoint.x - canvas.scrollLeft;
-    }
+    return {
+        x: resolvedX,
+        y,
+        clientX: rect.left + resolvedX - canvas.scrollLeft,
+        clientY,
+        snapped: !!snapPoint,
+        snapTimeMs: snapPoint ? snapPoint.actualTime : null
+    };
+}
+
+function startMeasurement(e) {
+    app.measureSnapPoints = getMeasurementSnapPoints();
+    const resolvedPoint = resolveMeasurementPoint(e.clientX, e.clientY, app.measureSnapPoints);
 
     app.isMeasuring = true;
-    app.measureStart = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
-    app.measureEnd = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
+    app.measureStart = { ...resolvedPoint };
+    app.measureEnd = { ...resolvedPoint };
 
     // Show measurement overlay
     const overlay = document.getElementById('measurement-overlay');
@@ -3052,20 +3134,8 @@ function startMeasurement(e) {
 function updateMeasurement(e) {
     if (!app.isMeasuring) return;
 
-    const canvas = app.elements.lanesCanvas;
-    const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left + canvas.scrollLeft;
-    const y = e.clientY - rect.top + canvas.scrollTop;
-    let clientX = e.clientX;
-
-    // Try to snap to alignment line
-    const snapPoint = snapToAlignmentLine(x);
-    if (snapPoint) {
-        x = snapPoint.x;
-        clientX = rect.left + snapPoint.x - canvas.scrollLeft;
-    }
-
-    app.measureEnd = { x, y, clientX, clientY: e.clientY, snapped: !!snapPoint };
+    const snapPoints = app.measureSnapPoints || getMeasurementSnapPoints();
+    app.measureEnd = resolveMeasurementPoint(e.clientX, e.clientY, snapPoints);
     updateMeasurementDisplay();
 }
 
@@ -3073,6 +3143,7 @@ function endMeasurement() {
     if (!app.isMeasuring) return;
 
     app.isMeasuring = false;
+    app.measureSnapPoints = null;
 
     // If pinned, keep visible; otherwise fade after delay
     if (!app.measurePinned) {
@@ -3125,6 +3196,7 @@ function toggleMeasurementPin() {
 function closeMeasurement() {
     app.isMeasuring = false;
     app.measurePinned = false;
+    app.measureSnapPoints = null;
     app.measureStart = null;
     app.measureEnd = null;
     const overlay = document.getElementById('measurement-overlay');
@@ -3178,14 +3250,14 @@ function restorePinnedMeasurement() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const laneLabelWidth = 160;
+    const laneLabelWidth = getLaneLabelWidthPx();
 
     // Restore measurement coordinates
     const startX = app.pinnedMeasurementData.startX;
     const endX = app.pinnedMeasurementData.endX;
 
     // Calculate Y position (center of lanes area)
-    const lanesAreaHeight = app.diagram.lanes.length * 50; // 50px per lane
+    const lanesAreaHeight = app.diagram.lanes.length * getLaneHeightPx();
     const y = lanesAreaHeight / 2;
 
     // Convert canvas X to client X
@@ -3193,8 +3265,8 @@ function restorePinnedMeasurement() {
     const clientEndX = rect.left + endX - canvas.scrollLeft;
     const clientY = rect.top + y - canvas.scrollTop;
 
-    app.measureStart = { x: startX, y: y, clientX: clientStartX, clientY: clientY, snapped: false };
-    app.measureEnd = { x: endX, y: y, clientX: clientEndX, clientY: clientY, snapped: false };
+    app.measureStart = { x: startX, y: y, clientX: clientStartX, clientY: clientY, snapped: false, snapTimeMs: null };
+    app.measureEnd = { x: endX, y: y, clientX: clientEndX, clientY: clientY, snapped: false, snapTimeMs: null };
     app.measurePinned = true;
 
     // Show measurement overlay
@@ -3220,21 +3292,20 @@ function updateMeasurementDisplay() {
     const endX = app.measureEnd.clientX;
     const endY = app.measureEnd.clientY;
 
-    // Calculate visual positions in timeline coordinates (subtract lane label width)
-    const visualStartMs = pixelsToMs(Math.min(app.measureStart.x, app.measureEnd.x) - 160);
-    const visualEndMs = pixelsToMs(Math.max(app.measureStart.x, app.measureEnd.x) - 160);
+    const laneLabelWidth = getLaneLabelWidthPx();
+    const leftPoint = app.measureStart.x <= app.measureEnd.x ? app.measureStart : app.measureEnd;
+    const rightPoint = leftPoint === app.measureStart ? app.measureEnd : app.measureStart;
 
-    // In compression mode, convert visual positions to actual times
-    let actualStartMs, actualEndMs, actualDuration;
-    if (Compression.enabled) {
-        actualStartMs = Compression.compressedToActual(Math.max(0, visualStartMs));
-        actualEndMs = Compression.compressedToActual(Math.max(0, visualEndMs));
-        actualDuration = actualEndMs - actualStartMs;
-    } else {
-        actualStartMs = Math.max(0, visualStartMs);
-        actualEndMs = Math.max(0, visualEndMs);
-        actualDuration = actualEndMs - actualStartMs;
-    }
+    const leftVisualMs = pixelsToMs(leftPoint.x - laneLabelWidth);
+    const rightVisualMs = pixelsToMs(rightPoint.x - laneLabelWidth);
+
+    const actualStartMs = Number.isFinite(leftPoint.snapTimeMs)
+        ? leftPoint.snapTimeMs
+        : visualMsToActualMs(leftVisualMs);
+    const actualEndMs = Number.isFinite(rightPoint.snapTimeMs)
+        ? rightPoint.snapTimeMs
+        : visualMsToActualMs(rightVisualMs);
+    const actualDuration = Math.max(0, actualEndMs - actualStartMs);
 
     // Update SVG line
     const svgRect = overlay.getBoundingClientRect();
@@ -3570,6 +3641,51 @@ function wrapText(ctx, text, maxWidth, lineHeight) {
     return lines;
 }
 
+function getAdaptiveRulerInterval() {
+    let interval = 100;
+    const intervals = [
+        0.001, 0.002, 0.005,
+        0.01, 0.02, 0.05,
+        0.1, 0.2, 0.5,
+        1, 2, 5,
+        10, 20, 50,
+        100, 200, 500,
+        1000, 2000, 5000,
+        10000, 30000, 60000,
+        120000, 300000, 600000
+    ];
+
+    for (const int of intervals) {
+        if (msToPixels(int) >= 60) {
+            interval = int;
+            break;
+        }
+    }
+
+    if (interval === 100 && msToPixels(600000) < 60) {
+        interval = 600000;
+    }
+
+    return interval;
+}
+
+function getExportTimelineMetrics() {
+    const settingsDuration = app.settings.timelineDuration || 0;
+    const actualDuration = Math.max(app.diagram.getTotalDuration(), settingsDuration, DEFAULT_MIN_TIMELINE_MS);
+    const visualDuration = Compression.enabled
+        ? Math.max(Compression.getCompressedDuration(), DEFAULT_MIN_TIMELINE_MS)
+        : actualDuration;
+    const trailingSpace = app.settings.trailingSpace || 0;
+    const endTime = visualDuration + trailingSpace;
+    return {
+        actualDuration,
+        visualDuration,
+        trailingSpace,
+        endTime,
+        interval: getAdaptiveRulerInterval()
+    };
+}
+
 function exportToPNG() {
     // Use manual canvas rendering for full control
     const lanes = app.diagram.lanes;
@@ -3577,32 +3693,36 @@ function exportToPNG() {
 
     const scale = 2; // High DPI
     const headerHeight = 50;
-    const laneHeight = 50;
+    const laneHeight = getLaneHeightPx();
     const laneLabelWidth = 160;
     const rulerHeight = 40;
     const footerHeight = 40;
-    const totalDuration = Math.max(app.diagram.getTotalDuration() * 1.1, 1000);
-    const width = laneLabelWidth + msToPixels(totalDuration) + 50;
+    const metrics = getExportTimelineMetrics();
+    const width = laneLabelWidth + msToPixels(metrics.endTime) + 50;
     const lanesAreaHeight = lanes.length * laneHeight;
     const lanesStartY = headerHeight + rulerHeight;
 
     // Pre-calculate time markers layout to determine height
     const markers = [];
     boxes.forEach(box => {
+        const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+        const visualEnd = visualStart + box.duration;
         markers.push({
-            time: box.startOffset,
+            visualTime: visualStart,
+            actualTime: box.startOffset,
             type: 'start',
             color: box.color,
             label: formatDuration(box.startOffset)
         });
         markers.push({
-            time: box.startOffset + box.duration,
+            visualTime: visualEnd,
+            actualTime: box.startOffset + box.duration,
             type: 'end',
             color: box.color,
             label: formatDuration(box.startOffset + box.duration)
         });
     });
-    markers.sort((a, b) => a.time - b.time);
+    markers.sort((a, b) => a.visualTime - b.visualTime);
 
     // Pre-calculate marker levels
     const levels = [];
@@ -3611,7 +3731,7 @@ function exportToPNG() {
     tempCtx.font = '9px Monaco, monospace';
 
     markers.forEach(m => {
-        const x = laneLabelWidth + msToPixels(m.time);
+        const x = laneLabelWidth + msToPixels(m.visualTime);
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const textWidth = tempCtx.measureText(text).width + 10;
         const startX = x - (textWidth / 2);
@@ -3681,14 +3801,39 @@ function exportToPNG() {
     // Ruler marks
     ctx.font = '11px Monaco, monospace';
     ctx.fillStyle = '#a8b2c1';
-    for (let time = 0; time <= totalDuration; time += 500) {
-        const x = laneLabelWidth + msToPixels(time);
+    for (let idx = 0, axisTime = 0; axisTime <= metrics.endTime + 0.0001; idx++, axisTime = idx * metrics.interval) {
+        const x = laneLabelWidth + msToPixels(axisTime);
+        const labelTime = Compression.enabled ? Compression.compressedToActual(axisTime) : axisTime;
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         ctx.beginPath();
         ctx.moveTo(x, rulerY);
         ctx.lineTo(x, rulerY + rulerHeight);
         ctx.stroke();
-        ctx.fillText(formatDuration(time), x + 4, rulerY + rulerHeight - 8);
+        ctx.fillText(formatDuration(labelTime), x + 4, rulerY + rulerHeight - 8);
+    }
+
+    if (Compression.enabled) {
+        const breakMarkers = Compression.getBreakMarkers();
+        breakMarkers.forEach(marker => {
+            const x = laneLabelWidth + msToPixels(marker.compressedStart);
+            const gapSize = marker.actualEnd - marker.actualStart;
+            const gapLabel = formatDuration(gapSize);
+
+            ctx.strokeStyle = '#e8a317';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x, rulerY);
+            ctx.lineTo(x, rulerY + rulerHeight);
+            ctx.stroke();
+
+            ctx.font = '600 9px Monaco, monospace';
+            const labelW = ctx.measureText(gapLabel).width + 8;
+            ctx.fillStyle = '#e8a317';
+            ctx.fillRect(x + 3, rulerY, labelW, 12);
+            ctx.fillStyle = '#000000';
+            ctx.fillText(gapLabel, x + 7, rulerY + 9);
+            ctx.font = '11px Monaco, monospace';
+        });
     }
 
     // Draw lane backgrounds first (alignment lines/boxes are layered above this)
@@ -3699,24 +3844,25 @@ function exportToPNG() {
     });
 
     // Draw alignment lines as background guides before boxes
-    if (app.settings.showAlignmentLines && boxes.length > 0) {
+        if (app.settings.showAlignmentLines && boxes.length > 0) {
         // Collect time points with their colors
         const timePointsMap = new Map();
         boxes.forEach(box => {
-            if (!timePointsMap.has(box.startOffset)) {
-                timePointsMap.set(box.startOffset, box.color);
+            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            const visualEnd = visualStart + box.duration;
+            if (!timePointsMap.has(visualStart)) {
+                timePointsMap.set(visualStart, box.color);
             }
-            const endTime = box.startOffset + box.duration;
-            if (!timePointsMap.has(endTime)) {
-                timePointsMap.set(endTime, box.color);
+            if (!timePointsMap.has(visualEnd)) {
+                timePointsMap.set(visualEnd, box.color);
             }
         });
 
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1;
 
-        timePointsMap.forEach((color, time) => {
-            const x = laneLabelWidth + msToPixels(time);
+        timePointsMap.forEach((color, visualTime) => {
+            const x = laneLabelWidth + msToPixels(visualTime);
             ctx.strokeStyle = color;
             ctx.globalAlpha = 0.5;
             ctx.beginPath();
@@ -3751,19 +3897,21 @@ function exportToPNG() {
 
         // Lane label text with word wrap
         ctx.fillStyle = '#ffffff';
-        ctx.font = '13px Inter, sans-serif';
+        ctx.font = '10px Inter, sans-serif';
         const maxLabelWidth = laneLabelWidth - 24;
-        const lines = wrapText(ctx, lane.name, maxLabelWidth, 16);
-        const totalTextHeight = lines.length * 16;
-        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 12;
+        const labelLineHeight = 13;
+        const lines = wrapText(ctx, lane.name, maxLabelWidth, labelLineHeight);
+        const totalTextHeight = lines.length * labelLineHeight;
+        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 10;
         lines.forEach((line, lineIndex) => {
-            ctx.fillText(line, 12, startTextY + lineIndex * 16);
+            ctx.fillText(line, 12, startTextY + lineIndex * labelLineHeight);
         });
 
         // Boxes for this lane
         const laneBoxes = boxes.filter(b => b.laneId === lane.id);
         laneBoxes.forEach(box => {
-            const bx = laneLabelWidth + msToPixels(box.startOffset);
+            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            const bx = laneLabelWidth + msToPixels(visualStart);
             const by = y + 6;
             const bw = getBoxVisualWidth(box.duration);
             const bh = laneHeight - 12;
@@ -3987,38 +4135,42 @@ function exportToSVG() {
     const boxes = app.diagram.boxes;
 
     const headerHeight = 50;
-    const laneHeight = 50;
+    const laneHeight = getLaneHeightPx();
     const laneLabelWidth = 160;
     const rulerHeight = 40;
     const footerHeight = 40;
-    const totalDuration = Math.max(app.diagram.getTotalDuration() * 1.1, 1000);
-    const width = Math.round(laneLabelWidth + msToPixels(totalDuration) + 50);
+    const metrics = getExportTimelineMetrics();
+    const width = Math.round(laneLabelWidth + msToPixels(metrics.endTime) + 50);
     const lanesAreaHeight = lanes.length * laneHeight;
     const lanesStartY = headerHeight + rulerHeight;
 
     // Pre-calculate time markers layout (same as PNG)
     const markers = [];
     boxes.forEach(box => {
+        const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+        const visualEnd = visualStart + box.duration;
         markers.push({
-            time: box.startOffset,
+            visualTime: visualStart,
+            actualTime: box.startOffset,
             type: 'start',
             color: box.color,
             label: formatDuration(box.startOffset)
         });
         markers.push({
-            time: box.startOffset + box.duration,
+            visualTime: visualEnd,
+            actualTime: box.startOffset + box.duration,
             type: 'end',
             color: box.color,
             label: formatDuration(box.startOffset + box.duration)
         });
     });
-    markers.sort((a, b) => a.time - b.time);
+    markers.sort((a, b) => a.visualTime - b.visualTime);
 
     // Calculate marker levels
     const levels = [];
     const charWidth = 6;
     markers.forEach(m => {
-        const x = laneLabelWidth + msToPixels(m.time);
+        const x = laneLabelWidth + msToPixels(m.visualTime);
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const textWidth = text.length * charWidth + 10;
         const startX = x - (textWidth / 2);
@@ -4051,7 +4203,7 @@ function exportToSVG() {
     <style>
       .title-text { font-family: 'Inter', -apple-system, sans-serif; font-size: 16px; font-weight: 600; fill: #ffffff; }
       .start-time-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 13px; fill: #a8b2c1; }
-      .lane-label { font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; fill: #ffffff; }
+      .lane-label { font-family: 'Inter', -apple-system, sans-serif; font-size: 10px; fill: #ffffff; }
       .ruler-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 11px; fill: #a8b2c1; }
       .box-text { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; font-weight: 500; }
       .time-marker { font-family: 'Monaco', 'Menlo', monospace; font-size: 9px; }
@@ -4075,10 +4227,25 @@ function exportToSVG() {
     const rulerY = headerHeight;
 
     // Ruler marks
-    for (let time = 0; time <= totalDuration; time += 500) {
-        const x = Math.round(laneLabelWidth + msToPixels(time));
+    for (let idx = 0, axisTime = 0; axisTime <= metrics.endTime + 0.0001; idx++, axisTime = idx * metrics.interval) {
+        const x = Math.round(laneLabelWidth + msToPixels(axisTime));
+        const labelTime = Compression.enabled ? Compression.compressedToActual(axisTime) : axisTime;
         svg += `  <line x1="${x}" y1="${rulerY}" x2="${x}" y2="${rulerY + rulerHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
-        svg += `  <text x="${x + 4}" y="${rulerY + rulerHeight - 8}" class="ruler-text">${formatDuration(time)}</text>\n`;
+        svg += `  <text x="${x + 4}" y="${rulerY + rulerHeight - 8}" class="ruler-text">${formatDuration(labelTime)}</text>\n`;
+    }
+
+    if (Compression.enabled) {
+        const breakMarkers = Compression.getBreakMarkers();
+        breakMarkers.forEach(marker => {
+            const x = Math.round(laneLabelWidth + msToPixels(marker.compressedStart));
+            const gapSize = marker.actualEnd - marker.actualStart;
+            const gapLabel = formatDuration(gapSize);
+            const labelW = Math.max(22, gapLabel.length * 6 + 8);
+
+            svg += `  <line x1="${x}" y1="${rulerY}" x2="${x}" y2="${rulerY + rulerHeight}" stroke="#e8a317" stroke-width="2"/>\n`;
+            svg += `  <rect x="${x + 3}" y="${rulerY}" width="${labelW}" height="12" fill="#e8a317"/>\n`;
+            svg += `  <text x="${x + 7}" y="${rulerY + 9}" style="font-family: 'Monaco', 'Menlo', monospace; font-size: 9px; font-weight: 600; fill: #000;">${gapLabel}</text>\n`;
+        });
     }
 
     // Lane backgrounds first
@@ -4092,18 +4259,19 @@ function exportToSVG() {
         // Collect time points with their colors
         const timePointsMap = new Map();
         boxes.forEach(box => {
-            if (!timePointsMap.has(box.startOffset)) {
-                timePointsMap.set(box.startOffset, box.color);
+            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            const visualEnd = visualStart + box.duration;
+            if (!timePointsMap.has(visualStart)) {
+                timePointsMap.set(visualStart, box.color);
             }
-            const endTime = box.startOffset + box.duration;
-            if (!timePointsMap.has(endTime)) {
-                timePointsMap.set(endTime, box.color);
+            if (!timePointsMap.has(visualEnd)) {
+                timePointsMap.set(visualEnd, box.color);
             }
         });
 
         svg += `  <!-- Alignment Lines -->\n`;
-        timePointsMap.forEach((color, time) => {
-            const x = Math.round(laneLabelWidth + msToPixels(time));
+        timePointsMap.forEach((color, visualTime) => {
+            const x = Math.round(laneLabelWidth + msToPixels(visualTime));
             svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="${color}" stroke-opacity="0.5" stroke-dasharray="4 4"/>\n`;
         });
     }
@@ -4118,10 +4286,10 @@ function exportToSVG() {
         svg += `  <line x1="0" y1="${y + laneHeight}" x2="${width}" y2="${y + laneHeight}" stroke="rgba(255,255,255,0.1)"/>\n`;
 
         // Lane label with word wrap
-        const labelLines = wrapTextSVG(lane.name, laneLabelWidth - 24, 8);
-        const lineHeight = 16;
+        const labelLines = wrapTextSVG(lane.name, laneLabelWidth - 24, 6);
+        const lineHeight = 13;
         const totalTextHeight = labelLines.length * lineHeight;
-        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 12;
+        const startTextY = y + (laneHeight - totalTextHeight) / 2 + 10;
         labelLines.forEach((line, lineIndex) => {
             svg += `  <text x="12" y="${startTextY + lineIndex * lineHeight}" class="lane-label">${escapeHtml(line)}</text>\n`;
         });
@@ -4129,7 +4297,8 @@ function exportToSVG() {
         // Boxes for this lane
         const laneBoxes = boxes.filter(b => b.laneId === lane.id);
         laneBoxes.forEach(box => {
-            const bx = Math.round(laneLabelWidth + msToPixels(box.startOffset));
+            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
+            const bx = Math.round(laneLabelWidth + msToPixels(visualStart));
             const by = y + 6;
             const bw = Math.round(getBoxVisualWidth(box.duration));
             const bh = laneHeight - 12;
@@ -4305,6 +4474,88 @@ function handleLaneNameChange() {
 
 const PRESET_TIME_THRESHOLDS = [0, 1000, 5000, 60000];
 
+function setCustomTimeThresholdInputState(show, value = null, focus = false) {
+    const customWrap = document.getElementById('config-time-threshold-custom-wrap');
+    const customInput = document.getElementById('config-time-threshold-custom');
+    if (!customWrap || !customInput) return;
+
+    customWrap.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const normalized = Math.max(
+        0,
+        parseInt(value ?? app.settings.timeFormatThreshold ?? 0, 10) || 0
+    );
+    customInput.value = normalized;
+
+    if (focus) {
+        requestAnimationFrame(() => {
+            customInput.focus();
+            customInput.select();
+        });
+    }
+}
+
+function commitCustomTimeThreshold() {
+    const customInput = document.getElementById('config-time-threshold-custom');
+    if (!customInput) return false;
+
+    const customValue = parseInt(customInput.value, 10);
+    if (!Number.isFinite(customValue) || customValue < 0) {
+        showToast({
+            type: 'warning',
+            title: 'Invalid Threshold',
+            message: 'Please enter a non-negative number (milliseconds).',
+            duration: 2500
+        });
+        requestAnimationFrame(() => {
+            customInput.focus();
+            customInput.select();
+        });
+        return false;
+    }
+
+    app.settings.timeFormatThreshold = customValue;
+    syncTimeThresholdControl();
+    handleSettingsChange();
+    autoSave();
+    return true;
+}
+
+function getNearestPresetTimeThreshold(value) {
+    const numericValue = Math.max(0, parseInt(value, 10) || 0);
+    let nearest = PRESET_TIME_THRESHOLDS[0];
+    let minDiff = Math.abs(numericValue - nearest);
+    PRESET_TIME_THRESHOLDS.forEach(preset => {
+        const diff = Math.abs(numericValue - preset);
+        if (diff < minDiff) {
+            minDiff = diff;
+            nearest = preset;
+        }
+    });
+    return nearest;
+}
+
+function switchToPresetTimeThreshold(targetPreset = null) {
+    const thresholdSelect = document.getElementById('config-time-threshold');
+    const currentValue = Number(app.settings.timeFormatThreshold || 1000);
+    const lastPreset = thresholdSelect ? Number(thresholdSelect.dataset.lastPreset || 1000) : 1000;
+    const resolvedPreset = PRESET_TIME_THRESHOLDS.includes(targetPreset)
+        ? targetPreset
+        : (PRESET_TIME_THRESHOLDS.includes(lastPreset)
+            ? lastPreset
+            : getNearestPresetTimeThreshold(currentValue));
+
+    app.settings.timeFormatThreshold = resolvedPreset;
+    if (thresholdSelect) {
+        thresholdSelect.value = String(resolvedPreset);
+        thresholdSelect.dataset.lastPreset = String(resolvedPreset);
+    }
+    syncTimeThresholdControl();
+    handleSettingsChange();
+    autoSave();
+}
+
 function updateToolbarToggleButtons() {
     const toggleIds = [
         'config-show-alignment',
@@ -4333,12 +4584,14 @@ function syncTimeThresholdControl() {
     const isPreset = PRESET_TIME_THRESHOLDS.includes(threshold);
 
     if (customOption) {
-        customOption.textContent = isPreset
-            ? 'Custom - Threshold'
-            : `Custom - Threshold (${threshold}ms)`;
+        customOption.textContent = 'Custom';
     }
 
     thresholdSelect.value = isPreset ? String(threshold) : '-1';
+    if (isPreset) {
+        thresholdSelect.dataset.lastPreset = String(threshold);
+    }
+    setCustomTimeThresholdInputState(!isPreset, threshold, false);
 }
 
 function syncToolbarSettingsControls() {
@@ -4367,28 +4620,16 @@ function handleTimeThresholdChange() {
 
     if (thresholdSelect.value === '-1') {
         const currentValue = Number(app.settings.timeFormatThreshold || 1000);
-        const input = prompt('Enter custom time threshold in milliseconds:', String(currentValue));
-
-        if (input === null) {
-            syncTimeThresholdControl();
-            return;
+        if (PRESET_TIME_THRESHOLDS.includes(currentValue)) {
+            thresholdSelect.dataset.lastPreset = String(currentValue);
         }
-
-        const customValue = parseInt(input, 10);
-        if (Number.isFinite(customValue) && customValue >= 0) {
-            app.settings.timeFormatThreshold = customValue;
-        } else {
-            showToast({
-                type: 'warning',
-                title: 'Invalid Threshold',
-                message: 'Please enter a non-negative number (milliseconds).',
-                duration: 2500
-            });
-        }
-    } else {
-        app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+        const seedValue = PRESET_TIME_THRESHOLDS.includes(currentValue) ? 1000 : currentValue;
+        setCustomTimeThresholdInputState(true, seedValue, true);
+        return;
     }
 
+    app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+    thresholdSelect.dataset.lastPreset = thresholdSelect.value;
     syncTimeThresholdControl();
     handleSettingsChange();
     autoSave();
@@ -4852,6 +5093,26 @@ function init() {
         thresholdSelect.addEventListener('change', handleTimeThresholdChange);
     }
 
+    const thresholdCustomInput = document.getElementById('config-time-threshold-custom');
+    if (thresholdCustomInput) {
+        thresholdCustomInput.addEventListener('change', commitCustomTimeThreshold);
+        thresholdCustomInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitCustomTimeThreshold();
+                thresholdCustomInput.blur();
+            } else if (e.key === 'Escape') {
+                syncTimeThresholdControl();
+                thresholdCustomInput.blur();
+            }
+        });
+    }
+
+    const thresholdBackBtn = document.getElementById('config-time-threshold-back');
+    if (thresholdBackBtn) {
+        thresholdBackBtn.addEventListener('click', () => switchToPresetTimeThreshold());
+    }
+
     const alignmentCheckbox = document.getElementById('config-show-alignment');
     if (alignmentCheckbox) {
         alignmentCheckbox.addEventListener('change', handleSettingsChange);
@@ -4950,7 +5211,7 @@ function init() {
         laneNameInput.addEventListener('change', handleLaneNameChange);
         // Enter key applies and unfocuses
         laneNameInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 handleLaneNameChange();
                 laneNameInput.blur();
@@ -6349,34 +6610,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Shift+Enter for New Line in Lane Name
     function initLaneNameInput() {
         if (!V2.isV2) return;
-
-        const laneNameInput = document.getElementById('lane-name');
-        if (laneNameInput) {
-            // Remove old listeners if any (by cloning)
-            const newInput = laneNameInput.cloneNode(true);
-            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
-
-            // Re-attach standard listener for sync
-            newInput.addEventListener('input', () => {
-                if (app.selectedLaneId) {
-                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
-                    renderLaneList();
-                    renderLanesCanvas();
-                    autoSave();
-                }
-            });
-
-            // Keydown logic: Enter = Blur/Submit, Shift+Enter = Newline
-            newInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    newInput.blur(); // Trigger save via change/blur if attached, or just finish editing
-                }
-            });
-
-            // Restore focus listener if needed? 
-            // The original code didn't have special focus logic, just value binding in showLanePropertiesPanel
-        }
+        bindLaneNameInputOnce();
     }
 
     // 2. Resize Fix (Don't open properties if resizing)
@@ -6388,7 +6622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check if we are currently resizing
         if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
             const sidebar = document.getElementById('right-sidebar');
-            const isSidebarOpen = sidebar && sidebar.classList.contains('active');
+            const isSidebarOpen = sidebar && sidebar.classList.contains('visible');
 
             // If sidebar is NOT open, do NOT open it.
             if (!isSidebarOpen) {
@@ -6587,27 +6821,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Shift+Enter for New Line in Lane Name
     function initLaneNameInput() {
         if (!V2.isV2) return;
-        const laneNameInput = document.getElementById('lane-name');
-        if (laneNameInput) {
-            const newInput = laneNameInput.cloneNode(true);
-            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
-
-            newInput.addEventListener('input', () => {
-                if (app.selectedLaneId) {
-                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
-                    renderLaneList();
-                    renderLanesCanvas();
-                    autoSave();
-                }
-            });
-
-            newInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    newInput.blur();
-                }
-            });
-        }
+        bindLaneNameInputOnce();
     }
 
     // 2. Resize Fix (Don't open properties if resizing)
@@ -6617,7 +6831,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
             const sidebar = document.getElementById('right-sidebar');
-            const isSidebarOpen = sidebar && sidebar.classList.contains('active');
+            const isSidebarOpen = sidebar && sidebar.classList.contains('visible');
             if (!isSidebarOpen) return;
         }
         _prevUpdateProps(isNewBox);
@@ -6779,12 +6993,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. Default Trailing Space = 0
     function initTrailingSpace() {
-        if (!app.settings.trailingSpace) {
-            app.settings.trailingSpace = 0;
-        }
-        // Force update of input if it exists
-        const trailingInput = document.getElementById('config-trailing-space'); // guess ID
-        if (trailingInput) trailingInput.value = 0;
+        const trailingValue = Math.max(0, parseInt(app.settings.trailingSpace, 10) || 0);
+        app.settings.trailingSpace = trailingValue;
+
+        const trailingInput = document.getElementById('config-trailing-space');
+        if (trailingInput) trailingInput.value = trailingValue;
+
+        const trailingSlider = document.getElementById('config-trailing-slider');
+        if (trailingSlider) trailingSlider.value = trailingValue;
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -6819,39 +7035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Shift+Enter for New Line in Lane Name (Refined)
     function initLaneNameInput() {
         if (!V2.isV2) return;
-
-        const laneNameInput = document.getElementById('lane-name');
-        if (laneNameInput) {
-            // Remove old listeners by cloning
-            const newInput = laneNameInput.cloneNode(true);
-            laneNameInput.parentNode.replaceChild(newInput, laneNameInput);
-
-            // Re-attach standard listener for sync
-            newInput.addEventListener('input', () => {
-                if (app.selectedLaneId) {
-                    app.diagram.renameLane(parseInt(app.selectedLaneId), newInput.value);
-                    renderLaneList();
-                    renderLanesCanvas();
-                    autoSave();
-                }
-            });
-
-            // Keydown logic
-            newInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Allow default (newline)
-                        return;
-                    } else {
-                        // Enter without shift -> Finish edit
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        newInput.blur();
-                    }
-                }
-            });
-        }
+        bindLaneNameInputOnce();
     }
 
     // 2. Resize Fix (Don't open properties if resizing)
@@ -6864,7 +7048,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // We use a broad check: if dragging, or if dragData indicates resize
         if (app.isDragging || (app.dragData && app.dragData.type === 'resize')) {
             const sidebar = document.getElementById('right-sidebar');
-            const isActive = sidebar && sidebar.classList.contains('active');
+            const isActive = sidebar && sidebar.classList.contains('visible');
 
             if (!isActive) {
                 // Panel is closed, keep it closed.

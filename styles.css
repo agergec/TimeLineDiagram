@@ -47,7 +47,7 @@
     --header-height: 60px;
     --sidebar-width: 220px;
     --lane-label-width: 160px;
-    --lane-height: 50px;
+    --lane-height: 46px;
     --box-gap: 4px;
     --ruler-height: 40px;
     --footer-height: 40px;
@@ -2553,6 +2553,62 @@ body.diagram-locked .header-badge {
     color: var(--text-primary);
 }
 
+.toolbar-threshold-custom {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    min-width: 122px;
+}
+
+.toolbar-threshold-custom:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+.toolbar-threshold-input {
+    width: 84px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: var(--font-mono);
+}
+
+.toolbar-threshold-input::-webkit-outer-spin-button,
+.toolbar-threshold-input::-webkit-inner-spin-button {
+    margin: 0;
+}
+
+.toolbar-threshold-unit {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    user-select: none;
+}
+
+.toolbar-threshold-back {
+    height: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.toolbar-threshold-back:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
 .toolbar-toggle-btn {
     display: inline-flex;
     align-items: center;
@@ -2978,6 +3034,21 @@ body.light-theme .toolbar-btn:hover {
     color: var(--text-primary);
 }
 
+/* Keep properties-pane delete actions styled as danger in light mode */
+body.light-theme #box-props .toolbar-btn.danger,
+body.light-theme #lane-props .toolbar-btn.danger {
+    background: rgba(217, 48, 37, 0.12);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+body.light-theme #box-props .toolbar-btn.danger:hover,
+body.light-theme #lane-props .toolbar-btn.danger:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+}
+
 body.light-theme .lane-item {
     background: #f8f9fc;
 }
@@ -3105,7 +3176,7 @@ body.hide-lane-labels .lane-row {
 
 .lane-item {
     height: auto;
-    min-height: 50px;
+    min-height: var(--lane-height);
     padding: 0 8px;
     gap: 8px;
     flex-wrap: nowrap;
@@ -3151,14 +3222,14 @@ body.hide-lane-labels .lane-label-spacer {
 
 /* 1. Fixed Lane Height & Dynamic Font */
 .lane-row {
-    height: 50px !important;
+    height: var(--lane-height) !important;
     /* Fixed height */
-    min-height: 50px !important;
+    min-height: var(--lane-height) !important;
 }
 
 .lane-item {
-    height: 50px !important;
-    min-height: 50px !important;
+    height: var(--lane-height) !important;
+    min-height: var(--lane-height) !important;
     padding: 0 8px !important;
     overflow: hidden;
     align-items: center !important;
@@ -3261,12 +3332,12 @@ html, body,
 
 .lane-row,
 .lane-item {
-    height: 46px !important;
-    min-height: 46px !important;
+    height: var(--lane-height) !important;
+    min-height: var(--lane-height) !important;
 }
 
 .lane-label {
-    min-height: 46px !important;
+    min-height: var(--lane-height) !important;
     display: flex;
     align-items: center;
 }

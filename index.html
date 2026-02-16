@@ -176,8 +176,15 @@
                     <option value="1000" selected>>1s</option>
                     <option value="5000">>5s</option>
                     <option value="60000">>1m</option>
-                    <option value="-1">Custom - Threshold</option>
+                    <option value="-1">Custom</option>
                 </select>
+                <div id="config-time-threshold-custom-wrap" class="toolbar-threshold-custom hidden">
+                    <input id="config-time-threshold-custom" class="toolbar-threshold-input" type="number" min="0"
+                        step="100" inputmode="numeric" placeholder="Threshold" aria-label="Custom threshold in milliseconds">
+                    <span class="toolbar-threshold-unit">ms</span>
+                    <button id="config-time-threshold-back" class="toolbar-threshold-back" type="button"
+                        title="Back to preset threshold">Preset</button>
+                </div>
                 <label class="toolbar-toggle-btn icon-only" title="Display dashed lines at box start/end times">
                     <input type="checkbox" id="config-show-alignment" checked>
                     <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
