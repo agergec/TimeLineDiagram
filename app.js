@@ -7,6 +7,7 @@ const APP_VERSION = '2.1.0';
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
 const DEFAULT_LANE_HEIGHT = 46;
+const MIN_BOX_DURATION_MS = 1;
 const DEFAULT_TIMELINE_SETTINGS = {
     timeFormatThreshold: 1000,
     showAlignmentLines: true,
@@ -2335,6 +2336,25 @@ function getBoxVisualWidth(duration) {
     return Math.max(msToPixels(visualDuration), minWidth);
 }
 
+function isBoxVisuallyExpanded(duration) {
+    const visualDuration = DurationScaling.getVisualDuration(duration);
+    const unclampedWidth = msToPixels(visualDuration);
+    const minWidth = DurationScaling.getMinBoxWidth();
+    return minWidth > 0 && (unclampedWidth + 0.01) < minWidth;
+}
+
+function getRenderedBoxEdges(box) {
+    const visualOffset = Compression.getVisualOffset(box);
+    const leftPx = msToPixels(visualOffset);
+    const widthPx = getBoxVisualWidth(box.duration);
+    return {
+        leftPx,
+        rightPx: leftPx + widthPx,
+        widthPx,
+        isVisuallyExpanded: isBoxVisuallyExpanded(box.duration)
+    };
+}
+
 function getContrastColor(hexColor) {
     // Convert hex to RGB
     const r = parseInt(hexColor.slice(1, 3), 16);
@@ -2943,15 +2963,19 @@ function createBoxElement(box) {
     el.className = 'timeline-box' + (box.id === app.selectedBoxId ? ' selected' : '');
     el.dataset.boxId = box.id;
 
-    // Use compressed offset if compression is enabled
-    const visualOffset = Compression.getVisualOffset(box);
-    const left = msToPixels(visualOffset);
-    const width = getBoxVisualWidth(box.duration); // Apply duration scaling
+    const rendered = getRenderedBoxEdges(box);
+    const left = rendered.leftPx;
+    const width = rendered.widthPx;
 
     el.style.left = `${left}px`;
     el.style.width = `${width}px`;
     el.style.backgroundColor = box.color;
     el.style.color = getContrastColor(box.color);
+    if (rendered.isVisuallyExpanded) {
+        el.classList.add('is-min-width-expanded');
+    } else {
+        el.classList.remove('is-min-width-expanded');
+    }
 
     const labelText = box.label ? `${box.label} (${formatDuration(box.duration)})` : formatDuration(box.duration);
     const floatingLabelText = box.label ? `${box.label}: ${formatDuration(box.duration)}` : formatDuration(box.duration);
@@ -3020,6 +3044,14 @@ function showBoxTooltip(box, e) {
 
     const baseTime = parseTime(app.diagram.startTime);
     const endOffset = box.startOffset + box.duration;
+    const expandedHint = isBoxVisuallyExpanded(box.duration)
+        ? `
+        <div class="tooltip-row">
+            <span class="label">Display:</span>
+            <span class="value">Expanded to minimum width</span>
+        </div>
+    `
+        : '';
 
     tooltip.innerHTML = `
         <div class="tooltip-label">${escapeHtml(box.label || 'Untitled Box')}</div>
@@ -3035,6 +3067,7 @@ function showBoxTooltip(box, e) {
             <span class="label">End:</span>
             <span class="value">+${formatDuration(endOffset)} (${formatTime(baseTime + endOffset)})</span>
         </div>
+        ${expandedHint}
     `;
 
     tooltip.style.left = `${e.clientX + 15}px`;
@@ -3150,15 +3183,13 @@ function renderTimeMarkers() {
     const markers = [];
 
     app.diagram.boxes.forEach(box => {
-        // Get visual (compressed) offset for positioning
-        const visualOffset = Compression.getVisualOffset(box);
-        const visualEnd = visualOffset + box.duration;
+        const edges = getRenderedBoxEdges(box);
         // Actual times for labels
         const actualStart = box.startOffset;
         const actualEnd = box.startOffset + box.duration;
 
         markers.push({
-            visualTime: visualOffset,      // For positioning
+            visualX: edges.leftPx,         // For positioning
             actualTime: actualStart,       // For label
             type: 'start',
             boxId: box.id,
@@ -3166,7 +3197,7 @@ function renderTimeMarkers() {
             label: formatDuration(actualStart)
         });
         markers.push({
-            visualTime: visualEnd,         // For positioning
+            visualX: edges.rightPx,        // For positioning
             actualTime: actualEnd,         // For label
             type: 'end',
             boxId: box.id,
@@ -3175,8 +3206,8 @@ function renderTimeMarkers() {
         });
     });
 
-    // Sort by visual time for proper layout
-    markers.sort((a, b) => a.visualTime - b.visualTime);
+    // Sort by visual position for proper layout
+    markers.sort((a, b) => a.visualX - b.visualX);
 
     // Layout Logic: Horizontal text with vertical stacking for collisions
     const levels = [];
@@ -3184,7 +3215,7 @@ function renderTimeMarkers() {
     const padding = 10;
 
     markers.forEach(m => {
-        const x = msToPixels(m.visualTime);
+        const x = m.visualX;
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const width = text.length * charWidth + padding;
         const startX = x - (width / 2);
@@ -3211,7 +3242,7 @@ function renderTimeMarkers() {
     const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : 200;
 
     markers.forEach(m => {
-        const x = msToPixels(m.visualTime);
+        const x = m.visualX;
 
         const el = document.createElement('div');
         el.className = 'time-marker-h';
@@ -3476,11 +3507,11 @@ function handleMouseMove(e) {
         }
 
         if (app.dragData.side === 'right') {
-            const newDuration = Math.max(50, mouseMs - box.startOffset);
+            const newDuration = Math.max(MIN_BOX_DURATION_MS, mouseMs - box.startOffset);
             box.duration = Math.round(newDuration);
         } else {
             const endOffset = app.dragData.originalStart + app.dragData.originalDuration;
-            const newStart = Math.max(0, Math.min(mouseMs, endOffset - 50));
+            const newStart = Math.max(0, Math.min(mouseMs, endOffset - MIN_BOX_DURATION_MS));
             box.startOffset = Math.round(newStart);
             box.duration = Math.round(endOffset - box.startOffset);
         }
@@ -3538,7 +3569,7 @@ function handleMouseUp(e) {
             }
 
             const startOffset = actualStartMs;
-            const duration = Math.max(actualEndMs - actualStartMs, 20);
+            const duration = Math.max(actualEndMs - actualStartMs, MIN_BOX_DURATION_MS);
 
             const box = app.diagram.addBox(
                 app.dragData.laneId,
@@ -4918,13 +4949,24 @@ function shareAsURL() {
 
     // Copy to clipboard
     navigator.clipboard.writeText(url).then(() => {
-        // Show enhanced success message
+        // Share button feedback uses the same active/toggle styling as other toolbar controls.
         const btn = document.getElementById('share-url');
-        const originalHtml = btn.innerHTML;
-        const originalTitle = btn.title;
-        btn.innerHTML = `<svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"></path></svg><span class="sr-only">Copied</span>`;
-        btn.title = 'Copied';
-        btn.style.background = 'var(--success)';
+        if (btn) {
+            const defaultTitle = btn.dataset.defaultTitle || btn.title || 'Copy shareable URL to clipboard';
+            btn.dataset.defaultTitle = defaultTitle;
+            if (shareAsURL.feedbackTimer) {
+                clearTimeout(shareAsURL.feedbackTimer);
+            }
+            btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
+            btn.title = 'Link copied';
+
+            shareAsURL.feedbackTimer = setTimeout(() => {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-pressed', 'false');
+                btn.title = defaultTitle;
+            }, 1200);
+        }
 
         // Show instructive toast
         showToast({
@@ -4933,13 +4975,7 @@ function shareAsURL() {
             message: 'Share this URL with collaborators to view your timeline diagram.',
             duration: 3500
         });
-
-        setTimeout(() => {
-            btn.innerHTML = originalHtml;
-            btn.title = originalTitle;
-            btn.style.background = '';
-        }, 2500);
-    }).catch(err => {
+    }).catch(() => {
         // Fallback: show URL in prompt
         showToast({
             type: 'warning',
@@ -5048,24 +5084,23 @@ function exportToPNG() {
     // Pre-calculate time markers layout to determine height
     const markers = [];
     boxes.forEach(box => {
-        const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-        const visualEnd = visualStart + box.duration;
+        const edges = getRenderedBoxEdges(box);
         markers.push({
-            visualTime: visualStart,
+            visualX: edges.leftPx,
             actualTime: box.startOffset,
             type: 'start',
             color: box.color,
             label: formatDuration(box.startOffset)
         });
         markers.push({
-            visualTime: visualEnd,
+            visualX: edges.rightPx,
             actualTime: box.startOffset + box.duration,
             type: 'end',
             color: box.color,
             label: formatDuration(box.startOffset + box.duration)
         });
     });
-    markers.sort((a, b) => a.visualTime - b.visualTime);
+    markers.sort((a, b) => a.visualX - b.visualX);
 
     // Pre-calculate marker levels
     const levels = [];
@@ -5074,7 +5109,7 @@ function exportToPNG() {
     tempCtx.font = '9px Monaco, monospace';
 
     markers.forEach(m => {
-        const x = laneLabelWidth + msToPixels(m.visualTime);
+        const x = laneLabelWidth + m.visualX;
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const textWidth = tempCtx.measureText(text).width + 10;
         const startX = x - (textWidth / 2);
@@ -5191,21 +5226,20 @@ function exportToPNG() {
         // Collect time points with their colors
         const timePointsMap = new Map();
         boxes.forEach(box => {
-            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-            const visualEnd = visualStart + box.duration;
-            if (!timePointsMap.has(visualStart)) {
-                timePointsMap.set(visualStart, box.color);
+            const edges = getRenderedBoxEdges(box);
+            if (!timePointsMap.has(edges.leftPx)) {
+                timePointsMap.set(edges.leftPx, box.color);
             }
-            if (!timePointsMap.has(visualEnd)) {
-                timePointsMap.set(visualEnd, box.color);
+            if (!timePointsMap.has(edges.rightPx)) {
+                timePointsMap.set(edges.rightPx, box.color);
             }
         });
 
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1;
 
-        timePointsMap.forEach((color, visualTime) => {
-            const x = laneLabelWidth + msToPixels(visualTime);
+        timePointsMap.forEach((color, xPos) => {
+            const x = laneLabelWidth + xPos;
             ctx.strokeStyle = color;
             ctx.globalAlpha = 0.5;
             ctx.beginPath();
@@ -5490,30 +5524,29 @@ function exportToSVG() {
     // Pre-calculate time markers layout (same as PNG)
     const markers = [];
     boxes.forEach(box => {
-        const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-        const visualEnd = visualStart + box.duration;
+        const edges = getRenderedBoxEdges(box);
         markers.push({
-            visualTime: visualStart,
+            visualX: edges.leftPx,
             actualTime: box.startOffset,
             type: 'start',
             color: box.color,
             label: formatDuration(box.startOffset)
         });
         markers.push({
-            visualTime: visualEnd,
+            visualX: edges.rightPx,
             actualTime: box.startOffset + box.duration,
             type: 'end',
             color: box.color,
             label: formatDuration(box.startOffset + box.duration)
         });
     });
-    markers.sort((a, b) => a.visualTime - b.visualTime);
+    markers.sort((a, b) => a.visualX - b.visualX);
 
     // Calculate marker levels
     const levels = [];
     const charWidth = 6;
     markers.forEach(m => {
-        const x = laneLabelWidth + msToPixels(m.visualTime);
+        const x = laneLabelWidth + m.visualX;
         const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
         const textWidth = text.length * charWidth + 10;
         const startX = x - (textWidth / 2);
@@ -5602,19 +5635,18 @@ function exportToSVG() {
         // Collect time points with their colors
         const timePointsMap = new Map();
         boxes.forEach(box => {
-            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-            const visualEnd = visualStart + box.duration;
-            if (!timePointsMap.has(visualStart)) {
-                timePointsMap.set(visualStart, box.color);
+            const edges = getRenderedBoxEdges(box);
+            if (!timePointsMap.has(edges.leftPx)) {
+                timePointsMap.set(edges.leftPx, box.color);
             }
-            if (!timePointsMap.has(visualEnd)) {
-                timePointsMap.set(visualEnd, box.color);
+            if (!timePointsMap.has(edges.rightPx)) {
+                timePointsMap.set(edges.rightPx, box.color);
             }
         });
 
         svg += `  <!-- Alignment Lines -->\n`;
-        timePointsMap.forEach((color, visualTime) => {
-            const x = Math.round(laneLabelWidth + msToPixels(visualTime));
+        timePointsMap.forEach((color, xPos) => {
+            const x = Math.round(laneLabelWidth + xPos);
             svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="${color}" stroke-opacity="0.5" stroke-dasharray="4 4"/>\n`;
         });
     }
@@ -7990,13 +8022,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Copy logic from original for marker generation
         const markers = [];
         app.diagram.boxes.forEach(box => {
-            const visualOffset = Compression.getVisualOffset(box);
-            const visualEnd = visualOffset + box.duration;
+            const edges = getRenderedBoxEdges(box);
             const actualStart = box.startOffset;
             const actualEnd = box.startOffset + box.duration;
 
             markers.push({
-                visualTime: visualOffset,
+                visualX: edges.leftPx,
                 actualTime: actualStart,
                 type: 'start',
                 boxId: box.id,
@@ -8004,7 +8035,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 label: formatDuration(actualStart)
             });
             markers.push({
-                visualTime: visualEnd,
+                visualX: edges.rightPx,
                 actualTime: actualEnd,
                 type: 'end',
                 boxId: box.id,
@@ -8013,7 +8044,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        markers.sort((a, b) => a.visualTime - b.visualTime);
+        markers.sort((a, b) => a.visualX - b.visualX);
 
         // Layout logic
         const levels = [];
@@ -8021,7 +8052,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const padding = 10;
 
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
             const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
             const width = text.length * charWidth + padding;
             const startX = x + 2;
@@ -8047,7 +8078,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight; // better fallback
 
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
 
             const el = document.createElement('div');
             el.className = 'time-marker-h';
@@ -8196,19 +8227,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // We need to actually copy the logic else functionality is lost
         const markers = [];
         app.diagram.boxes.forEach(box => {
-            const visualOffset = Compression.getVisualOffset(box);
-            const visualEnd = visualOffset + box.duration;
+            const edges = getRenderedBoxEdges(box);
             const actualStart = box.startOffset;
             const actualEnd = box.startOffset + box.duration;
-            markers.push({ visualTime: visualOffset, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
-            markers.push({ visualTime: visualEnd, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
+            markers.push({ visualX: edges.leftPx, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
+            markers.push({ visualX: edges.rightPx, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
         });
-        markers.sort((a, b) => a.visualTime - b.visualTime);
+        markers.sort((a, b) => a.visualX - b.visualX);
         const levels = [];
         const charWidth = 7;
         const padding = 10;
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
             const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
             const width = text.length * charWidth + padding;
             const startX = x + 2;
@@ -8230,7 +8260,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lanesCanvas = document.getElementById('lanes-canvas');
         const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight;
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
             const el = document.createElement('div');
             el.className = 'time-marker-h';
             el.style.left = `${x}px`;
@@ -8406,20 +8436,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const markers = [];
         app.diagram.boxes.forEach(box => {
-            const visualOffset = Compression.getVisualOffset(box);
-            const visualEnd = visualOffset + box.duration;
+            const edges = getRenderedBoxEdges(box);
             const actualStart = box.startOffset;
             const actualEnd = box.startOffset + box.duration;
-            markers.push({ visualTime: visualOffset, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
-            markers.push({ visualTime: visualEnd, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
+            markers.push({ visualX: edges.leftPx, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
+            markers.push({ visualX: edges.rightPx, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
         });
-        markers.sort((a, b) => a.visualTime - b.visualTime);
+        markers.sort((a, b) => a.visualX - b.visualX);
 
         const levels = [];
         const charWidth = 7;
         const padding = 10;
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
             const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
             const width = text.length * charWidth + padding;
             const startX = x + 2;
@@ -8443,7 +8472,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight;
 
         markers.forEach(m => {
-            const x = msToPixels(m.visualTime);
+            const x = m.visualX;
             const el = document.createElement('div');
             el.className = 'time-marker-h';
             el.style.left = `${x}px`;
@@ -8798,7 +8827,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (property === 'start') {
                 box.startOffset = parseInt(boxStart.value) || 0;
             } else if (property === 'duration') {
-                box.duration = parseInt(boxDuration.value) || 10;
+                box.duration = Math.max(MIN_BOX_DURATION_MS, parseInt(boxDuration.value, 10) || MIN_BOX_DURATION_MS);
             } else if (property === 'color') {
                 box.color = boxColor.value;
             }
@@ -8889,10 +8918,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Use the same calculation as createBoxElement() so lines match rendered box edges
         const edgePixelsMap = new Map(); // key = pixel position, value = color
         app.diagram.boxes.forEach(box => {
-            const visualStart = Compression.enabled ? Compression.getVisualOffset(box) : box.startOffset;
-            const leftPx = msToPixels(visualStart);
-            const widthPx = getBoxVisualWidth(box.duration);
-            const rightPx = leftPx + widthPx;
+            const edges = getRenderedBoxEdges(box);
+            const leftPx = edges.leftPx;
+            const rightPx = edges.rightPx;
 
             if (!edgePixelsMap.has(leftPx)) {
                 edgePixelsMap.set(leftPx, box.color);

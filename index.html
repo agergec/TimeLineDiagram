@@ -87,11 +87,14 @@
                 </button>
                 <div class="toolbar-divider"></div>
                 <!-- Export Group -->
-                <button id="share-url" class="toolbar-btn primary icon-btn icon-only"
+                <button id="share-url" class="toolbar-btn icon-btn icon-only" aria-pressed="false"
                     title="Copy shareable URL to clipboard" aria-label="Copy shareable URL to clipboard">
-                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M10 14a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 1 0-7.07-7.07L10 6"></path>
-                        <path d="M14 10a5 5 0 0 0-7.07 0L5.52 11.4a5 5 0 0 0 7.07 7.08L14 17"></path>
+                    <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2;">
+                        <circle cx="18" cy="5" r="3"></circle>
+                        <circle cx="6" cy="12" r="3"></circle>
+                        <circle cx="18" cy="19" r="3"></circle>
+                        <line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line>
+                        <line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line>
                     </svg>
                     <span class="sr-only">Share</span>
                 </button>
@@ -619,11 +622,11 @@
                 </div>
                 <div class="property-field" style="margin-top: var(--spacing-md);">
                     <label>Start Offset (ms)</label>
-                    <input type="number" id="props-box-start" min="0" step="10">
+                    <input type="number" id="props-box-start" min="0" step="1">
                 </div>
                 <div class="property-field">
                     <label>Duration (ms)</label>
-                    <input type="number" id="props-box-duration" min="10" step="10">
+                    <input type="number" id="props-box-duration" min="1" step="1">
                 </div>
                 <div class="property-time-display" style="margin-top: var(--spacing-md); border-left-color: var(--accent-secondary);">
                     <span class="property-time-label">Absolute Time</span>
