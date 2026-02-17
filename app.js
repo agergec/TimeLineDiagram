@@ -5222,30 +5222,30 @@ function exportToPNG() {
     });
 
     // Draw alignment lines as background guides before boxes
-        if (app.settings.showAlignmentLines && boxes.length > 0) {
-        // Collect time points with their colors
-        const timePointsMap = new Map();
-        boxes.forEach(box => {
-            const edges = getRenderedBoxEdges(box);
-            if (!timePointsMap.has(edges.leftPx)) {
-                timePointsMap.set(edges.leftPx, box.color);
-            }
-            if (!timePointsMap.has(edges.rightPx)) {
-                timePointsMap.set(edges.rightPx, box.color);
-            }
-        });
+    if (app.settings.showAlignmentLines && boxes.length > 0) {
+        const boxBottomInsetPx = 6;
+        const lineBottom = lanesStartY + lanesAreaHeight;
 
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.5;
 
-        timePointsMap.forEach((color, xPos) => {
-            const x = laneLabelWidth + xPos;
-            ctx.strokeStyle = color;
-            ctx.globalAlpha = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(x, lanesStartY);
-            ctx.lineTo(x, lanesStartY + lanesAreaHeight);
-            ctx.stroke();
+        boxes.forEach(box => {
+            const laneIndex = lanes.findIndex(l => l.id === box.laneId);
+            if (laneIndex < 0) return;
+            const lineTop = lanesStartY + (laneIndex * laneHeight) + laneHeight - boxBottomInsetPx;
+            if (lineTop >= lineBottom) return;
+
+            const edges = getRenderedBoxEdges(box);
+            const xPositions = [laneLabelWidth + edges.leftPx, laneLabelWidth + edges.rightPx];
+
+            ctx.strokeStyle = box.color;
+            xPositions.forEach(x => {
+                ctx.beginPath();
+                ctx.moveTo(x, lineTop);
+                ctx.lineTo(x, lineBottom);
+                ctx.stroke();
+            });
         });
 
         ctx.globalAlpha = 1;
@@ -5632,22 +5632,25 @@ function exportToSVG() {
 
     // Alignment lines as background guides before boxes
     if (app.settings.showAlignmentLines && boxes.length > 0) {
-        // Collect time points with their colors
-        const timePointsMap = new Map();
-        boxes.forEach(box => {
-            const edges = getRenderedBoxEdges(box);
-            if (!timePointsMap.has(edges.leftPx)) {
-                timePointsMap.set(edges.leftPx, box.color);
-            }
-            if (!timePointsMap.has(edges.rightPx)) {
-                timePointsMap.set(edges.rightPx, box.color);
-            }
-        });
+        const boxBottomInsetPx = 6;
+        const lineBottom = lanesStartY + lanesAreaHeight;
 
         svg += `  <!-- Alignment Lines -->\n`;
-        timePointsMap.forEach((color, xPos) => {
-            const x = Math.round(laneLabelWidth + xPos);
-            svg += `  <line x1="${x}" y1="${lanesStartY}" x2="${x}" y2="${lanesStartY + lanesAreaHeight}" stroke="${color}" stroke-opacity="0.5" stroke-dasharray="4 4"/>\n`;
+        boxes.forEach(box => {
+            const laneIndex = lanes.findIndex(l => l.id === box.laneId);
+            if (laneIndex < 0) return;
+            const lineTop = lanesStartY + (laneIndex * laneHeight) + laneHeight - boxBottomInsetPx;
+            if (lineTop >= lineBottom) return;
+
+            const edges = getRenderedBoxEdges(box);
+            const xPositions = [
+                Math.round(laneLabelWidth + edges.leftPx),
+                Math.round(laneLabelWidth + edges.rightPx)
+            ];
+
+            xPositions.forEach(x => {
+                svg += `  <line x1="${x}" y1="${Math.round(lineTop)}" x2="${x}" y2="${Math.round(lineBottom)}" stroke="${box.color}" stroke-opacity="0.5" stroke-dasharray="4 4"/>\n`;
+            });
         });
     }
 
@@ -8914,37 +8917,34 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.setAttribute('width', canvasWidth);
         overlay.setAttribute('height', canvasHeight);
 
-        // Collect all box VISUAL edge pixel positions with their colors
-        // Use the same calculation as createBoxElement() so lines match rendered box edges
-        const edgePixelsMap = new Map(); // key = pixel position, value = color
+        // Render per-box owned lines from the box bottom downward only.
+        const laneHeight = getLaneHeightPx();
+        const lineBottom = canvasHeight;
+        const boxBottomInsetPx = 6;
+
         app.diagram.boxes.forEach(box => {
+            const laneIndex = app.diagram.lanes.findIndex(l => l.id === box.laneId);
+            if (laneIndex < 0) return;
+
+            const lineTop = Math.max(0, (laneIndex * laneHeight) + laneHeight - boxBottomInsetPx);
+            if (lineTop >= lineBottom) return;
+
             const edges = getRenderedBoxEdges(box);
-            const leftPx = edges.leftPx;
-            const rightPx = edges.rightPx;
+            const xPositions = [edges.leftPx, edges.rightPx];
 
-            if (!edgePixelsMap.has(leftPx)) {
-                edgePixelsMap.set(leftPx, box.color);
-            }
-            if (!edgePixelsMap.has(rightPx)) {
-                edgePixelsMap.set(rightPx, box.color);
-            }
-        });
-
-        // Render continuous lines spanning all lanes
-        edgePixelsMap.forEach((color, xPos) => {
-
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', xPos);
-            line.setAttribute('y1', '0');
-            line.setAttribute('x2', xPos);
-            line.setAttribute('y2', canvasHeight);
-            line.setAttribute('stroke', color);
-            line.setAttribute('stroke-width', '1.5');
-            line.setAttribute('stroke-dasharray', '4 4');
-            line.setAttribute('opacity', '0.7');
-            line.setAttribute('class', 'alignment-line');
-
-            overlay.appendChild(line);
+            xPositions.forEach(xPos => {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', xPos);
+                line.setAttribute('y1', lineTop);
+                line.setAttribute('x2', xPos);
+                line.setAttribute('y2', lineBottom);
+                line.setAttribute('stroke', box.color);
+                line.setAttribute('stroke-width', '1.5');
+                line.setAttribute('stroke-dasharray', '4 4');
+                line.setAttribute('opacity', '0.7');
+                line.setAttribute('class', 'alignment-line');
+                overlay.appendChild(line);
+            });
         });
     };
 
