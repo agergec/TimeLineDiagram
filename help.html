@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="version" content="2.1.0">
     <title>Timeline Diagram Editor - Help</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -433,6 +434,7 @@
         <ul class="nav-list">
             <li><a href="#quick-start" class="nav-link"><span class="nav-icon">🚀</span> Quick Start</a></li>
             <li><a href="#features" class="nav-link"><span class="nav-icon">✨</span> Features</a></li>
+            <li><a href="#tools-pages" class="nav-link"><span class="nav-icon">🧰</span> Tools & Pages</a></li>
             <li><a href="#lanes" class="nav-link"><span class="nav-icon">📊</span> Lanes</a></li>
             <li><a href="#boxes" class="nav-link"><span class="nav-icon">📦</span> Boxes</a></li>
             <li><a href="#zoom-navigation" class="nav-link"><span class="nav-icon">🔍</span> Zoom & Navigation</a></li>
@@ -455,7 +457,7 @@
 
         <header>
             <h1>Timeline Diagram Editor</h1>
-            <p class="subtitle">Visualize processes, API calls, SIP flows, and sequences with precision timing</p>
+            <p class="subtitle">Visualize processes, API calls, SIP flows, and sequences with precision timing · v2.1.0</p>
         </header>
 
         <!-- Quick Start -->
@@ -504,7 +506,7 @@
                 <div class="feature-card">
                     <div class="icon">📏</div>
                     <h4>Measurement Tool</h4>
-                    <p>Measure time distances with snapping and pinning</p>
+                    <p>Multiple measures with a movable overlay panel</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🗺️</div>
@@ -517,16 +519,34 @@
                     <p>Import SIP call flow logs directly into diagrams</p>
                 </div>
                 <div class="feature-card">
+                    <div class="icon">🏭</div>
+                    <h4>Sector Samples</h4>
+                    <p>Import ready-made cross-sector templates (telecom, systems, security, manufacturing, and more)</p>
+                </div>
+                <div class="feature-card">
                     <div class="icon">🔗</div>
                     <h4>URL Sharing</h4>
                     <p>Share diagrams instantly with a single link</p>
                 </div>
                 <div class="feature-card">
-                    <div class="icon">🔍</div>
-                    <h4>Unlimited Zoom</h4>
-                    <p>Zoom from minutes down to microseconds</p>
+                    <div class="icon">↶</div>
+                    <h4>Lane Undo / Redo</h4>
+                    <p>Undo and redo lane deletion via toolbar buttons and shortcuts</p>
                 </div>
             </div>
+        </section>
+
+        <!-- Tools & Pages -->
+        <section id="tools-pages">
+            <h2><span class="icon">🧰</span> Tools & Pages</h2>
+            <p>The app now includes multiple helper pages. Use these links directly:</p>
+            <ul>
+                <li><a href="index.html">Timeline Editor</a> - main editor</li>
+                <li><a href="sip-parser.html">SIP Parser</a> - parse SIP/Event/Request logs and import timeline diagrams</li>
+                <li><a href="sector-samples.html">Sector Samples</a> - import sample diagrams by industry</li>
+                <li><a href="JSON_FORMAT.html">JSON Format</a> - schema and compatibility notes for import/export</li>
+                <li><a href="help.html">Help</a> - this page</li>
+            </ul>
         </section>
 
         <!-- Lanes -->
@@ -540,16 +560,13 @@
             <p>Double-click the lane name in the sidebar list to edit it inline. Press <kbd class="kbd">Enter</kbd> to apply or click outside to cancel. Lane names support multiple lines. You can also edit the name in the right sidebar Lane Properties panel.</p>
 
             <h3>Reordering Lanes</h3>
-            <p>Click a lane in the sidebar to expand its controls. Use the up/down arrows (↑ ↓) to reorder, or drag by the handle (⋮⋮).</p>
-
-            <h3>Inserting Lanes</h3>
-            <p>Use the insert buttons (+↑ and +↓) to add a new lane above or below an existing lane.</p>
+            <p>Drag lanes by the handle (⋮⋮) in the sidebar to reorder them. The canvas updates immediately to match lane order.</p>
 
             <h3>Lane Colors</h3>
             <p>Click the colored square next to a lane name to open the color picker. Boxes in that lane use variations of this base color.</p>
 
             <h3>Deleting Lanes</h3>
-            <p>Click the × button on a lane to delete it. A confirmation dialog appears showing how many boxes will be removed.</p>
+            <p>Delete from the lane row overlay button or from Lane Properties. Confirmation appears inline on the lane row. Deleted lanes can be restored with toolbar Undo/Redo.</p>
         </section>
 
         <!-- Boxes -->
@@ -662,7 +679,7 @@
             </ul>
 
             <h3>Measuring</h3>
-            <p>Click and drag between two points. A green line with arrow markers shows the measurement. The toolbar bar displays:</p>
+            <p>Click and drag between two points. The canvas shows arrowed measurements and the toolbar bar displays:</p>
             <ul>
                 <li><strong>Duration</strong>: Time difference between the two points</li>
                 <li><strong>S (Start)</strong>: Time offset of the start point</li>
@@ -672,8 +689,11 @@
             <h3>Snapping</h3>
             <p>The measurement endpoints snap to box edges within 8 pixels. This enables precise measurements between box start/end points.</p>
 
+            <h3>Multi-Measure Overlay Panel</h3>
+            <p>Consecutive measurements are kept and listed in a floating panel (up to 12 recent entries). Each measure uses a distinct saturated color and shows Start, Duration, and End in aligned columns. Drag the panel by its header.</p>
+
             <h3>Pinning Measurements</h3>
-            <p>Click the 📌 button in the toolbar measurement bar to pin the measurement. Pinned measurements:</p>
+            <p>Click the 📌 button in the toolbar measurement bar to pin active measurements. Pinned measurements:</p>
             <ul>
                 <li>Stay visible until unpinned or closed</li>
                 <li>Display a glowing green border</li>
@@ -735,7 +755,7 @@
             </ul>
 
             <h3>Generating Diagrams</h3>
-            <p>Click <kbd class="kbd">Generate Diagram</kbd> to create a timeline diagram from the filtered messages. Each unique CID becomes a separate lane. The lane name includes the CID and from/to header values.</p>
+            <p>Click <kbd class="kbd">Import to Timeline</kbd> to create a timeline diagram from the filtered messages. Each unique CID becomes a lane with from/to information in the lane label.</p>
         </section>
 
         <!-- Auto-Save -->
@@ -751,12 +771,15 @@
                 <li><strong>Click diagram name</strong>: Load that diagram</li>
                 <li><strong>+ New Diagram</strong>: Create a blank diagram</li>
                 <li><strong>🔒 Lock</strong>: Protect from edits and purging</li>
-                <li><strong>× Delete</strong>: Click the red × to remove the diagram</li>
+                <li><strong>× Delete</strong>: Inline confirmation appears on that diagram row</li>
                 <li><strong>Purge</strong>: Button in modal footer to remove all unlocked diagrams</li>
             </ul>
 
             <h3>Locking Diagrams</h3>
-            <p>Locked diagrams cannot be edited, reset, or deleted. The lock icon (🔒) appears next to locked diagram titles. Locked diagrams survive the purge operation.</p>
+            <p>Locked diagrams cannot be edited or deleted. Locked diagrams survive purge operations.</p>
+
+            <h3>Inline Confirmations</h3>
+            <p>Delete and purge confirmations are inline (non-blocking) in the relevant row/panel area instead of stacked toast dialogs.</p>
 
             <h3>Storage Limit</h3>
             <p>The 10 most recent diagrams are kept. Older unlocked diagrams may be automatically removed when the limit is reached.</p>
@@ -862,7 +885,7 @@
                 </tr>
                 <tr>
                     <td>Purge Application</td>
-                    <td>Delete all unlocked diagrams and reset settings</td>
+                    <td>Delete all unlocked diagrams or all data (depends on lock state), with inline confirmation</td>
                 </tr>
             </table>
         </section>
@@ -896,11 +919,23 @@
                 </tr>
                 <tr>
                     <td><span class="kbd">Delete</span> / <span class="kbd">Backspace</span></td>
-                    <td>Delete selected box</td>
+                    <td>Delete selected box or selected lane</td>
+                </tr>
+                <tr>
+                    <td><span class="kbd">Cmd</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Z</span></td>
+                    <td>Undo lane deletion</td>
+                </tr>
+                <tr>
+                    <td><span class="kbd">Cmd</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span> or <span class="kbd">Cmd</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Y</span></td>
+                    <td>Redo lane deletion</td>
+                </tr>
+                <tr>
+                    <td><span class="kbd">Cmd</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Enter</span></td>
+                    <td>Confirm pending inline delete/purge action</td>
                 </tr>
                 <tr>
                     <td><span class="kbd">Escape</span></td>
-                    <td>Deselect box, cancel measurement, close properties pane / sidebar</td>
+                    <td>Cancel inline confirm, deselect box/lane, or close transient measurement</td>
                 </tr>
                 <tr>
                     <td><span class="kbd">Enter</span></td>
@@ -923,6 +958,8 @@
             <p style="margin-top: 8px;">
                 <a href="index.html">Editor</a> ·
                 <a href="sip-parser.html">SIP Parser</a> ·
+                <a href="sector-samples.html">Sector Samples</a> ·
+                <a href="JSON_FORMAT.html">JSON Format</a> ·
                 <a href="help.html">Help</a>
             </p>
         </footer>

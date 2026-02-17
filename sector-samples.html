@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sector Samples - Timeline Diagram</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --panel: #121b2f;
+            --panel-2: #19263f;
+            --text: #dbe7ff;
+            --muted: #90a1c2;
+            --line: rgba(151, 168, 205, 0.22);
+            --accent: #4f8cff;
+            --accent-2: #56d2ff;
+            --success: #18b26b;
+            --warn: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            background: radial-gradient(1200px 600px at 10% -20%, #1b2a4d 0%, transparent 60%), var(--bg);
+            color: var(--text);
+        }
+
+        .wrap {
+            max-width: 1160px;
+            margin: 0 auto;
+            padding: 18px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .title {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .sub {
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .back {
+            color: var(--muted);
+            text-decoration: none;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+
+        .back:hover {
+            color: var(--text);
+            border-color: rgba(151, 168, 205, 0.4);
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(28, 40, 67, 0.9), rgba(17, 26, 44, 0.95));
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .field label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        select,
+        button {
+            height: 38px;
+            border-radius: 9px;
+            border: 1px solid var(--line);
+            background: var(--panel-2);
+            color: var(--text);
+            padding: 0 12px;
+            font-size: 14px;
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            border-color: rgba(79, 140, 255, 0.5);
+            background: linear-gradient(135deg, rgba(79, 140, 255, 0.9), rgba(86, 210, 255, 0.65));
+            color: #06101f;
+        }
+
+        .btn-ghost:hover {
+            border-color: rgba(151, 168, 205, 0.45);
+        }
+
+        .meta {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .meta-box {
+            background: rgba(14, 22, 39, 0.7);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .meta-k {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .meta-v {
+            font-size: 14px;
+            font-weight: 650;
+        }
+
+        .preview {
+            margin-top: 12px;
+            background: rgba(8, 14, 24, 0.8);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 10px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 8px;
+            align-items: center;
+            min-height: 38px;
+            border-bottom: 1px solid rgba(151, 168, 205, 0.12);
+        }
+
+        .row:last-child {
+            border-bottom: 0;
+        }
+
+        .lane-name {
+            font-size: 12px;
+            color: #b9c9ea;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track {
+            position: relative;
+            height: 26px;
+            border-radius: 8px;
+            background: rgba(25, 38, 63, 0.4);
+            overflow: hidden;
+        }
+
+        .sample-box {
+            position: absolute;
+            top: 3px;
+            height: 20px;
+            border-radius: 6px;
+            color: #06101f;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 1px 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .toast {
+            margin-top: 10px;
+            font-size: 13px;
+            padding: 9px 11px;
+            border-radius: 9px;
+            border: 1px solid var(--line);
+            background: rgba(14, 22, 39, 0.8);
+            color: var(--muted);
+            display: none;
+        }
+
+        .toast.show {
+            display: block;
+        }
+
+        .toast.success {
+            border-color: rgba(24, 178, 107, 0.5);
+            color: #91f0c6;
+        }
+
+        .toast.warn {
+            border-color: rgba(245, 158, 11, 0.55);
+            color: #ffd18a;
+        }
+
+        .toast a {
+            color: #9fd2ff;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        @media (max-width: 920px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+            .meta {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+                gap: 6px;
+                padding-bottom: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <div class="title">Sector Samples</div>
+                <div class="sub">Ready-to-import templates for common industry flows</div>
+            </div>
+            <a class="back" href="index.html">Back to Timeline</a>
+        </div>
+
+        <div class="card">
+            <div class="controls">
+                <div class="field">
+                    <label for="sector-select">Sector</label>
+                    <select id="sector-select"></select>
+                </div>
+                <div class="field">
+                    <label for="template-select">Sample</label>
+                    <select id="template-select"></select>
+                </div>
+                <button id="import-btn" class="btn-primary">Import to Timeline</button>
+                <button id="import-open-btn" class="btn-ghost">Import & Open</button>
+                <button id="download-btn" class="btn-ghost">Download JSON</button>
+            </div>
+
+            <div class="meta">
+                <div class="meta-box"><div class="meta-k">Title</div><div class="meta-v" id="meta-title">-</div></div>
+                <div class="meta-box"><div class="meta-k">Lanes</div><div class="meta-v" id="meta-lanes">-</div></div>
+                <div class="meta-box"><div class="meta-k">Boxes</div><div class="meta-v" id="meta-boxes">-</div></div>
+                <div class="meta-box"><div class="meta-k">Duration</div><div class="meta-v" id="meta-duration">-</div></div>
+            </div>
+
+            <div class="preview" id="preview"></div>
+            <div class="toast" id="toast"></div>
+        </div>
+    </div>
+
+    <script src="sector-samples.js"></script>
+</body>
+
+</html>

@@ -2,7 +2,7 @@
    Timeline Diagram Editor - Main Application Logic
    ===================================================== */
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
@@ -217,7 +217,8 @@ class TimelineDiagram {
             locked: this.locked,
             compressionEnabled: Compression.enabled, // Save compression state per diagram
             settings: app.settings, // Include global settings
-            measurement: measurement // Include pinned measurement
+            measurement: measurement, // Legacy pinned measurement format
+            measurementState: getMeasurementStateForPersistence()
         };
     }
 
@@ -275,12 +276,8 @@ class TimelineDiagram {
         Compression.setEnabled(data.compressionEnabled || false);
         // Restore settings with code defaults when absent.
         app.settings = normalizeTimelineSettings(data.settings);
-        // Restore measurement if present
-        if (data.measurement) {
-            app.pinnedMeasurementData = data.measurement;
-        } else {
-            app.pinnedMeasurementData = null;
-        }
+        // Restore measurement state (new format) or legacy pinned measurement
+        app.pinnedMeasurementData = data.measurementState || data.measurement || null;
     }
 }
 
@@ -294,6 +291,7 @@ const app = {
     pixelsPerMs: 0.15, // Default scale: 0.15px per ms
     minPixelsPerMs: 0.001, // Allow extreme zoom out (0.67% - see entire timeline)
     maxPixelsPerMs: 1000,  // Allow extreme zoom in (666,666% - sub-microsecond detail)
+    zoomBeforeFitScale: null,
     isDragging: false,
     dragData: null,
     isActivelyDraggingOrResizing: false, // Prevents properties panel updates during drag/resize
@@ -306,7 +304,12 @@ const app = {
     measureStart: null,
     measureEnd: null,
     measureSnapPoints: null,
-    pinnedMeasurementData: null, // Stored measurement from loaded diagram
+    measurements: [],
+    measureSequence: 0,
+    measureCurrentColor: '#39FF14',
+    measurePanelDrag: null,
+    measurePanelPosition: null,
+    pinnedMeasurementData: null, // Stored measurement state from loaded diagram
 
     // Global settings
     settings: getDefaultTimelineSettings(),
@@ -805,6 +808,7 @@ const Compression = {
         if (btn) {
             btn.classList.toggle('active', this.enabled);
             btn.title = this.enabled ? 'Disable Compression' : 'Compress Empty Spaces';
+            btn.setAttribute('aria-pressed', this.enabled ? 'true' : 'false');
         }
     },
 
@@ -819,6 +823,9 @@ const Compression = {
         const scrollLeft = app.elements.lanesCanvas.scrollLeft;
         app.elements.timelineRuler.scrollLeft = scrollLeft;
         app.elements.timeMarkers.scrollLeft = scrollLeft;
+
+        autoSave();
+        saveSessionState();
     },
 
     /**
@@ -1155,18 +1162,100 @@ const TOAST_ICONS = {
     info: 'ℹ️'
 };
 
+// Rollback switch: set to 'floating' to restore legacy top-floating toasts.
+const TOAST_LAYOUT_MODE = 'titlebar';
+const TOAST_CONTAINERS = {
+    titlebar: 'toast-container-titlebar',
+    floating: 'toast-container-floating'
+};
+const activeToastByKey = new Map();
+let activeConfirmState = null;
+
+function cleanupToastFromKeyRegistry(toast) {
+    const key = toast?.dataset?.toastKey;
+    if (!key) return;
+    if (activeToastByKey.get(key) === toast) {
+        activeToastByKey.delete(key);
+    }
+}
+
+function pulseToast(toast) {
+    if (!toast) return;
+    toast.classList.remove('toast-attention');
+    // Force restart animation for repeated clicks.
+    void toast.offsetWidth;
+    toast.classList.add('toast-attention');
+    window.setTimeout(() => toast.classList.remove('toast-attention'), 260);
+}
+
+function isEditableTypingTarget(target) {
+    if (!target || !(target instanceof Element)) return false;
+    const tag = target.tagName;
+    if (!tag) return false;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    return !!target.closest('[contenteditable="true"]');
+}
+
+function clearActiveConfirmState() {
+    if (!activeConfirmState) return;
+    if (activeConfirmState.keydownHandler) {
+        document.removeEventListener('keydown', activeConfirmState.keydownHandler, true);
+    }
+    activeConfirmState = null;
+}
+
+function isToastContainerUsable(container) {
+    if (!container) return false;
+    const styles = window.getComputedStyle(container);
+    return styles.display !== 'none' && styles.visibility !== 'hidden';
+}
+
+function getToastContainer() {
+    const preferredId = TOAST_CONTAINERS[TOAST_LAYOUT_MODE] || TOAST_CONTAINERS.titlebar;
+    const fallbackId = preferredId === TOAST_CONTAINERS.titlebar ? TOAST_CONTAINERS.floating : TOAST_CONTAINERS.titlebar;
+
+    const preferred = document.getElementById(preferredId);
+    if (isToastContainerUsable(preferred)) return preferred;
+
+    const fallback = document.getElementById(fallbackId);
+    if (isToastContainerUsable(fallback)) return fallback;
+
+    return preferred || fallback;
+}
+
 function showToast(options) {
     const {
         type = 'info',
         title,
         message,
         duration = 4000,
-        actions = null
+        actions = null,
+        toastKey = null,
+        onClose = null,
+        replaceExisting = false
     } = options;
 
-    const container = document.getElementById('toast-container');
+    const container = getToastContainer();
+    if (!container) return null;
+
+    if (toastKey) {
+        const existing = activeToastByKey.get(toastKey);
+        if (existing && existing.isConnected) {
+            if (replaceExisting) {
+                hideToast(existing, { reason: 'replace' });
+            } else {
+                pulseToast(existing);
+                return existing;
+            }
+        }
+    }
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    if (actions) toast.classList.add('toast-has-actions');
+    if (toastKey) {
+        toast.dataset.toastKey = toastKey;
+    }
 
     let html = `
         <span class="toast-icon">${TOAST_ICONS[type]}</span>
@@ -1191,7 +1280,7 @@ function showToast(options) {
             btn.className = `toast-btn toast-btn-${action.type || 'cancel'}`;
             btn.textContent = action.label;
             btn.addEventListener('click', () => {
-                hideToast(toast);
+                hideToast(toast, { reason: action.type || 'action' });
                 if (action.onClick) action.onClick();
             });
             actionsContainer.appendChild(btn);
@@ -1201,46 +1290,174 @@ function showToast(options) {
     // Close button (available for both action and non-action toasts)
     const closeBtn = toast.querySelector('.toast-close');
     if (closeBtn) {
-        closeBtn.addEventListener('click', () => hideToast(toast));
+        closeBtn.addEventListener('click', () => {
+            hideToast(toast, { reason: 'close' });
+            if (typeof onClose === 'function') onClose();
+        });
     }
 
     container.appendChild(toast);
+    if (toastKey) {
+        activeToastByKey.set(toastKey, toast);
+    }
 
     // Auto dismiss if no actions and duration > 0
     if (!actions && duration > 0) {
-        setTimeout(() => hideToast(toast), duration);
+        setTimeout(() => hideToast(toast, { reason: 'timeout' }), duration);
     }
 
     return toast;
 }
 
-function hideToast(toast) {
+function hideToast(toast, options = {}) {
+    const { reason = 'hide', immediate = false } = options;
     if (!toast || toast.classList.contains('hiding')) return;
+    if (immediate) {
+        cleanupToastFromKeyRegistry(toast);
+        if (toast.__onHide && !toast.__didHide) {
+            toast.__didHide = true;
+            try {
+                toast.__onHide(reason);
+            } catch (e) {
+                console.warn('Toast hide callback failed:', e);
+            }
+        }
+        toast.remove();
+        return;
+    }
     toast.classList.add('hiding');
-    setTimeout(() => toast.remove(), 200);
+    cleanupToastFromKeyRegistry(toast);
+    if (toast.__onHide && !toast.__didHide) {
+        toast.__didHide = true;
+        try {
+            toast.__onHide(reason);
+        } catch (e) {
+            console.warn('Toast hide callback failed:', e);
+        }
+    }
+    setTimeout(() => {
+        toast.remove();
+    }, 200);
 }
 
 function showConfirmToast(options) {
-    const { title, message, onConfirm, onCancel, confirmLabel = 'Delete', cancelLabel = 'Cancel' } = options;
-    return showToast({
+    const {
+        title,
+        message,
+        onConfirm,
+        onCancel,
+        confirmLabel = 'Delete',
+        cancelLabel = 'Cancel',
+        confirmKey = 'confirm-global'
+    } = options;
+
+    const previousConfirm = activeConfirmState;
+    if (previousConfirm?.toast?.isConnected) {
+        if (previousConfirm.key === confirmKey) {
+            pulseToast(previousConfirm.toast);
+            return previousConfirm.toast;
+        }
+
+        if (typeof previousConfirm.onCancel === 'function') {
+            previousConfirm.onCancel({ reason: 'replaced' });
+        } else {
+            clearActiveConfirmState();
+        }
+        hideToast(previousConfirm.toast, { reason: 'replace-confirm', immediate: true });
+    }
+
+    const wrappedConfirm = () => {
+        clearActiveConfirmState();
+        if (typeof onConfirm === 'function') onConfirm();
+    };
+    const wrappedCancel = (meta = { reason: 'cancel' }) => {
+        clearActiveConfirmState();
+        if (typeof onCancel === 'function') onCancel(meta);
+    };
+
+    const toast = showToast({
         type: 'warning',
         title,
         message,
         duration: 0,
+        toastKey: `confirm:${confirmKey}`,
+        replaceExisting: true,
         actions: [
-            { label: confirmLabel, type: 'confirm', onClick: onConfirm },
-            { label: cancelLabel, type: 'cancel', onClick: onCancel }
+            { label: confirmLabel, type: 'confirm', onClick: wrappedConfirm },
+            { label: cancelLabel, type: 'cancel', onClick: () => wrappedCancel({ reason: 'cancel-button' }) }
         ]
     });
+
+    if (!toast) return null;
+
+    toast.classList.add('toast-confirm');
+    const confirmBtn = toast.querySelector('.toast-btn-confirm');
+    const cancelBtn = toast.querySelector('.toast-btn-cancel');
+    const closeBtn = toast.querySelector('.toast-close');
+    if (confirmBtn) confirmBtn.title = `${confirmLabel} (Ctrl/Cmd+Enter)`;
+    if (cancelBtn) cancelBtn.title = `${cancelLabel} (Esc)`;
+    if (closeBtn) closeBtn.title = `Cancel (Esc)`;
+
+    toast.__onHide = (reason) => {
+        cleanupToastFromKeyRegistry(toast);
+        if (activeConfirmState?.toast === toast) {
+            if (reason === 'close' || reason === 'timeout' || reason === 'replace' || reason === 'replace-confirm' || reason === 'hide') {
+                wrappedCancel({ reason });
+            } else {
+                clearActiveConfirmState();
+            }
+        }
+    };
+
+    const keydownHandler = (event) => {
+        if (!activeConfirmState || activeConfirmState.toast !== toast || !toast.isConnected) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            const cancelBtn = toast.querySelector('.toast-btn-cancel');
+            if (cancelBtn) {
+                cancelBtn.click();
+            } else {
+                hideToast(toast, { reason: 'escape' });
+                wrappedCancel({ reason: 'escape' });
+            }
+            return;
+        }
+
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !isEditableTypingTarget(event.target)) {
+            event.preventDefault();
+            const confirmBtn = toast.querySelector('.toast-btn-confirm');
+            if (confirmBtn) confirmBtn.click();
+        }
+    };
+
+    document.addEventListener('keydown', keydownHandler, true);
+    activeConfirmState = {
+        key: confirmKey,
+        toast,
+        onCancel: wrappedCancel,
+        keydownHandler
+    };
+
+    return toast;
 }
 
 // =====================================================
 // Diagram Storage (localStorage)
 // =====================================================
 const STORAGE_KEY = 'timeline_diagrams';
+const ACTIVE_DIAGRAM_KEY = 'timeline_active_diagram';
+const SESSION_STATE_KEY = 'timeline_session_state';
 const MAX_DIAGRAMS = 10;
 let currentDiagramId = null;
 let autoSaveTimeout = null;
+let pendingDiagramDeleteId = null;
+let pendingLaneDeleteId = null;
+let pendingPurgeRequest = null;
+const laneHistory = {
+    undoStack: [],
+    redoStack: [],
+    maxEntries: 50
+};
 
 function generateDiagramId() {
     return 'diag_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -1254,6 +1471,83 @@ function getAllDiagrams() {
         console.error('Failed to load diagrams from storage:', e);
         return [];
     }
+}
+
+function setCurrentDiagramId(diagramId) {
+    currentDiagramId = diagramId || null;
+    try {
+        if (currentDiagramId) {
+            localStorage.setItem(ACTIVE_DIAGRAM_KEY, currentDiagramId);
+        } else {
+            localStorage.removeItem(ACTIVE_DIAGRAM_KEY);
+        }
+    } catch (e) {
+        console.warn('Failed to persist active diagram id:', e);
+    }
+}
+
+function getStoredActiveDiagramId() {
+    try {
+        const id = localStorage.getItem(ACTIVE_DIAGRAM_KEY);
+        return (typeof id === 'string' && id.trim()) ? id : null;
+    } catch (e) {
+        console.warn('Failed to read active diagram id:', e);
+        return null;
+    }
+}
+
+function loadActiveDiagramFromStorage() {
+    const activeId = getStoredActiveDiagramId();
+    if (!activeId) return false;
+
+    const diagrams = getAllDiagrams();
+    const exists = diagrams.some(d => d.id === activeId);
+    if (!exists) {
+        setCurrentDiagramId(null);
+        return false;
+    }
+
+    return loadDiagram(activeId);
+}
+
+function saveSessionState() {
+    try {
+        const payload = {
+            activeDiagramId: currentDiagramId || null,
+            pixelsPerMs: Number.isFinite(app?.pixelsPerMs) ? app.pixelsPerMs : 0.15,
+            zoomBeforeFitScale: Number.isFinite(app?.zoomBeforeFitScale) ? app.zoomBeforeFitScale : null
+        };
+        localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        console.warn('Failed to persist session state:', e);
+    }
+}
+
+function loadSessionState() {
+    try {
+        const raw = localStorage.getItem(SESSION_STATE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch (e) {
+        console.warn('Failed to load session state:', e);
+        return null;
+    }
+}
+
+function applySessionState(state) {
+    if (!state || typeof state !== 'object') return;
+
+    if (Number.isFinite(state.pixelsPerMs)) {
+        app.pixelsPerMs = Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, state.pixelsPerMs));
+        if (app.elements?.zoomLevel) {
+            app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
+        }
+    }
+
+    app.zoomBeforeFitScale = Number.isFinite(state.zoomBeforeFitScale)
+        ? Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, state.zoomBeforeFitScale))
+        : null;
 }
 
 function saveDiagramsList(diagrams) {
@@ -1271,7 +1565,7 @@ function saveDiagramsList(diagrams) {
 
 function saveCurrentDiagram() {
     if (!currentDiagramId) {
-        currentDiagramId = generateDiagramId();
+        setCurrentDiagramId(generateDiagramId());
     }
 
     const diagrams = getAllDiagrams();
@@ -1294,6 +1588,7 @@ function saveCurrentDiagram() {
     const trimmedDiagrams = diagrams.slice(0, MAX_DIAGRAMS);
 
     saveDiagramsList(trimmedDiagrams);
+    saveSessionState();
     // Use V2 badge update
     if (typeof updateDiagramsBadge === 'function') {
         updateDiagramsBadge();
@@ -1318,7 +1613,12 @@ function loadDiagram(diagramId) {
         return false;
     }
 
-    currentDiagramId = diagramId;
+    pendingDiagramDeleteId = null;
+    pendingLaneDeleteId = null;
+    clearPendingPurgeRequest();
+    clearLaneHistory();
+
+    setCurrentDiagramId(diagramId);
     app.diagram.fromJSON(diagram.data);
     app.elements.diagramTitle.value = app.diagram.title;
     app.elements.startTime.value = app.diagram.startTime;
@@ -1342,11 +1642,19 @@ function loadDiagram(diagramId) {
     // Restore pinned measurement if present
     restorePinnedMeasurement();
 
+    saveSessionState();
     showToast({ type: 'success', title: 'Loaded', message: `"${diagram.title}" restored.`, duration: 2000 });
     return true;
 }
 
-function deleteDiagram(diagramId) {
+function clearPendingDiagramDelete(options = {}) {
+    const { rerender = true } = options;
+    if (!pendingDiagramDeleteId) return;
+    pendingDiagramDeleteId = null;
+    if (rerender) renderDiagramsList();
+}
+
+function requestDiagramDelete(diagramId) {
     const diagrams = getAllDiagrams();
     const diagram = diagrams.find(d => d.id === diagramId);
     if (!diagram) return;
@@ -1362,29 +1670,55 @@ function deleteDiagram(diagramId) {
         return;
     }
 
-    showConfirmToast({
-        title: 'Delete Diagram?',
-        message: `"${diagram.title}" will be permanently removed.`,
-        onConfirm: () => {
-            const filtered = diagrams.filter(d => d.id !== diagramId);
-            saveDiagramsList(filtered);
+    if (pendingDiagramDeleteId === diagramId) return;
+    pendingDiagramDeleteId = diagramId;
+    renderDiagramsList();
+}
 
-            // If deleting current diagram, load another or create new
-            if (diagramId === currentDiagramId) {
-                if (filtered.length > 0) {
-                    // Load the most recent remaining diagram
-                    loadDiagram(filtered[0].id);
-                } else {
-                    // No diagrams left, create a new one
-                    createNewDiagram();
-                }
-            } else {
-                renderDiagramsList();
-            }
+function confirmDiagramDelete(diagramId) {
+    if (!diagramId) return;
+    pendingDiagramDeleteId = null;
 
-            showToast({ type: 'success', title: 'Deleted', message: 'Diagram removed.', duration: 2000 });
+    const diagrams = getAllDiagrams();
+    const diagram = diagrams.find(d => d.id === diagramId);
+    if (!diagram) {
+        renderDiagramsList();
+        return;
+    }
+
+    // Re-check lock state before final deletion
+    if (diagram.data && diagram.data.locked) {
+        showToast({
+            type: 'warning',
+            title: 'Diagram Locked',
+            message: 'Unlock the diagram before deleting.',
+            duration: 2500
+        });
+        renderDiagramsList();
+        return;
+    }
+
+    const filtered = diagrams.filter(d => d.id !== diagramId);
+    saveDiagramsList(filtered);
+
+    // If deleting current diagram, load another or create new
+    if (diagramId === currentDiagramId) {
+        if (filtered.length > 0) {
+            // Load the most recent remaining diagram
+            loadDiagram(filtered[0].id);
+        } else {
+            // No diagrams left, create a new one
+            createNewDiagram();
         }
-    });
+    } else {
+        renderDiagramsList();
+    }
+
+    showToast({ type: 'success', title: 'Deleted', message: 'Diagram removed.', duration: 1600 });
+}
+
+function deleteDiagram(diagramId) {
+    requestDiagramDelete(diagramId);
 }
 
 function toggleDiagramLock(diagramId) {
@@ -1416,171 +1750,181 @@ function toggleDiagramLock(diagramId) {
     });
 }
 
-function resetDiagram(diagramId) {
-    const diagrams = getAllDiagrams();
-    const diagram = diagrams.find(d => d.id === diagramId);
-    if (!diagram) return;
-
-    // Prevent resetting locked diagrams
-    if (diagram.data && diagram.data.locked) {
-        showToast({
-            type: 'warning',
-            title: 'Diagram Locked',
-            message: 'Unlock the diagram before resetting.',
-            duration: 2500
-        });
-        return;
-    }
-
-    showConfirmToast({
-        title: 'Reset Diagram?',
-        message: `All lanes and boxes in "${diagram.title}" will be cleared.`,
-        confirmLabel: 'Reset',
-        onConfirm: () => {
-            // If it's the current diagram, reset in memory too
-            if (diagramId === currentDiagramId) {
-                app.diagram.lanes = [];
-                app.diagram.boxes = [];
-                app.diagram.nextLaneId = 1;
-                app.diagram.nextBoxId = 1;
-                app.diagram.addLane('Lane 1');
-                app.selectedBoxId = null;
-                app.selectedLaneId = null;
-
-                closeMeasurement();
-                deselectBox();
-                renderLaneList();
-                renderLanesCanvas();
-                renderTimelineRuler();
-                renderTimeMarkers();
-                renderAlignmentCanvasOverlay();
-                updateTotalDuration();
-                saveCurrentDiagram();
-            } else {
-                // Reset the stored diagram
-                diagram.data.lanes = [];
-                diagram.data.boxes = [];
-                diagram.data.nextLaneId = 2;
-                diagram.data.nextBoxId = 1;
-                diagram.data.lanes = [{ id: 1, name: 'Lane 1', order: 0 }];
-                diagram.data.measurement = null;
-                diagram.updatedAt = Date.now();
-                saveDiagramsList(diagrams);
-            }
-
-            renderDiagramsList();
-            showToast({ type: 'success', title: 'Reset', message: 'Diagram cleared.', duration: 2000 });
-        }
-    });
-}
-
-function purgeApplication() {
+function buildPurgeRequest(source = 'settings') {
     const diagrams = getAllDiagrams();
     const lockedDiagrams = diagrams.filter(d => d.data && d.data.locked);
     const unlockedDiagrams = diagrams.filter(d => !d.data || !d.data.locked);
     const hasLocked = lockedDiagrams.length > 0;
     const hasUnlocked = unlockedDiagrams.length > 0;
 
-    // If nothing to delete
     if (!hasUnlocked && !hasLocked) {
         showToast({ type: 'info', title: 'Nothing to Purge', message: 'No diagrams found.', duration: 2000 });
-        return;
+        return null;
     }
 
-    // Build message based on what will happen
-    let message, title;
-    if (hasLocked && hasUnlocked) {
-        title = 'Purge Unlocked Diagrams?';
-        message = `${unlockedDiagrams.length} unlocked diagram(s) will be deleted. ${lockedDiagrams.length} locked diagram(s) will be preserved.`;
-    } else if (hasLocked && !hasUnlocked) {
+    if (hasLocked && !hasUnlocked) {
         showToast({ type: 'info', title: 'All Diagrams Locked', message: 'No unlocked diagrams to purge.', duration: 2500 });
-        return;
-    } else {
-        title = 'Purge Application?';
-        message = 'ALL diagrams and settings will be permanently deleted. This cannot be undone!';
+        return null;
     }
 
-    showConfirmToast({
-        title: title,
-        message: message,
-        confirmLabel: hasLocked ? 'Purge Unlocked' : 'Purge All',
-        onConfirm: () => {
-            if (hasLocked) {
-                // Keep only locked diagrams
-                saveDiagramsList(lockedDiagrams);
+    if (hasLocked && hasUnlocked) {
+        return {
+            source,
+            mode: 'unlocked',
+            title: 'Purge Unlocked Diagrams?',
+            message: `${unlockedDiagrams.length} unlocked diagram(s) will be deleted. ${lockedDiagrams.length} locked diagram(s) will be preserved.`,
+            confirmLabel: 'Purge Unlocked'
+        };
+    }
 
-                // If current diagram was deleted, load a locked one
-                const currentStillExists = lockedDiagrams.some(d => d.id === currentDiagramId);
-                if (!currentStillExists) {
-                    const firstLocked = lockedDiagrams[0];
-                    currentDiagramId = firstLocked.id;
-                    app.diagram = TimelineDiagram.fromJSON(firstLocked.data);
-                    app.elements.diagramTitle.value = app.diagram.title;
-                    app.elements.startTime.value = app.diagram.startTime;
-                    updateLockState();
-                    restorePinnedMeasurement();
-                }
+    return {
+        source,
+        mode: 'all',
+        title: 'Purge Application?',
+        message: 'ALL diagrams and settings will be permanently deleted. This cannot be undone!',
+        confirmLabel: 'Purge All'
+    };
+}
 
-                closeMeasurement();
-                deselectBox();
-                renderLaneList();
-                renderLanesCanvas();
-                renderTimelineRuler();
-                renderTimeMarkers();
-                renderAlignmentCanvasOverlay();
-                updateTotalDuration();
+function clearPendingPurgeRequest(options = {}) {
+    const { rerender = true } = options;
+    pendingPurgeRequest = null;
+    if (rerender) {
+        renderPurgeInlineConfirm();
+    }
+}
 
-                if (app.elements.propertiesPanel) {
-                    app.elements.propertiesPanel.classList.add('hidden');
-                }
+function renderPurgeInlineConfirm() {
+    document.querySelectorAll('.purge-inline-container').forEach(node => node.remove());
 
-                // Render diagrams list immediately and after delay to ensure update
-                renderDiagramsList();
-                setTimeout(() => {
-                    renderDiagramsList();
-                }, 150);
+    const settingsBtn = document.getElementById('purge-app-btn');
+    const modalBtn = document.getElementById('purge-diagrams-btn');
+    if (settingsBtn) settingsBtn.classList.remove('is-delete-pending');
+    if (modalBtn) modalBtn.classList.remove('is-delete-pending');
 
-                showToast({ type: 'success', title: 'Purged', message: `${unlockedDiagrams.length} diagram(s) deleted. Locked diagrams preserved.`, duration: 3000 });
-            } else {
-                // Clear all localStorage data for this app
-                localStorage.removeItem(STORAGE_KEY);
+    if (!pendingPurgeRequest) return;
 
-                // Reset app state
-                currentDiagramId = generateDiagramId();
-                app.diagram = new TimelineDiagram();
-                app.diagram.title = generateDiagramTitle();
-                app.diagram.addLane('Lane 1');
-                app.selectedBoxId = null;
-                app.selectedLaneId = null;
-                app.settings = getDefaultTimelineSettings();
+    const targetBtn = pendingPurgeRequest.source === 'modal' ? modalBtn : settingsBtn;
+    if (!targetBtn) return;
+    targetBtn.classList.add('is-delete-pending');
 
-                closeMeasurement();
+    const container = document.createElement('div');
+    container.className = `purge-inline-container purge-inline-${pendingPurgeRequest.source}`;
 
-                app.elements.diagramTitle.value = app.diagram.title;
-                app.elements.startTime.value = app.diagram.startTime;
-                syncToolbarSettingsControls();
-
-                deselectBox();
-                renderLaneList();
-                renderLanesCanvas();
-                renderTimelineRuler();
-                renderTimeMarkers();
-                renderAlignmentCanvasOverlay();
-                updateTotalDuration();
-                renderDiagramsList();
-
-                // Save the fresh diagram
-                saveCurrentDiagram();
-
-                // Close the settings panel
-                if (app.elements.propertiesPanel) {
-                    app.elements.propertiesPanel.classList.add('hidden');
-                }
-
-                showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 3000 });
-            }
-        }
+    const overlay = createInlineDeleteOverlay({
+        title: pendingPurgeRequest.title,
+        message: pendingPurgeRequest.message,
+        confirmLabel: pendingPurgeRequest.confirmLabel,
+        cancelLabel: 'Cancel',
+        onConfirm: () => confirmPurgeOperation(),
+        onCancel: () => clearPendingPurgeRequest()
     });
+    overlay.classList.add('inline-delete-inline', 'purge-inline-overlay');
+    container.appendChild(overlay);
+
+    if (pendingPurgeRequest.source === 'modal') {
+        const footer = targetBtn.closest('.modal-footer');
+        if (footer && footer.parentElement) {
+            footer.parentElement.insertBefore(container, footer);
+        }
+        return;
+    }
+
+    const group = targetBtn.closest('.form-group') || targetBtn.parentElement;
+    if (group) {
+        group.appendChild(container);
+    }
+}
+
+function executePurgeOperation(mode) {
+    if (mode === 'unlocked') {
+        const diagrams = getAllDiagrams();
+        const lockedDiagrams = diagrams.filter(d => d.data && d.data.locked);
+        const unlockedDiagrams = diagrams.filter(d => !d.data || !d.data.locked);
+        if (unlockedDiagrams.length === 0) {
+            showToast({ type: 'info', title: 'All Diagrams Locked', message: 'No unlocked diagrams to purge.', duration: 2500 });
+            return;
+        }
+
+        saveDiagramsList(lockedDiagrams);
+        const currentStillExists = lockedDiagrams.some(d => d.id === currentDiagramId);
+        if (!currentStillExists) {
+            if (lockedDiagrams.length > 0) {
+                loadDiagram(lockedDiagrams[0].id);
+            } else {
+                createNewDiagram();
+            }
+        } else {
+            renderDiagramsList();
+        }
+
+        clearSelectedLaneSelection();
+        clearLaneHistory();
+        if (app.elements.propertiesPanel) {
+            app.elements.propertiesPanel.classList.add('hidden');
+        }
+        showToast({ type: 'success', title: 'Purged', message: `${unlockedDiagrams.length} diagram(s) deleted. Locked diagrams preserved.`, duration: 2600 });
+        return;
+    }
+
+    // mode: 'all'
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_DIAGRAM_KEY);
+    localStorage.removeItem(SESSION_STATE_KEY);
+
+    setCurrentDiagramId(generateDiagramId());
+    app.diagram = new TimelineDiagram();
+    app.diagram.title = generateDiagramTitle();
+    app.diagram.addLane('Lane 1');
+    app.selectedBoxId = null;
+    app.selectedLaneId = null;
+    app.settings = getDefaultTimelineSettings();
+
+    closeMeasurement();
+    clearLaneHistory();
+
+    app.elements.diagramTitle.value = app.diagram.title;
+    app.elements.startTime.value = app.diagram.startTime;
+    syncToolbarSettingsControls();
+
+    deselectBox();
+    renderLaneList();
+    renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentCanvasOverlay();
+    updateTotalDuration();
+    renderDiagramsList();
+
+    saveCurrentDiagram();
+
+    if (app.elements.propertiesPanel) {
+        app.elements.propertiesPanel.classList.add('hidden');
+    }
+
+    showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 2600 });
+}
+
+function confirmPurgeOperation() {
+    if (!pendingPurgeRequest) return;
+    const mode = pendingPurgeRequest.mode;
+    clearPendingPurgeRequest();
+    pendingDiagramDeleteId = null;
+    pendingLaneDeleteId = null;
+    executePurgeOperation(mode);
+}
+
+function purgeApplication(source = null) {
+    const modal = document.getElementById('diagrams-modal');
+    const resolvedSource = source || ((modal && !modal.classList.contains('hidden')) ? 'modal' : 'settings');
+    const request = buildPurgeRequest(resolvedSource);
+    if (!request) {
+        clearPendingPurgeRequest();
+        return;
+    }
+
+    pendingPurgeRequest = request;
+    renderPurgeInlineConfirm();
 }
 
 function generateDiagramTitle() {
@@ -1602,7 +1946,12 @@ function createNewDiagram() {
         return;
     }
 
-    currentDiagramId = generateDiagramId();
+    pendingDiagramDeleteId = null;
+    pendingLaneDeleteId = null;
+    clearPendingPurgeRequest();
+    clearLaneHistory();
+
+    setCurrentDiagramId(generateDiagramId());
     app.diagram = new TimelineDiagram();
     app.diagram.title = generateDiagramTitle();
     app.diagram.addLane('Lane 1');
@@ -1656,14 +2005,78 @@ function formatTimeAgo(timestamp) {
     return new Date(timestamp).toLocaleDateString();
 }
 
+function createInlineDeleteOverlay(options) {
+    const {
+        title = 'Delete?',
+        message = 'This action will remove the item.',
+        confirmLabel = 'Delete',
+        cancelLabel = 'Cancel',
+        onConfirm,
+        onCancel
+    } = options || {};
+
+    const overlay = document.createElement('div');
+    overlay.className = 'inline-delete-overlay';
+    overlay.setAttribute('role', 'alertdialog');
+    overlay.setAttribute('aria-live', 'polite');
+    overlay.addEventListener('click', (e) => e.stopPropagation());
+
+    const content = document.createElement('div');
+    content.className = 'inline-delete-content';
+
+    const heading = document.createElement('div');
+    heading.className = 'inline-delete-title';
+    heading.textContent = title;
+
+    const desc = document.createElement('div');
+    desc.className = 'inline-delete-message';
+    desc.textContent = message;
+
+    content.appendChild(heading);
+    content.appendChild(desc);
+
+    const actions = document.createElement('div');
+    actions.className = 'inline-delete-actions';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'inline-delete-btn inline-delete-btn-confirm';
+    confirmBtn.type = 'button';
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof onConfirm === 'function') onConfirm();
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'inline-delete-btn inline-delete-btn-cancel';
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = cancelLabel;
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof onCancel === 'function') onCancel();
+    });
+
+    actions.appendChild(confirmBtn);
+    actions.appendChild(cancelBtn);
+
+    overlay.appendChild(content);
+    overlay.appendChild(actions);
+
+    return overlay;
+}
+
 function renderDiagramsList() {
     const container = document.getElementById('diagrams-list');
     if (!container) return;
 
     container.innerHTML = '';
     const diagrams = getAllDiagrams();
+    if (pendingDiagramDeleteId && !diagrams.some(d => d.id === pendingDiagramDeleteId)) {
+        pendingDiagramDeleteId = null;
+    }
 
     if (diagrams.length === 0) {
+        pendingDiagramDeleteId = null;
         container.innerHTML = '<div class="empty-state">No saved diagrams found.</div>';
         return;
     }
@@ -1676,10 +2089,9 @@ function renderDiagramsList() {
         }
 
         const date = new Date(d.updatedAt).toLocaleString();
-        
-        // Lock icon
+
         const isLocked = d.data && d.data.locked;
-        const lockIcon = isLocked ? '<span class="lock-icon" title="Locked">🔒</span>' : '';
+        const isDeletePending = pendingDiagramDeleteId === d.id;
 
         // Build diagram item with DOM methods
         const info = document.createElement('div');
@@ -1711,14 +2123,16 @@ function renderDiagramsList() {
         const lockBtn = document.createElement('button');
         lockBtn.className = 'icon-btn lock-btn';
         lockBtn.title = isLocked ? 'Unlock' : 'Lock';
-        lockBtn.textContent = isLocked ? '\uD83D\uDD13' : '\uD83D\uDD12';
+        lockBtn.setAttribute('aria-label', isLocked ? 'Unlock diagram' : 'Lock diagram');
+        if (isLocked) lockBtn.classList.add('is-locked');
+        lockBtn.innerHTML = `
+            <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+                <path d="M8 10V7a4 4 0 1 1 8 0v3"></path>
+            </svg>
+            <span class="sr-only">${isLocked ? 'Unlock' : 'Lock'}</span>
+        `;
         lockBtn.dataset.id = d.id;
-
-        const resetBtn = document.createElement('button');
-        resetBtn.className = 'icon-btn reset-btn';
-        resetBtn.title = 'Reset (Clear Content)';
-        resetBtn.textContent = '\uD83D\uDD04';
-        resetBtn.dataset.id = d.id;
 
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'icon-btn delete-btn';
@@ -1730,16 +2144,31 @@ function renderDiagramsList() {
         deleteBtn.dataset.id = d.id;
 
         actions.appendChild(lockBtn);
-        actions.appendChild(resetBtn);
         actions.appendChild(deleteBtn);
 
         item.appendChild(info);
         item.appendChild(actions);
 
+        if (isDeletePending) {
+            item.classList.add('is-delete-pending');
+            const overlay = createInlineDeleteOverlay({
+                title: 'Delete Diagram?',
+                message: `"${d.title || 'Untitled'}" will be permanently removed.`,
+                confirmLabel: 'Delete',
+                cancelLabel: 'Cancel',
+                onConfirm: () => confirmDiagramDelete(d.id),
+                onCancel: () => clearPendingDiagramDelete()
+            });
+            overlay.classList.add('diagram-inline-delete');
+            item.appendChild(overlay);
+        }
+
         // Click name/info area to load diagram
         info.addEventListener('click', (e) => {
             e.stopPropagation();
             if (loadDiagram(d.id)) {
+                clearPendingDiagramDelete({ rerender: false });
+                clearPendingPurgeRequest();
                 document.getElementById('diagrams-modal').classList.add('hidden');
             }
         });
@@ -1752,11 +2181,6 @@ function renderDiagramsList() {
         lockBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             toggleDiagramLock(d.id);
-        });
-
-        resetBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            resetDiagram(d.id);
         });
 
         container.appendChild(item);
@@ -1918,9 +2342,41 @@ function getContrastColor(hexColor) {
     return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
-function deleteLaneWithUndo(laneId) {
+function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undo-btn');
+    const redoBtn = document.getElementById('redo-btn');
+    const canUndo = laneHistory.undoStack.length > 0;
+    const canRedo = laneHistory.redoStack.length > 0;
+
+    if (undoBtn) {
+        undoBtn.disabled = !canUndo;
+        undoBtn.title = canUndo ? 'Undo lane deletion (Ctrl/Cmd+Z)' : 'Undo lane deletion';
+    }
+    if (redoBtn) {
+        redoBtn.disabled = !canRedo;
+        redoBtn.title = canRedo ? 'Redo lane deletion (Ctrl/Cmd+Shift+Z)' : 'Redo lane deletion';
+    }
+}
+
+function clearLaneHistory() {
+    laneHistory.undoStack = [];
+    laneHistory.redoStack = [];
+    updateUndoRedoButtons();
+}
+
+function pushLaneHistoryEntry(entry) {
+    if (!entry) return;
+    laneHistory.undoStack.push(entry);
+    if (laneHistory.undoStack.length > laneHistory.maxEntries) {
+        laneHistory.undoStack.shift();
+    }
+    laneHistory.redoStack = [];
+    updateUndoRedoButtons();
+}
+
+function captureLaneDeleteEntry(laneId) {
     const laneIndex = app.diagram.lanes.findIndex(l => l.id === laneId);
-    if (laneIndex === -1) return;
+    if (laneIndex === -1) return null;
 
     const laneSnapshot = { ...app.diagram.lanes[laneIndex] };
     const removedBoxes = app.diagram.boxes
@@ -1946,57 +2402,148 @@ function deleteLaneWithUndo(laneId) {
         document.querySelectorAll('.timeline-box.selected').forEach(el => el.classList.remove('selected'));
     }
 
+    return {
+        type: 'lane-delete',
+        laneSnapshot,
+        removedBoxes,
+        laneIndex,
+        currentLaneId: laneId
+    };
+}
+
+function restoreLaneDeleteEntry(entry) {
+    if (!entry || entry.type !== 'lane-delete' || !entry.laneSnapshot) return false;
+
+    let restoredLaneId = Number.isInteger(entry.currentLaneId) ? entry.currentLaneId : entry.laneSnapshot.id;
+    if (app.diagram.lanes.some(l => l.id === restoredLaneId)) {
+        restoredLaneId = app.diagram.nextLaneId++;
+    }
+
+    const insertionIndex = Math.min(Math.max(entry.laneIndex, 0), app.diagram.lanes.length);
+    app.diagram.lanes.splice(insertionIndex, 0, { ...entry.laneSnapshot, id: restoredLaneId });
+    app.diagram.lanes.forEach((lane, index) => { lane.order = index; });
+    app.diagram.nextLaneId = Math.max(app.diagram.nextLaneId || 1, restoredLaneId + 1);
+
+    const usedBoxIds = new Set(app.diagram.boxes.map(b => b.id));
+    let nextBoxId = app.diagram.nextBoxId || 1;
+    (entry.removedBoxes || []).forEach(box => {
+        let restoredBoxId = box.id;
+        if (usedBoxIds.has(restoredBoxId)) {
+            while (usedBoxIds.has(nextBoxId)) nextBoxId++;
+            restoredBoxId = nextBoxId++;
+        }
+        usedBoxIds.add(restoredBoxId);
+        app.diagram.boxes.push({ ...box, id: restoredBoxId, laneId: restoredLaneId });
+    });
+    app.diagram.nextBoxId = Math.max(app.diagram.nextBoxId || 1, nextBoxId);
+    entry.currentLaneId = restoredLaneId;
+    return true;
+}
+
+function reapplyLaneDeleteEntry(entry) {
+    if (!entry || entry.type !== 'lane-delete') return false;
+    const laneId = parseInt(entry.currentLaneId, 10);
+    if (!Number.isInteger(laneId)) return false;
+    const freshEntry = captureLaneDeleteEntry(laneId);
+    if (!freshEntry) return false;
+
+    entry.laneSnapshot = freshEntry.laneSnapshot;
+    entry.removedBoxes = freshEntry.removedBoxes;
+    entry.laneIndex = freshEntry.laneIndex;
+    entry.currentLaneId = freshEntry.currentLaneId;
+    return true;
+}
+
+function undoLaneDeletion() {
+    const entry = laneHistory.undoStack.pop();
+    if (!entry) {
+        updateUndoRedoButtons();
+        return;
+    }
+
+    if (!restoreLaneDeleteEntry(entry)) {
+        laneHistory.undoStack.push(entry);
+        updateUndoRedoButtons();
+        return;
+    }
+
+    pendingLaneDeleteId = null;
     renderLaneList();
     renderLanesCanvas();
     updateTotalDuration();
     autoSave();
 
-    const removedCountText = removedBoxes.length > 0
-        ? ` Restored lane will include ${removedBoxes.length} box${removedBoxes.length > 1 ? 'es' : ''}.`
-        : '';
+    laneHistory.redoStack.push(entry);
+    updateUndoRedoButtons();
+}
 
-    showToast({
-        type: 'warning',
-        title: 'Lane Deleted',
-        message: `"${laneSnapshot.name || 'Lane'}" was removed.${removedCountText}`,
-        actions: [
-            {
-                label: 'Undo',
-                type: 'confirm',
-                onClick: () => {
-                    let restoredLaneId = laneSnapshot.id;
-                    if (app.diagram.lanes.some(l => l.id === restoredLaneId)) {
-                        restoredLaneId = app.diagram.nextLaneId++;
-                    }
+function redoLaneDeletion() {
+    const entry = laneHistory.redoStack.pop();
+    if (!entry) {
+        updateUndoRedoButtons();
+        return;
+    }
 
-                    const insertionIndex = Math.min(Math.max(laneIndex, 0), app.diagram.lanes.length);
-                    app.diagram.lanes.splice(insertionIndex, 0, { ...laneSnapshot, id: restoredLaneId });
-                    app.diagram.lanes.forEach((lane, index) => { lane.order = index; });
+    if (!reapplyLaneDeleteEntry(entry)) {
+        laneHistory.redoStack.push(entry);
+        updateUndoRedoButtons();
+        return;
+    }
 
-                    const usedBoxIds = new Set(app.diagram.boxes.map(b => b.id));
-                    let nextBoxId = app.diagram.nextBoxId || 1;
-                    removedBoxes.forEach(box => {
-                        let restoredBoxId = box.id;
-                        if (usedBoxIds.has(restoredBoxId)) {
-                            while (usedBoxIds.has(nextBoxId)) nextBoxId++;
-                            restoredBoxId = nextBoxId++;
-                        }
-                        usedBoxIds.add(restoredBoxId);
-                        app.diagram.boxes.push({ ...box, id: restoredBoxId, laneId: restoredLaneId });
-                    });
+    pendingLaneDeleteId = null;
+    renderLaneList();
+    renderLanesCanvas();
+    updateTotalDuration();
+    autoSave();
 
-                    app.diagram.nextLaneId = Math.max(app.diagram.nextLaneId || 1, restoredLaneId + 1);
-                    app.diagram.nextBoxId = Math.max(app.diagram.nextBoxId || 1, nextBoxId);
+    laneHistory.undoStack.push(entry);
+    updateUndoRedoButtons();
+}
 
-                    renderLaneList();
-                    renderLanesCanvas();
-                    updateTotalDuration();
-                    autoSave();
-                    showToast({ type: 'success', title: 'Restored', message: `"${laneSnapshot.name || 'Lane'}" restored.`, duration: 1800 });
-                }
-            }
-        ]
-    });
+function clearPendingLaneDelete(options = {}) {
+    const { rerender = true } = options;
+    if (!pendingLaneDeleteId) return;
+    pendingLaneDeleteId = null;
+    if (rerender) renderLaneList();
+}
+
+function getLaneDeleteMessage(laneId) {
+    const lane = app.diagram.lanes.find(l => l.id === parseInt(laneId, 10));
+    if (!lane) return '"Lane" will be removed.';
+    const boxCount = app.diagram.getBoxesForLane(lane.id).length;
+    return `"${lane.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`;
+}
+
+function requestLaneDelete(laneId) {
+    const resolvedLaneId = parseInt(laneId, 10);
+    if (!Number.isInteger(resolvedLaneId)) return;
+    if (!app.diagram.lanes.some(l => l.id === resolvedLaneId)) return;
+    if (pendingLaneDeleteId === resolvedLaneId) return;
+    pendingLaneDeleteId = resolvedLaneId;
+    renderLaneList();
+
+    const row = app.elements?.laneList?.querySelector(`.lane-item[data-lane-id="${resolvedLaneId}"]`);
+    if (row) {
+        row.scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function confirmLaneDelete(laneId) {
+    const resolvedLaneId = parseInt(laneId, 10);
+    if (!Number.isInteger(resolvedLaneId)) return;
+    pendingLaneDeleteId = null;
+    deleteLaneWithUndo(resolvedLaneId);
+}
+
+function deleteLaneWithUndo(laneId) {
+    const entry = captureLaneDeleteEntry(laneId);
+    if (!entry) return;
+
+    pushLaneHistoryEntry(entry);
+    renderLaneList();
+    renderLanesCanvas();
+    updateTotalDuration();
+    autoSave();
 }
 
 function syncSelectedLaneUI() {
@@ -2028,14 +2575,19 @@ function clearSelectedLaneSelection() {
 // =====================================================
 function renderLaneList() {
     const container = app.elements.laneList;
+    if (pendingLaneDeleteId && !app.diagram.lanes.some(l => l.id === pendingLaneDeleteId)) {
+        pendingLaneDeleteId = null;
+    }
     container.innerHTML = '';
 
     app.diagram.lanes.forEach((lane, index) => {
+        const isDeletePending = pendingLaneDeleteId === lane.id;
         const item = document.createElement('div');
         item.className = 'lane-item';
         if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
+        if (isDeletePending) item.classList.add('is-delete-pending');
         item.dataset.laneId = lane.id;
-        item.draggable = true;
+        item.draggable = !isDeletePending;
 
         const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -2046,8 +2598,22 @@ function renderLaneList() {
             <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
         `;
 
+        if (isDeletePending) {
+            const overlay = createInlineDeleteOverlay({
+                title: 'Delete Lane?',
+                message: getLaneDeleteMessage(lane.id),
+                confirmLabel: 'Delete',
+                cancelLabel: 'Cancel',
+                onConfirm: () => confirmLaneDelete(lane.id),
+                onCancel: () => clearPendingLaneDelete()
+            });
+            overlay.classList.add('lane-inline-delete');
+            item.appendChild(overlay);
+        }
+
         // Add click listener to open properties on the item (excluding controls)
         item.addEventListener('click', (e) => {
+            if (e.target.closest('.inline-delete-overlay')) return;
             if (e.target.closest('.lane-color-btn')) return;
             showLanePropertiesPanel(lane.id);
         });
@@ -2359,6 +2925,12 @@ function renderLanesCanvas() {
     renderTimeMarkers();
     Minimap.render();
     syncSelectedLaneUI();
+
+    if (app.isMeasuring || app.measurements.length > 0 || app.measurePinned) {
+        updateMeasurementDisplay();
+    }
+
+    syncZoomFitIndicator();
 }
 
 function createBoxElement(box) {
@@ -3042,14 +3614,627 @@ function handleMouseUp(e) {
 // Measurement Tool
 // =====================================================
 const SNAP_THRESHOLD = 8; // pixels
+const MEASUREMENT_COLORS = ['#39FF14', '#FF2D55', '#00D2FF', '#FFB020', '#8B5CF6', '#00E676', '#FF6B00', '#FFD60A'];
+const MIN_MEASUREMENT_DISTANCE_PX = 2;
 
 function getLaneLabelWidthPx() {
-    return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width'), 10) || 160;
+    const sourceEl = app?.elements?.lanesCanvas || document.body || document.documentElement;
+    const raw = getComputedStyle(sourceEl).getPropertyValue('--lane-label-width');
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : 160;
 }
 
 function visualMsToActualMs(visualMs) {
     const safeVisualMs = Math.max(0, visualMs);
     return Compression.enabled ? Compression.compressedToActual(safeVisualMs) : safeVisualMs;
+}
+
+function cloneMeasurementPoint(point) {
+    if (!point) return null;
+    return {
+        x: point.x,
+        y: point.y,
+        clientX: point.clientX,
+        clientY: point.clientY,
+        snapped: !!point.snapped,
+        snapTimeMs: Number.isFinite(point.snapTimeMs) ? point.snapTimeMs : null
+    };
+}
+
+function getNextMeasurementColor() {
+    const color = MEASUREMENT_COLORS[app.measureSequence % MEASUREMENT_COLORS.length];
+    app.measureSequence += 1;
+    return color;
+}
+
+function sanitizeMeasurementColor(color, fallback = MEASUREMENT_COLORS[0]) {
+    const normalized = String(color || '').trim();
+    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized) ? normalized : fallback;
+}
+
+function hexToRgbTuple(hexColor) {
+    const hex = sanitizeMeasurementColor(hexColor).replace('#', '');
+    const full = hex.length === 3 ? hex.split('').map(ch => ch + ch).join('') : hex;
+    if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+
+    return {
+        r: parseInt(full.slice(0, 2), 16),
+        g: parseInt(full.slice(2, 4), 16),
+        b: parseInt(full.slice(4, 6), 16)
+    };
+}
+
+function rgbTupleToHex({ r, g, b }) {
+    const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+    const toHex = (n) => clamp(n).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function srgbToLinear(channel) {
+    const s = channel / 255;
+    return s <= 0.03928 ? (s / 12.92) : Math.pow((s + 0.055) / 1.055, 2.4);
+}
+
+function relativeLuminance(hexColor) {
+    const rgb = hexToRgbTuple(hexColor);
+    if (!rgb) return 0;
+    const r = srgbToLinear(rgb.r);
+    const g = srgbToLinear(rgb.g);
+    const b = srgbToLinear(rgb.b);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(l1, l2) {
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+function darkenHexColor(hexColor, factor = 0.86) {
+    const rgb = hexToRgbTuple(hexColor);
+    if (!rgb) return sanitizeMeasurementColor(hexColor);
+    return rgbTupleToHex({
+        r: rgb.r * factor,
+        g: rgb.g * factor,
+        b: rgb.b * factor
+    });
+}
+
+function getReadableMeasureColor(hexColor, minContrast = 4.5) {
+    const base = sanitizeMeasurementColor(hexColor);
+    if (!document.body.classList.contains('light-theme')) return base;
+
+    let adjusted = base;
+    let steps = 0;
+    while (contrastRatio(relativeLuminance(adjusted), 1) < minContrast && steps < 10) {
+        adjusted = darkenHexColor(adjusted, 0.86);
+        steps += 1;
+    }
+    return adjusted;
+}
+
+function createMeasurementEntry(startPoint, endPoint, color) {
+    return {
+        id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        color: sanitizeMeasurementColor(color),
+        start: cloneMeasurementPoint(startPoint),
+        end: cloneMeasurementPoint(endPoint)
+    };
+}
+
+function normalizeMeasurementPoint(point) {
+    if (!point || typeof point !== 'object') return null;
+
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    return {
+        x,
+        y,
+        clientX: Number.isFinite(point.clientX) ? Number(point.clientX) : null,
+        clientY: Number.isFinite(point.clientY) ? Number(point.clientY) : null,
+        snapped: !!point.snapped,
+        snapTimeMs: Number.isFinite(point.snapTimeMs) ? Number(point.snapTimeMs) : null
+    };
+}
+
+function normalizeMeasurementEntry(entry, fallbackColor) {
+    if (!entry || typeof entry !== 'object') return null;
+    const start = normalizeMeasurementPoint(entry.start);
+    const end = normalizeMeasurementPoint(entry.end);
+    if (!start || !end) return null;
+
+    return {
+        id: (typeof entry.id === 'string' && entry.id.trim()) ? entry.id : `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        color: sanitizeMeasurementColor(entry.color, fallbackColor),
+        start,
+        end
+    };
+}
+
+function getMeasurementStateForPersistence() {
+    const persistedMeasurements = (app.measurements || [])
+        .map((entry, index) => normalizeMeasurementEntry(entry, MEASUREMENT_COLORS[index % MEASUREMENT_COLORS.length]))
+        .filter(Boolean);
+
+    return {
+        toolActive: !!app.measureToolActive,
+        pinned: !!app.measurePinned,
+        start: normalizeMeasurementPoint(app.measureStart),
+        end: normalizeMeasurementPoint(app.measureEnd),
+        measurements: persistedMeasurements,
+        sequence: Math.max(0, parseInt(app.measureSequence, 10) || 0),
+        currentColor: sanitizeMeasurementColor(app.measureCurrentColor, MEASUREMENT_COLORS[0]),
+        panelPosition: app.measurePanelPosition && Number.isFinite(app.measurePanelPosition.x) && Number.isFinite(app.measurePanelPosition.y)
+            ? { x: Number(app.measurePanelPosition.x), y: Number(app.measurePanelPosition.y) }
+            : null
+    };
+}
+
+function computeMeasurementMetrics(measurement) {
+    if (!measurement || !measurement.start || !measurement.end) return null;
+
+    const laneLabelWidth = getLaneLabelWidthPx();
+    const leftPoint = measurement.start.x <= measurement.end.x ? measurement.start : measurement.end;
+    const rightPoint = leftPoint === measurement.start ? measurement.end : measurement.start;
+
+    const leftVisualMs = pixelsToMs(leftPoint.x - laneLabelWidth);
+    const rightVisualMs = pixelsToMs(rightPoint.x - laneLabelWidth);
+
+    const actualStartMs = Number.isFinite(leftPoint.snapTimeMs)
+        ? leftPoint.snapTimeMs
+        : visualMsToActualMs(leftVisualMs);
+    const actualEndMs = Number.isFinite(rightPoint.snapTimeMs)
+        ? rightPoint.snapTimeMs
+        : visualMsToActualMs(rightVisualMs);
+    const actualDuration = Math.max(0, actualEndMs - actualStartMs);
+
+    return {
+        actualStartMs,
+        actualEndMs,
+        actualDuration,
+        durationText: formatDuration(Math.round(actualDuration)),
+        startText: formatDuration(Math.round(actualStartMs)),
+        endText: formatDuration(Math.round(actualEndMs))
+    };
+}
+
+function createSvgElement(tagName, attributes = {}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tagName);
+    Object.entries(attributes).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            el.setAttribute(key, String(value));
+        }
+    });
+    return el;
+}
+
+function canvasPointToOverlay(point, overlayRect) {
+    const canvas = app.elements.lanesCanvas;
+    if (!canvas || !point) return null;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    return {
+        x: canvasRect.left + point.x - canvas.scrollLeft - overlayRect.left,
+        y: canvasRect.top + point.y - canvas.scrollTop - overlayRect.top
+    };
+}
+
+function getMeasurementLineVector(startX, startY, endX, endY) {
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const px = -uy;
+    const py = ux;
+
+    return { dx, dy, length, ux, uy, px, py };
+}
+
+function getMeasurementArrowPoints(startX, startY, endX, endY, arrowLength = 8, arrowHalfWidth = 4) {
+    const vector = getMeasurementLineVector(startX, startY, endX, endY);
+    const baseX = endX - vector.ux * arrowLength;
+    const baseY = endY - vector.uy * arrowLength;
+
+    return {
+        vector,
+        leftX: baseX + vector.px * arrowHalfWidth,
+        leftY: baseY + vector.py * arrowHalfWidth,
+        rightX: baseX - vector.px * arrowHalfWidth,
+        rightY: baseY - vector.py * arrowHalfWidth
+    };
+}
+
+function renderMeasurementOverlay(activeMeasurement = null) {
+    const overlay = document.getElementById('measurement-overlay');
+    if (!overlay) return;
+
+    const entries = app.measurements.slice();
+    if (activeMeasurement) {
+        entries.push(activeMeasurement);
+    }
+
+    overlay.innerHTML = '';
+    if (entries.length === 0) return;
+
+    const overlayRect = overlay.getBoundingClientRect();
+    const isLightTheme = document.body.classList.contains('light-theme');
+    const baseOpacity = isLightTheme ? 0.96 : 0.88;
+    const draftOpacity = isLightTheme ? 1 : 0.95;
+    const lineStrokeWidth = app.measurePinned ? (isLightTheme ? 2.2 : 2) : (isLightTheme ? 1.8 : 1.5);
+    const labelBgFill = isLightTheme ? 'rgba(255, 255, 255, 0.95)' : 'rgba(5, 10, 14, 0.88)';
+    const labelBgStroke = isLightTheme ? 'rgba(15, 23, 42, 0.18)' : 'none';
+
+    entries.forEach((measurement, index) => {
+        const start = canvasPointToOverlay(measurement.start, overlayRect);
+        const end = canvasPointToOverlay(measurement.end, overlayRect);
+        const metrics = computeMeasurementMetrics(measurement);
+        if (!start || !end || !metrics) return;
+
+        const rawColor = sanitizeMeasurementColor(measurement.color, MEASUREMENT_COLORS[index % MEASUREMENT_COLORS.length]);
+        const color = getReadableMeasureColor(rawColor, 4.5);
+        const opacity = activeMeasurement && measurement.id === activeMeasurement.id ? draftOpacity : baseOpacity;
+        const arrow = getMeasurementArrowPoints(start.x, start.y, end.x, end.y, 8, 4);
+        const vector = arrow.vector;
+        const tickHalf = 5;
+        const group = createSvgElement('g', { class: 'measurement-item' });
+
+        group.appendChild(createSvgElement('line', {
+            x1: start.x,
+            y1: start.y,
+            x2: end.x,
+            y2: end.y,
+            class: 'measurement-line',
+            stroke: color,
+            'stroke-opacity': opacity,
+            'stroke-width': lineStrokeWidth
+        }));
+
+        group.appendChild(createSvgElement('line', {
+            x1: start.x,
+            y1: start.y - tickHalf,
+            x2: start.x,
+            y2: start.y + tickHalf,
+            stroke: color,
+            'stroke-opacity': opacity,
+            'stroke-width': 1.5
+        }));
+
+        group.appendChild(createSvgElement('line', {
+            x1: end.x + vector.px * tickHalf,
+            y1: end.y + vector.py * tickHalf,
+            x2: end.x - vector.px * tickHalf,
+            y2: end.y - vector.py * tickHalf,
+            stroke: color,
+            'stroke-opacity': opacity,
+            'stroke-width': 1.5
+        }));
+
+        group.appendChild(createSvgElement('path', {
+            d: `M${arrow.leftX},${arrow.leftY} L${end.x},${end.y} L${arrow.rightX},${arrow.rightY}`,
+            fill: 'none',
+            stroke: color,
+            'stroke-opacity': opacity,
+            'stroke-width': 1.5,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round'
+        }));
+
+        const midX = (start.x + end.x) / 2;
+        const midY = (start.y + end.y) / 2;
+        const labelText = metrics.durationText;
+        const textWidth = labelText.length * 8 + 10;
+
+        group.appendChild(createSvgElement('rect', {
+            x: midX - (textWidth / 2),
+            y: midY - 24,
+            width: textWidth,
+            height: 16,
+            rx: 3,
+            fill: labelBgFill,
+            stroke: labelBgStroke,
+            'stroke-width': isLightTheme ? 0.8 : 0
+        }));
+
+        const textEl = createSvgElement('text', {
+            x: midX,
+            y: midY - 12,
+            class: 'measurement-label',
+            fill: color
+        });
+        textEl.textContent = labelText;
+        group.appendChild(textEl);
+
+        overlay.appendChild(group);
+    });
+}
+
+function applyMeasurementPanelPosition() {
+    const panel = document.getElementById('measurement-info');
+    if (!panel || !panel.classList.contains('active')) return;
+
+    if (!app.measurePanelPosition) {
+        app.measurePanelPosition = {
+            x: Math.max(12, window.innerWidth - (panel.offsetWidth || 300) - 20),
+            y: 96
+        };
+    }
+
+    const min = 8;
+    const maxX = Math.max(min, window.innerWidth - panel.offsetWidth - min);
+    const maxY = Math.max(min, window.innerHeight - panel.offsetHeight - min);
+
+    app.measurePanelPosition.x = Math.min(maxX, Math.max(min, app.measurePanelPosition.x));
+    app.measurePanelPosition.y = Math.min(maxY, Math.max(min, app.measurePanelPosition.y));
+
+    panel.style.left = `${Math.round(app.measurePanelPosition.x)}px`;
+    panel.style.top = `${Math.round(app.measurePanelPosition.y)}px`;
+}
+
+function buildMeasurementInfoRowMarkup(metrics) {
+    const startText = escapeHtml(metrics.startText);
+    const durationText = escapeHtml(metrics.durationText);
+    const endText = escapeHtml(metrics.endText);
+    const ariaLabel = `Start ${metrics.startText}, Duration ${metrics.durationText}, End ${metrics.endText}`;
+
+    return `
+        <div class="measure-panel-values" role="img" aria-label="${escapeHtml(ariaLabel)}">
+            <svg class="measure-row-lines" width="100%" height="100%" aria-hidden="true">
+                <line class="measure-row-line measure-row-line-a" x1="0" y1="9" x2="0" y2="9"></line>
+                <line class="measure-row-line measure-row-line-b" x1="0" y1="9" x2="0" y2="9"></line>
+                <line class="measure-row-arrow measure-row-arrow-a" x1="0" y1="9" x2="0" y2="9"></line>
+                <line class="measure-row-arrow measure-row-arrow-b" x1="0" y1="9" x2="0" y2="9"></line>
+            </svg>
+            <span class="measure-value measure-value-start" title="Start">${startText}</span>
+            <span class="measure-value measure-value-duration" title="Duration">${durationText}</span>
+            <span class="measure-value measure-value-end" title="End">${endText}</span>
+        </div>
+    `;
+}
+
+function buildMeasurementInfoColumnsSvg() {
+    return `
+        <div class="measure-header-values" role="img" aria-label="Start to Duration to End guide">
+            <svg class="measure-header-lines" width="100%" height="100%" aria-hidden="true">
+                <line class="measure-header-line measure-header-line-a" x1="0" y1="0" x2="0" y2="0"></line>
+                <line class="measure-header-line measure-header-line-b" x1="0" y1="0" x2="0" y2="0"></line>
+                <line class="measure-header-arrow measure-header-arrow-a" x1="0" y1="0" x2="0" y2="0"></line>
+                <line class="measure-header-arrow measure-header-arrow-b" x1="0" y1="0" x2="0" y2="0"></line>
+            </svg>
+            <span class="measure-header-label measure-header-label-start">Start</span>
+            <span class="measure-header-label measure-header-label-duration">Duration</span>
+            <span class="measure-header-label measure-header-label-end">End</span>
+        </div>
+    `;
+}
+
+function setMeasurementSvgLine(lineEl, x1, y1, x2, y2) {
+    if (!lineEl) return;
+    const valid = Number.isFinite(x1) && Number.isFinite(y1) && Number.isFinite(x2) && Number.isFinite(y2)
+        && Math.hypot(x2 - x1, y2 - y1) >= 1;
+    if (!valid) {
+        lineEl.style.display = 'none';
+        return;
+    }
+
+    lineEl.style.display = '';
+    lineEl.setAttribute('x1', (Math.round(x1 * 10) / 10).toString());
+    lineEl.setAttribute('y1', (Math.round(y1 * 10) / 10).toString());
+    lineEl.setAttribute('x2', (Math.round(x2 * 10) / 10).toString());
+    lineEl.setAttribute('y2', (Math.round(y2 * 10) / 10).toString());
+}
+
+function layoutMeasurementInfoHeader() {
+    const panel = document.getElementById('measurement-info');
+    if (!panel) return;
+
+    const valuesEl = panel.querySelector('.measure-header-values');
+    const headerSvg = panel.querySelector('.measure-header-lines');
+    const startEl = panel.querySelector('.measure-header-label-start');
+    const durationEl = panel.querySelector('.measure-header-label-duration');
+    const endEl = panel.querySelector('.measure-header-label-end');
+    if (!valuesEl || !headerSvg || !startEl || !durationEl || !endEl) return;
+
+    const valuesRect = valuesEl.getBoundingClientRect();
+    const width = valuesRect.width;
+    const height = Math.max(20, valuesEl.clientHeight || 20);
+    if (width <= 0) return;
+
+    headerSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    headerSvg.setAttribute('preserveAspectRatio', 'none');
+
+    const toLocal = (rect) => ({
+        left: rect.left - valuesRect.left,
+        right: rect.right - valuesRect.left
+    });
+
+    const start = toLocal(startEl.getBoundingClientRect());
+    const duration = toLocal(durationEl.getBoundingClientRect());
+    const end = toLocal(endEl.getBoundingClientRect());
+    const startRect = startEl.getBoundingClientRect();
+    const durationRect = durationEl.getBoundingClientRect();
+    const endRect = endEl.getBoundingClientRect();
+
+    const y = (
+        (startRect.top + startRect.bottom) +
+        (durationRect.top + durationRect.bottom) +
+        (endRect.top + endRect.bottom)
+    ) / 6 - valuesRect.top;
+    const lineY = Math.max(4, Math.min(height - 2, y));
+    const gap = 8;
+    const arrowLen = 6;
+    const arrowHalf = 3;
+
+    const segment1Start = start.right + gap;
+    const segment1End = duration.left - gap;
+    const arrowTip = end.left - gap;
+    const segment2Start = duration.right + gap;
+    const segment2End = arrowTip - arrowLen;
+
+    setMeasurementSvgLine(headerSvg.querySelector('.measure-header-line-a'), segment1Start, lineY, segment1End, lineY);
+    setMeasurementSvgLine(headerSvg.querySelector('.measure-header-line-b'), segment2Start, lineY, segment2End, lineY);
+    setMeasurementSvgLine(headerSvg.querySelector('.measure-header-arrow-a'), arrowTip - arrowLen, lineY - arrowHalf, arrowTip, lineY);
+    setMeasurementSvgLine(headerSvg.querySelector('.measure-header-arrow-b'), arrowTip - arrowLen, lineY + arrowHalf, arrowTip, lineY);
+}
+
+function layoutMeasurementInfoRows() {
+    const panel = document.getElementById('measurement-info');
+    if (!panel || !panel.classList.contains('active')) return;
+
+    const rows = panel.querySelectorAll('.measure-panel-row');
+
+    rows.forEach(row => {
+        const valuesEl = row.querySelector('.measure-panel-values');
+        const svg = row.querySelector('.measure-row-lines');
+        const startEl = row.querySelector('.measure-value-start');
+        const durationEl = row.querySelector('.measure-value-duration');
+        const endEl = row.querySelector('.measure-value-end');
+        if (!valuesEl || !svg || !startEl || !durationEl || !endEl) return;
+
+        const valuesRect = valuesEl.getBoundingClientRect();
+        const width = valuesRect.width;
+        const height = Math.max(18, valuesEl.clientHeight || 18);
+        if (width <= 0) return;
+
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+
+        const toLocal = (rect) => ({
+            left: rect.left - valuesRect.left,
+            right: rect.right - valuesRect.left,
+            center: (rect.left + rect.right) / 2 - valuesRect.left
+        });
+
+        const start = toLocal(startEl.getBoundingClientRect());
+        const duration = toLocal(durationEl.getBoundingClientRect());
+        const end = toLocal(endEl.getBoundingClientRect());
+        const startRect = startEl.getBoundingClientRect();
+        const durationRect = durationEl.getBoundingClientRect();
+        const endRect = endEl.getBoundingClientRect();
+
+        const centerY = (
+            (startRect.top + startRect.bottom) +
+            (durationRect.top + durationRect.bottom) +
+            (endRect.top + endRect.bottom)
+        ) / 6 - valuesRect.top;
+        const lineY = Math.max(4, Math.min(height - 2, centerY));
+        const gap = 6;
+        const arrowLen = 6;
+        const arrowHalf = 3;
+
+        const segment1Start = start.right + gap;
+        const segment1End = duration.left - gap;
+        const arrowTip = end.left - gap;
+        const segment2Start = duration.right + gap;
+        const segment2End = arrowTip - arrowLen;
+
+        setMeasurementSvgLine(row.querySelector('.measure-row-line-a'), segment1Start, lineY, segment1End, lineY);
+        setMeasurementSvgLine(row.querySelector('.measure-row-line-b'), segment2Start, lineY, segment2End, lineY);
+        setMeasurementSvgLine(row.querySelector('.measure-row-arrow-a'), arrowTip - arrowLen, lineY - arrowHalf, arrowTip, lineY);
+        setMeasurementSvgLine(row.querySelector('.measure-row-arrow-b'), arrowTip - arrowLen, lineY + arrowHalf, arrowTip, lineY);
+    });
+
+    layoutMeasurementInfoHeader();
+}
+
+function renderMeasurementInfo(activeMeasurement = null) {
+    const panel = document.getElementById('measurement-info');
+    if (!panel) return;
+
+    const entries = app.measurements.slice();
+    if (activeMeasurement) {
+        entries.push(activeMeasurement);
+    }
+
+    const shouldShow = entries.length > 0 && (app.measureToolActive || app.measurePinned || app.isMeasuring || app.measurements.length > 0);
+    panel.classList.toggle('active', shouldShow);
+    panel.classList.toggle('pinned', app.measurePinned);
+
+    if (!shouldShow) {
+        panel.innerHTML = '';
+        return;
+    }
+
+    const recentEntries = entries.slice(-12).reverse();
+    const rowsHtml = recentEntries.map((measurement, index) => {
+        const metrics = computeMeasurementMetrics(measurement);
+        if (!metrics) return '';
+
+        const rawColor = sanitizeMeasurementColor(measurement.color, MEASUREMENT_COLORS[index % MEASUREMENT_COLORS.length]);
+        const color = getReadableMeasureColor(rawColor, 4.8);
+        const draftClass = activeMeasurement && measurement.id === activeMeasurement.id ? ' is-draft' : '';
+
+        return `
+            <div class="measure-panel-row${draftClass}" style="--measure-color:${color}">
+                ${buildMeasurementInfoRowMarkup(metrics)}
+            </div>
+        `;
+    }).join('');
+
+    panel.innerHTML = `
+        <div class="measurement-info-header">
+            <span class="measurement-info-title">Measures${recentEntries.length > 0 ? ` (${recentEntries.length})` : ''}</span>
+            <span class="measurement-info-hint">Drag to move${activeMeasurement ? ' • drawing' : ''}</span>
+        </div>
+        <div class="measurement-info-columns">
+            ${buildMeasurementInfoColumnsSvg()}
+        </div>
+        <div class="measurement-info-list">${rowsHtml}</div>
+    `;
+
+    applyMeasurementPanelPosition();
+    layoutMeasurementInfoRows();
+    requestAnimationFrame(() => layoutMeasurementInfoRows());
+}
+
+function startMeasurementPanelDrag(e) {
+    const panel = document.getElementById('measurement-info');
+    if (!panel || !panel.classList.contains('active')) return;
+    if (!e.target.closest('.measurement-info-header')) return;
+
+    const rect = panel.getBoundingClientRect();
+    app.measurePanelDrag = {
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top
+    };
+    panel.classList.add('dragging');
+    e.preventDefault();
+}
+
+function handleMeasurementPanelDrag(e) {
+    if (!app.measurePanelDrag) return;
+    app.measurePanelPosition = {
+        x: e.clientX - app.measurePanelDrag.offsetX,
+        y: e.clientY - app.measurePanelDrag.offsetY
+    };
+    applyMeasurementPanelPosition();
+}
+
+function stopMeasurementPanelDrag() {
+    if (!app.measurePanelDrag) return;
+    app.measurePanelDrag = null;
+    const panel = document.getElementById('measurement-info');
+    if (panel) {
+        panel.classList.remove('dragging');
+    }
+    autoSave();
+    saveSessionState();
+}
+
+function getMeasurementsForExport() {
+    const entries = app.measurements.slice();
+    if (app.isMeasuring && app.measureStart && app.measureEnd) {
+        entries.push(createMeasurementEntry(app.measureStart, app.measureEnd, app.measureCurrentColor || MEASUREMENT_COLORS[0]));
+    }
+    if (entries.length > 0) {
+        return entries;
+    }
+    if (app.measurePinned && app.measureStart && app.measureEnd) {
+        return [createMeasurementEntry(app.measureStart, app.measureEnd, app.measureCurrentColor || MEASUREMENT_COLORS[0])];
+    }
+    return [];
 }
 
 function getMeasurementSnapPoints() {
@@ -3100,7 +4285,8 @@ function getClosestMeasurementSnapPoint(rawX, snapPoints = getMeasurementSnapPoi
 function resolveMeasurementPoint(clientX, clientY, snapPoints = getMeasurementSnapPoints()) {
     const canvas = app.elements.lanesCanvas;
     const rect = canvas.getBoundingClientRect();
-    const rawX = clientX - rect.left + canvas.scrollLeft;
+    const minX = getLaneLabelWidthPx();
+    const rawX = Math.max(minX, clientX - rect.left + canvas.scrollLeft);
     const y = clientY - rect.top + canvas.scrollTop;
     const snapPoint = getClosestMeasurementSnapPoint(rawX, snapPoints);
     const resolvedX = snapPoint ? snapPoint.x : rawX;
@@ -3118,6 +4304,7 @@ function resolveMeasurementPoint(clientX, clientY, snapPoints = getMeasurementSn
 function startMeasurement(e) {
     app.measureSnapPoints = getMeasurementSnapPoints();
     const resolvedPoint = resolveMeasurementPoint(e.clientX, e.clientY, app.measureSnapPoints);
+    app.measureCurrentColor = getNextMeasurementColor();
 
     app.isMeasuring = true;
     app.measureStart = { ...resolvedPoint };
@@ -3125,7 +4312,7 @@ function startMeasurement(e) {
 
     // Show measurement overlay
     const overlay = document.getElementById('measurement-overlay');
-    overlay.classList.add('active');
+    if (overlay) overlay.classList.add('active');
 
     updateMeasurementDisplay();
     e.preventDefault();
@@ -3142,18 +4329,45 @@ function updateMeasurement(e) {
 function endMeasurement() {
     if (!app.isMeasuring) return;
 
+    const completedMeasurement = createMeasurementEntry(app.measureStart, app.measureEnd, app.measureCurrentColor);
+    const hasDistance = completedMeasurement.start && completedMeasurement.end
+        && Math.abs(completedMeasurement.end.x - completedMeasurement.start.x) >= MIN_MEASUREMENT_DISTANCE_PX;
+
     app.isMeasuring = false;
     app.measureSnapPoints = null;
 
-    // If pinned, keep visible; otherwise fade after delay
-    if (!app.measurePinned) {
+    if (hasDistance) {
+        app.measurements.push(completedMeasurement);
+        app.measureStart = cloneMeasurementPoint(completedMeasurement.start);
+        app.measureEnd = cloneMeasurementPoint(completedMeasurement.end);
+    } else {
+        app.measureStart = null;
+        app.measureEnd = null;
+    }
+
+    updateMeasurementDisplay();
+
+    // Ctrl/Cmd measurement mode: auto-hide after delay unless pinned
+    if (!app.measurePinned && !app.measureToolActive) {
         setTimeout(() => {
-            if (!app.isMeasuring && !app.measurePinned) {
+            if (!app.isMeasuring && !app.measurePinned && !app.measureToolActive) {
+                app.measurements = [];
+                app.measureStart = null;
+                app.measureEnd = null;
                 const overlay = document.getElementById('measurement-overlay');
-                overlay.classList.remove('active');
+                const infoBox = document.getElementById('measurement-info');
+                if (overlay) overlay.classList.remove('active');
+                if (infoBox) infoBox.classList.remove('active');
+                const measureBar = document.getElementById('measurement-bar');
+                if (measureBar) measureBar.classList.add('hidden');
+                autoSave();
+                saveSessionState();
             }
         }, 2000);
     }
+
+    autoSave();
+    saveSessionState();
 }
 
 function toggleMeasurementPin() {
@@ -3162,27 +4376,26 @@ function toggleMeasurementPin() {
     const infoBox = document.getElementById('measurement-info');
 
     if (app.measurePinned) {
-        overlay.classList.add('pinned');
-        infoBox.classList.add('pinned');
+        if (overlay) overlay.classList.add('pinned');
+        if (infoBox) infoBox.classList.add('pinned');
     } else {
-        overlay.classList.remove('pinned');
-        infoBox.classList.remove('pinned');
+        if (overlay) overlay.classList.remove('pinned');
+        if (infoBox) infoBox.classList.remove('pinned');
         // Fade out after unpinning
         setTimeout(() => {
-            if (!app.isMeasuring && !app.measurePinned) {
-                overlay.classList.remove('active');
+            if (!app.isMeasuring && !app.measurePinned && !app.measureToolActive) {
+                app.measurements = [];
+                app.measureStart = null;
+                app.measureEnd = null;
+                if (overlay) overlay.classList.remove('active');
+                if (infoBox) infoBox.classList.remove('active');
                 // Also hide toolbar bar
                 const measureBar = document.getElementById('measurement-bar');
                 if (measureBar) measureBar.classList.add('hidden');
+                autoSave();
+                saveSessionState();
             }
         }, 2000);
-    }
-
-    // Update pin button state (legacy info box)
-    const pinBtn = infoBox.querySelector('.measure-pin-btn');
-    if (pinBtn) {
-        pinBtn.classList.toggle('active', app.measurePinned);
-        pinBtn.title = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
     }
 
     // Update toolbar bar pin button state
@@ -3191,21 +4404,44 @@ function toggleMeasurementPin() {
         barPinBtn.classList.toggle('active', app.measurePinned);
         barPinBtn.title = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
     }
+
+    updateMeasurementDisplay();
+    autoSave();
+    saveSessionState();
 }
 
 function closeMeasurement() {
     app.isMeasuring = false;
     app.measurePinned = false;
+    app.measureToolActive = false;
     app.measureSnapPoints = null;
     app.measureStart = null;
     app.measureEnd = null;
+    app.measurements = [];
+    app.measureSequence = 0;
+    app.measureCurrentColor = MEASUREMENT_COLORS[0];
+    app.measurePanelDrag = null;
     const overlay = document.getElementById('measurement-overlay');
     const infoBox = document.getElementById('measurement-info');
-    overlay.classList.remove('active', 'pinned');
-    infoBox.classList.remove('pinned');
+    if (overlay) overlay.classList.remove('active', 'pinned');
+    if (infoBox) {
+        infoBox.classList.remove('active', 'pinned', 'dragging');
+        infoBox.innerHTML = '';
+    }
     // Hide toolbar measurement bar
     const measureBar = document.getElementById('measurement-bar');
     if (measureBar) measureBar.classList.add('hidden');
+    const barPinBtn = document.getElementById('measure-bar-pin');
+    if (barPinBtn) {
+        barPinBtn.classList.remove('active');
+        barPinBtn.title = 'Pin measurement';
+    }
+    const toolBtn = document.getElementById('measure-tool-btn');
+    if (toolBtn) {
+        toolBtn.classList.remove('active');
+        toolBtn.setAttribute('aria-pressed', 'false');
+    }
+    document.body.style.cursor = '';
 }
 
 function toggleMeasurementTool() {
@@ -3214,6 +4450,7 @@ function toggleMeasurementTool() {
 
     if (app.measureToolActive) {
         btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
         document.body.style.cursor = 'crosshair';
         // Show measurement bar with zero values
         const measureBar = document.getElementById('measurement-bar');
@@ -3226,17 +4463,16 @@ function toggleMeasurementTool() {
             if (startEl) startEl.textContent = '0ms';
             if (endEl) endEl.textContent = '0ms';
         }
-        showToast({
-            type: 'info',
-            title: 'Measurement Mode Active',
-            message: 'Click and drag on the timeline to measure durations',
-            duration: 2500
-        });
     } else {
         btn.classList.remove('active');
+        btn.setAttribute('aria-pressed', 'false');
         document.body.style.cursor = '';
         closeMeasurement();
     }
+
+    updateMeasurementDisplay();
+    autoSave();
+    saveSessionState();
 }
 
 function restorePinnedMeasurement() {
@@ -3250,107 +4486,180 @@ function restorePinnedMeasurement() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const laneLabelWidth = getLaneLabelWidthPx();
-
-    // Restore measurement coordinates
-    const startX = app.pinnedMeasurementData.startX;
-    const endX = app.pinnedMeasurementData.endX;
-
-    // Calculate Y position (center of lanes area)
     const lanesAreaHeight = app.diagram.lanes.length * getLaneHeightPx();
-    const y = lanesAreaHeight / 2;
+    const defaultY = lanesAreaHeight / 2;
+    const persisted = app.pinnedMeasurementData;
 
-    // Convert canvas X to client X
-    const clientStartX = rect.left + startX - canvas.scrollLeft;
-    const clientEndX = rect.left + endX - canvas.scrollLeft;
-    const clientY = rect.top + y - canvas.scrollTop;
+    const normalizePointForCanvas = (point) => {
+        const normalized = normalizeMeasurementPoint(point);
+        if (!normalized || !Number.isFinite(normalized.x)) return null;
+        const safeY = Number.isFinite(normalized.y) ? normalized.y : defaultY;
+        return {
+            x: normalized.x,
+            y: safeY,
+            clientX: rect.left + normalized.x - canvas.scrollLeft,
+            clientY: rect.top + safeY - canvas.scrollTop,
+            snapped: !!normalized.snapped,
+            snapTimeMs: Number.isFinite(normalized.snapTimeMs) ? normalized.snapTimeMs : null
+        };
+    };
 
-    app.measureStart = { x: startX, y: y, clientX: clientStartX, clientY: clientY, snapped: false, snapTimeMs: null };
-    app.measureEnd = { x: endX, y: y, clientX: clientEndX, clientY: clientY, snapped: false, snapTimeMs: null };
-    app.measurePinned = true;
+    const normalizeEntryForCanvas = (entry, fallbackColor, idx) => {
+        const normalized = normalizeMeasurementEntry(entry, fallbackColor);
+        if (!normalized) return null;
+        const start = normalizePointForCanvas(normalized.start);
+        const end = normalizePointForCanvas(normalized.end);
+        if (!start || !end) return null;
 
-    // Show measurement overlay
-    const overlay = document.getElementById('measurement-overlay');
-    overlay.classList.add('active', 'pinned');
+        return {
+            id: normalized.id || `m-restore-${Date.now()}-${idx}`,
+            color: sanitizeMeasurementColor(normalized.color, fallbackColor),
+            start,
+            end
+        };
+    };
+
+    if (persisted && typeof persisted === 'object' && (persisted.measurements || persisted.toolActive !== undefined || persisted.pinned !== undefined)) {
+        const restoredMeasurements = Array.isArray(persisted.measurements)
+            ? persisted.measurements
+                .map((entry, idx) => normalizeEntryForCanvas(entry, MEASUREMENT_COLORS[idx % MEASUREMENT_COLORS.length], idx))
+                .filter(Boolean)
+            : [];
+
+        const restoredStart = normalizePointForCanvas(persisted.start)
+            || (restoredMeasurements[0] ? cloneMeasurementPoint(restoredMeasurements[restoredMeasurements.length - 1].start) : null);
+        const restoredEnd = normalizePointForCanvas(persisted.end)
+            || (restoredMeasurements[0] ? cloneMeasurementPoint(restoredMeasurements[restoredMeasurements.length - 1].end) : null);
+
+        app.measurements = restoredMeasurements;
+        app.measureStart = restoredStart;
+        app.measureEnd = restoredEnd;
+        app.measurePinned = !!persisted.pinned;
+        app.measureToolActive = !!persisted.toolActive;
+        app.measureSequence = Math.max(restoredMeasurements.length, parseInt(persisted.sequence, 10) || 0);
+        app.measureCurrentColor = sanitizeMeasurementColor(persisted.currentColor, MEASUREMENT_COLORS[app.measureSequence % MEASUREMENT_COLORS.length]);
+        app.measurePanelPosition = (persisted.panelPosition && Number.isFinite(persisted.panelPosition.x) && Number.isFinite(persisted.panelPosition.y))
+            ? { x: Number(persisted.panelPosition.x), y: Number(persisted.panelPosition.y) }
+            : null;
+    } else {
+        // Legacy format: pinned range only
+        const startX = Number(persisted?.startX);
+        const endX = Number(persisted?.endX);
+        if (Number.isFinite(startX) && Number.isFinite(endX)) {
+            const clientStartX = rect.left + startX - canvas.scrollLeft;
+            const clientEndX = rect.left + endX - canvas.scrollLeft;
+            const clientY = rect.top + defaultY - canvas.scrollTop;
+            const restoredStart = { x: startX, y: defaultY, clientX: clientStartX, clientY: clientY, snapped: false, snapTimeMs: null };
+            const restoredEnd = { x: endX, y: defaultY, clientX: clientEndX, clientY: clientY, snapped: false, snapTimeMs: null };
+
+            app.measureStart = cloneMeasurementPoint(restoredStart);
+            app.measureEnd = cloneMeasurementPoint(restoredEnd);
+            app.measurements = [createMeasurementEntry(restoredStart, restoredEnd, MEASUREMENT_COLORS[0])];
+            app.measurePinned = true;
+            app.measureToolActive = false;
+            app.measureSequence = 1;
+            app.measureCurrentColor = MEASUREMENT_COLORS[1 % MEASUREMENT_COLORS.length];
+            app.measurePanelPosition = null;
+        }
+    }
+
+    const measureToolBtn = document.getElementById('measure-tool-btn');
+    if (measureToolBtn) {
+        measureToolBtn.classList.toggle('active', app.measureToolActive);
+        measureToolBtn.setAttribute('aria-pressed', app.measureToolActive ? 'true' : 'false');
+    }
+    document.body.style.cursor = app.measureToolActive ? 'crosshair' : '';
 
     // Update display
     updateMeasurementDisplay();
 
     // Clear the stored data
     app.pinnedMeasurementData = null;
+    saveSessionState();
 }
 
 function updateMeasurementDisplay() {
     const overlay = document.getElementById('measurement-overlay');
-    const line = document.getElementById('measurement-line');
-    const label = document.getElementById('measurement-label');
+    if (!overlay) return;
+    const activeMeasurement = (app.isMeasuring && app.measureStart && app.measureEnd)
+        ? createMeasurementEntry(app.measureStart, app.measureEnd, app.measureCurrentColor || MEASUREMENT_COLORS[0])
+        : null;
+    const latestMeasurement = activeMeasurement || (app.measurements.length > 0 ? app.measurements[app.measurements.length - 1] : null);
+    const latestMetrics = latestMeasurement ? computeMeasurementMetrics(latestMeasurement) : null;
 
-    if (!app.measureStart || !app.measureEnd) return;
+    const hasRenderableMeasurements = !!activeMeasurement || app.measurements.length > 0;
+    overlay.classList.toggle('active', hasRenderableMeasurements || app.measurePinned);
+    overlay.classList.toggle('pinned', app.measurePinned);
 
-    const startX = app.measureStart.clientX;
-    const startY = app.measureStart.clientY;
-    const endX = app.measureEnd.clientX;
-    const endY = app.measureEnd.clientY;
-
-    const laneLabelWidth = getLaneLabelWidthPx();
-    const leftPoint = app.measureStart.x <= app.measureEnd.x ? app.measureStart : app.measureEnd;
-    const rightPoint = leftPoint === app.measureStart ? app.measureEnd : app.measureStart;
-
-    const leftVisualMs = pixelsToMs(leftPoint.x - laneLabelWidth);
-    const rightVisualMs = pixelsToMs(rightPoint.x - laneLabelWidth);
-
-    const actualStartMs = Number.isFinite(leftPoint.snapTimeMs)
-        ? leftPoint.snapTimeMs
-        : visualMsToActualMs(leftVisualMs);
-    const actualEndMs = Number.isFinite(rightPoint.snapTimeMs)
-        ? rightPoint.snapTimeMs
-        : visualMsToActualMs(rightVisualMs);
-    const actualDuration = Math.max(0, actualEndMs - actualStartMs);
-
-    // Update SVG line
-    const svgRect = overlay.getBoundingClientRect();
-    const x1 = startX - svgRect.left;
-    const y1 = startY - svgRect.top;
-    const x2 = endX - svgRect.left;
-    const y2 = endY - svgRect.top;
-
-    line.setAttribute('x1', x1);
-    line.setAttribute('y1', y1);
-    line.setAttribute('x2', x2);
-    line.setAttribute('y2', y2);
-
-    // Update label position and content
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2;
-
-    label.setAttribute('x', midX);
-    label.setAttribute('y', midY - 10);
-
-    // Format the measurement text (always show actual duration)
-    const timeText = formatDuration(Math.round(actualDuration));
-    label.textContent = timeText;
+    renderMeasurementOverlay(activeMeasurement);
+    renderMeasurementInfo(activeMeasurement);
 
     // Update measurement toolbar bar
     const measureBar = document.getElementById('measurement-bar');
     if (measureBar) {
-        measureBar.classList.remove('hidden');
+        if (latestMetrics) {
+            measureBar.classList.remove('hidden');
+        } else if (app.measureToolActive) {
+            measureBar.classList.remove('hidden');
+        } else if (!app.measureToolActive && !app.measurePinned) {
+            measureBar.classList.add('hidden');
+        }
+
         const durEl = document.getElementById('measure-bar-duration');
         const startEl = document.getElementById('measure-bar-start');
         const endEl = document.getElementById('measure-bar-end');
         const pinEl = document.getElementById('measure-bar-pin');
-        if (durEl) durEl.textContent = timeText;
-        if (startEl) startEl.textContent = formatDuration(Math.round(actualStartMs));
-        if (endEl) endEl.textContent = formatDuration(Math.round(actualEndMs));
+
+        if (latestMetrics) {
+            if (durEl) durEl.textContent = latestMetrics.durationText;
+            if (startEl) startEl.textContent = latestMetrics.startText;
+            if (endEl) endEl.textContent = latestMetrics.endText;
+        } else if (app.measureToolActive) {
+            if (durEl) durEl.textContent = '0ms';
+            if (startEl) startEl.textContent = '0ms';
+            if (endEl) endEl.textContent = '0ms';
+        }
+
         if (pinEl) {
             pinEl.classList.toggle('active', app.measurePinned);
+            pinEl.title = app.measurePinned ? 'Unpin measurement' : 'Pin measurement';
         }
     }
 
 }
 
+function getFitToViewScale() {
+    const totalDuration = app.diagram.getTotalDuration();
+    if (totalDuration <= 0) return null;
+
+    const laneLabelWidth = getLaneLabelWidthPx();
+    const canvasWidth = app.elements.lanesCanvas.clientWidth - (laneLabelWidth + 20);
+    if (canvasWidth <= 0) return null;
+
+    const fitScale = canvasWidth / (totalDuration * 1.1);
+    return Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fitScale));
+}
+
+function isZoomAtFitScale(scale = app.pixelsPerMs) {
+    const fitScale = getFitToViewScale();
+    if (!fitScale) return false;
+    const tolerance = Math.max(1e-6, fitScale * 0.01);
+    return Math.abs(scale - fitScale) <= tolerance;
+}
+
+function syncZoomFitIndicator() {
+    const fitBtn = document.getElementById('zoom-fit');
+    if (!fitBtn) return;
+
+    const isActive = isZoomAtFitScale();
+
+    fitBtn.classList.toggle('fit-active', isActive);
+    fitBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+}
+
 function handleZoom(direction) {
     const canvas = app.elements.lanesCanvas;
-    const laneLabelWidth = 160; // var(--lane-label-width)
+    const laneLabelWidth = getLaneLabelWidthPx();
 
     // Get current viewport center in time (ms)
     const viewportWidth = canvas.clientWidth - laneLabelWidth;
@@ -3360,7 +4669,6 @@ function handleZoom(direction) {
 
     // Apply zoom
     const factor = direction === 'in' ? 1.25 : 0.8;
-    const oldScale = app.pixelsPerMs;
     app.pixelsPerMs = Math.max(app.minPixelsPerMs,
         Math.min(app.maxPixelsPerMs, app.pixelsPerMs * factor));
 
@@ -3376,19 +4684,40 @@ function handleZoom(direction) {
     // Sync ruler and markers
     app.elements.timelineRuler.scrollLeft = canvas.scrollLeft;
     app.elements.timeMarkers.scrollLeft = canvas.scrollLeft;
+    syncZoomFitIndicator();
+    saveSessionState();
 }
 
 function handleZoomFit() {
-    const totalDuration = app.diagram.getTotalDuration();
-    if (totalDuration === 0) return;
+    const canvas = app.elements.lanesCanvas;
+    const laneLabelWidth = getLaneLabelWidthPx();
+    const viewportWidth = Math.max(1, canvas.clientWidth - laneLabelWidth);
+    const centerX = canvas.scrollLeft + viewportWidth / 2;
+    const centerTimeMs = centerX / app.pixelsPerMs;
+    const fitScale = getFitToViewScale();
+    if (!fitScale) {
+        syncZoomFitIndicator();
+        return;
+    }
 
-    const canvasWidth = app.elements.lanesCanvas.clientWidth - 180; // Account for lane label
-    app.pixelsPerMs = Math.max(app.minPixelsPerMs,
-        Math.min(app.maxPixelsPerMs, canvasWidth / (totalDuration * 1.1)));
+    if (isZoomAtFitScale()) {
+        const fallbackScale = Number.isFinite(app.zoomBeforeFitScale) ? app.zoomBeforeFitScale : 0.15;
+        app.pixelsPerMs = Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fallbackScale));
+        app.zoomBeforeFitScale = null;
+    } else {
+        app.zoomBeforeFitScale = app.pixelsPerMs;
+        app.pixelsPerMs = fitScale;
+    }
 
     app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
 
     renderLanesCanvas();
+    const newCenterX = centerTimeMs * app.pixelsPerMs;
+    canvas.scrollLeft = Math.max(0, newCenterX - viewportWidth / 2);
+    app.elements.timelineRuler.scrollLeft = canvas.scrollLeft;
+    app.elements.timeMarkers.scrollLeft = canvas.scrollLeft;
+    syncZoomFitIndicator();
+    saveSessionState();
 }
 
 // =====================================================
@@ -3432,15 +4761,7 @@ function handleDeleteLane(laneId = null) {
 
     const lane = app.diagram.lanes.find(l => l.id === resolvedLaneId);
     if (!lane) return;
-
-    const boxCount = app.diagram.getBoxesForLane(resolvedLaneId).length;
-    showConfirmToast({
-        title: 'Delete Lane?',
-        message: `"${lane.name || 'Lane'}"${boxCount > 0 ? ` and its ${boxCount} box${boxCount > 1 ? 'es' : ''}` : ''} will be removed.`,
-        onConfirm: () => {
-            deleteLaneWithUndo(resolvedLaneId);
-        }
-    });
+    requestLaneDelete(resolvedLaneId);
 }
 
 // =====================================================
@@ -3482,9 +4803,11 @@ function loadFromJSON(file) {
             const data = JSON.parse(e.target.result);
 
             // Create a new diagram instead of overwriting current
-            currentDiagramId = generateDiagramId();
+            setCurrentDiagramId(generateDiagramId());
             app.diagram = new TimelineDiagram();
             app.diagram.fromJSON(data);
+            clearPendingPurgeRequest();
+            clearLaneHistory();
 
             app.elements.diagramTitle.value = app.diagram.title;
             app.elements.startTime.value = app.diagram.startTime;
@@ -3551,6 +4874,8 @@ function loadFromURL() {
         const data = decodeFromURL(encoded);
         if (data) {
             app.diagram.fromJSON(data);
+            clearPendingPurgeRequest();
+            clearLaneHistory();
             // Schedule measurement restore after initial render
             setTimeout(() => restorePinnedMeasurement(), 100);
             return true;
@@ -3694,7 +5019,7 @@ function exportToPNG() {
     const scale = 2; // High DPI
     const headerHeight = 50;
     const laneHeight = getLaneHeightPx();
-    const laneLabelWidth = 160;
+    const laneLabelWidth = getLaneLabelWidthPx();
     const rulerHeight = 40;
     const footerHeight = 40;
     const metrics = getExportTimelineMetrics();
@@ -4004,66 +5329,66 @@ function exportToPNG() {
     });
     ctx.textAlign = 'left';
 
-    // Draw pinned measurement if active
-    if (app.measurePinned && app.measureStart && app.measureEnd) {
-        const measureColor = '#39FF14';
-        const canvas_rect = app.elements.lanesCanvas.getBoundingClientRect();
-
-        // Convert client coordinates to export coordinates
-        const startXCanvas = app.measureStart.x;
-        const endXCanvas = app.measureEnd.x;
-
-        // Map canvas X to export X (accounting for lane label width difference)
-        const exportStartX = laneLabelWidth + (startXCanvas - 160); // 160 is the lane label width in app
-        const exportEndX = laneLabelWidth + (endXCanvas - 160);
-
-        // Y position - center in lanes area
-        const measureY = lanesStartY + lanesAreaHeight / 2;
-
-        // Draw measurement line
-        ctx.strokeStyle = measureColor;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(exportStartX, measureY);
-        ctx.lineTo(exportEndX, measureY);
-        ctx.stroke();
-
-        // Draw start marker (vertical line)
-        ctx.beginPath();
-        ctx.moveTo(exportStartX, measureY - 5);
-        ctx.lineTo(exportStartX, measureY + 5);
-        ctx.stroke();
-
-        // Draw end marker (arrow + vertical line)
-        const arrowDir = exportEndX > exportStartX ? -1 : 1;
-        ctx.beginPath();
-        ctx.moveTo(exportEndX + arrowDir * 6, measureY - 3);
-        ctx.lineTo(exportEndX, measureY);
-        ctx.lineTo(exportEndX + arrowDir * 6, measureY + 3);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(exportEndX, measureY - 5);
-        ctx.lineTo(exportEndX, measureY + 5);
-        ctx.stroke();
-
-        // Draw measurement label
-        const pixelDistX = Math.abs(exportEndX - exportStartX);
-        const timeDistance = pixelsToMs(Math.abs(endXCanvas - startXCanvas));
-        const measureText = formatDuration(Math.round(timeDistance));
-        const midX = (exportStartX + exportEndX) / 2;
-
-        ctx.fillStyle = measureColor;
+    // Draw measurements
+    const exportMeasurements = getMeasurementsForExport();
+    if (exportMeasurements.length > 0) {
+        const appLaneLabelWidth = getLaneLabelWidthPx();
         ctx.font = '600 14px Monaco, monospace';
         ctx.textAlign = 'center';
 
-        // Draw text background
-        const textWidth = ctx.measureText(measureText).width + 8;
-        ctx.fillStyle = '#0f1419';
-        ctx.fillRect(midX - textWidth / 2, measureY - 22, textWidth, 16);
+        exportMeasurements.forEach((measurement, index) => {
+            const metrics = computeMeasurementMetrics(measurement);
+            if (!metrics || !measurement.start || !measurement.end) return;
 
-        ctx.fillStyle = measureColor;
-        ctx.fillText(measureText, midX, measureY - 10);
+            const measureColor = sanitizeMeasurementColor(measurement.color, MEASUREMENT_COLORS[index % MEASUREMENT_COLORS.length]);
+            const startXCanvas = measurement.start.x;
+            const endXCanvas = measurement.end.x;
+
+            const exportStartX = laneLabelWidth + (startXCanvas - appLaneLabelWidth);
+            const exportEndX = laneLabelWidth + (endXCanvas - appLaneLabelWidth);
+            const relativeStartY = Number.isFinite(measurement.start.y) ? measurement.start.y : (lanesAreaHeight / 2);
+            const relativeEndY = Number.isFinite(measurement.end.y) ? measurement.end.y : relativeStartY;
+            const exportStartY = Math.max(lanesStartY + 8, Math.min(lanesStartY + lanesAreaHeight - 8, lanesStartY + relativeStartY));
+            const exportEndY = Math.max(lanesStartY + 8, Math.min(lanesStartY + lanesAreaHeight - 8, lanesStartY + relativeEndY));
+            const arrow = getMeasurementArrowPoints(exportStartX, exportStartY, exportEndX, exportEndY, 8, 4);
+            const vector = arrow.vector;
+            const tickHalf = 5;
+
+            ctx.strokeStyle = measureColor;
+            ctx.lineWidth = app.measurePinned ? 2 : 1.5;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(exportStartX, exportStartY);
+            ctx.lineTo(exportEndX, exportEndY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(exportStartX, exportStartY - tickHalf);
+            ctx.lineTo(exportStartX, exportStartY + tickHalf);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(arrow.leftX, arrow.leftY);
+            ctx.lineTo(exportEndX, exportEndY);
+            ctx.lineTo(arrow.rightX, arrow.rightY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(exportEndX + vector.px * tickHalf, exportEndY + vector.py * tickHalf);
+            ctx.lineTo(exportEndX - vector.px * tickHalf, exportEndY - vector.py * tickHalf);
+            ctx.stroke();
+
+            const measureText = metrics.durationText;
+            const midX = (exportStartX + exportEndX) / 2;
+            const midY = (exportStartY + exportEndY) / 2;
+            const textWidth = ctx.measureText(measureText).width + 8;
+
+            ctx.fillStyle = '#0f1419';
+            ctx.fillRect(midX - textWidth / 2, midY - 22, textWidth, 16);
+            ctx.fillStyle = measureColor;
+            ctx.fillText(measureText, midX, midY - 10);
+        });
+
         ctx.textAlign = 'left';
     }
 
@@ -4136,7 +5461,7 @@ function exportToSVG() {
 
     const headerHeight = 50;
     const laneHeight = getLaneHeightPx();
-    const laneLabelWidth = 160;
+    const laneLabelWidth = getLaneLabelWidthPx();
     const rulerHeight = 40;
     const footerHeight = 40;
     const metrics = getExportTimelineMetrics();
@@ -4339,44 +5664,45 @@ function exportToSVG() {
         svg += `  <text x="${Math.round(m.x)}" y="${yPos}" text-anchor="left" class="time-marker" fill="${m.color}">${m.text}</text>\n`;
     });
 
-    // Draw pinned measurement if active
-    if (app.measurePinned && app.measureStart && app.measureEnd) {
-        const measureColor = '#39FF14';
+    // Draw measurements
+    const exportMeasurements = getMeasurementsForExport();
+    if (exportMeasurements.length > 0) {
+        const appLaneLabelWidth = getLaneLabelWidthPx();
+        svg += `  <!-- Measurements -->\n`;
 
-        // Convert canvas coordinates to export coordinates
-        const startXCanvas = app.measureStart.x;
-        const endXCanvas = app.measureEnd.x;
+        exportMeasurements.forEach((measurement, index) => {
+            const metrics = computeMeasurementMetrics(measurement);
+            if (!metrics || !measurement.start || !measurement.end) return;
 
-        // Map canvas X to export X
-        const exportStartX = Math.round(laneLabelWidth + (startXCanvas - 160));
-        const exportEndX = Math.round(laneLabelWidth + (endXCanvas - 160));
+            const measureColor = sanitizeMeasurementColor(measurement.color, MEASUREMENT_COLORS[index % MEASUREMENT_COLORS.length]);
+            const startXCanvas = measurement.start.x;
+            const endXCanvas = measurement.end.x;
 
-        // Y position - center in lanes area
-        const measureY = lanesStartY + lanesAreaHeight / 2;
+            const exportStartX = Math.round(laneLabelWidth + (startXCanvas - appLaneLabelWidth));
+            const exportEndX = Math.round(laneLabelWidth + (endXCanvas - appLaneLabelWidth));
+            const relativeStartY = Number.isFinite(measurement.start.y) ? measurement.start.y : (lanesAreaHeight / 2);
+            const relativeEndY = Number.isFinite(measurement.end.y) ? measurement.end.y : relativeStartY;
+            const exportStartY = Math.round(Math.max(lanesStartY + 8, Math.min(lanesStartY + lanesAreaHeight - 8, lanesStartY + relativeStartY)));
+            const exportEndY = Math.round(Math.max(lanesStartY + 8, Math.min(lanesStartY + lanesAreaHeight - 8, lanesStartY + relativeEndY)));
+            const strokeWidth = app.measurePinned ? 2 : 1.5;
+            const arrow = getMeasurementArrowPoints(exportStartX, exportStartY, exportEndX, exportEndY, 8, 4);
+            const vector = arrow.vector;
+            const tickHalf = 5;
 
-        svg += `  <!-- Pinned Measurement -->\n`;
+            svg += `  <line x1="${exportStartX}" y1="${exportStartY}" x2="${exportEndX}" y2="${exportEndY}" stroke="${measureColor}" stroke-width="${strokeWidth}"/>\n`;
+            svg += `  <line x1="${exportStartX}" y1="${exportStartY - tickHalf}" x2="${exportStartX}" y2="${exportStartY + tickHalf}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
 
-        // Measurement line
-        svg += `  <line x1="${exportStartX}" y1="${measureY}" x2="${exportEndX}" y2="${measureY}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+            svg += `  <path d="M${arrow.leftX},${arrow.leftY} L${exportEndX},${exportEndY} L${arrow.rightX},${arrow.rightY}" fill="none" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+            svg += `  <line x1="${exportEndX + vector.px * tickHalf}" y1="${exportEndY + vector.py * tickHalf}" x2="${exportEndX - vector.px * tickHalf}" y2="${exportEndY - vector.py * tickHalf}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
 
-        // Start marker (vertical line)
-        svg += `  <line x1="${exportStartX}" y1="${measureY - 5}" x2="${exportStartX}" y2="${measureY + 5}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
+            const measureText = metrics.durationText;
+            const midX = (exportStartX + exportEndX) / 2;
+            const midY = (exportStartY + exportEndY) / 2;
+            const textWidth = measureText.length * 8 + 8;
 
-        // End marker (arrow + vertical line)
-        const arrowDir = exportEndX > exportStartX ? -1 : 1;
-        svg += `  <path d="M${exportEndX + arrowDir * 6},${measureY - 3} L${exportEndX},${measureY} L${exportEndX + arrowDir * 6},${measureY + 3}" fill="none" stroke="${measureColor}" stroke-width="1.5"/>\n`;
-        svg += `  <line x1="${exportEndX}" y1="${measureY - 5}" x2="${exportEndX}" y2="${measureY + 5}" stroke="${measureColor}" stroke-width="1.5"/>\n`;
-
-        // Measurement label
-        const timeDistance = pixelsToMs(Math.abs(endXCanvas - startXCanvas));
-        const measureText = formatDuration(Math.round(timeDistance));
-        const midX = (exportStartX + exportEndX) / 2;
-        const textWidth = measureText.length * 8 + 8;
-
-        // Text background
-        svg += `  <rect x="${midX - textWidth / 2}" y="${measureY - 22}" width="${textWidth}" height="16" fill="#0f1419"/>\n`;
-        // Text
-        svg += `  <text x="${midX}" y="${measureY - 10}" text-anchor="middle" style="font-family: 'Monaco', 'Menlo', monospace; font-size: 14px; font-weight: 600; fill: ${measureColor};">${measureText}</text>\n`;
+            svg += `  <rect x="${midX - textWidth / 2}" y="${midY - 22}" width="${textWidth}" height="16" fill="#0f1419"/>\n`;
+            svg += `  <text x="${midX}" y="${midY - 10}" text-anchor="middle" style="font-family: 'Monaco', 'Menlo', monospace; font-size: 14px; font-weight: 600; fill: ${measureColor};">${measureText}</text>\n`;
+        });
     }
 
     // Footer
@@ -4740,6 +6066,8 @@ function handleSettingsChange() {
     renderTimeMarkers();
     renderAlignmentCanvasOverlay();
     updateTotalDuration();
+    autoSave();
+    saveSessionState();
 }
 
 function updateBoxLabelsState() {
@@ -5078,6 +6406,11 @@ function init() {
 
         // Update minimap viewport indicator
         Minimap.updateViewport();
+
+        // Keep measurement overlay aligned while scrolling
+        if (app.isMeasuring || app.measurements.length > 0 || app.measurePinned) {
+            updateMeasurementDisplay();
+        }
     });
     // Settings button
     document.getElementById('settings-btn').addEventListener('click', showSettingsPanel);
@@ -5147,6 +6480,8 @@ function init() {
         app.pixelsPerMs = 0.15; // 100%
         app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
         renderLanesCanvas();
+        syncZoomFitIndicator();
+        saveSessionState();
     });
 
     // Compress toggle button
@@ -5160,6 +6495,18 @@ function init() {
     if (measureBarPin) {
         measureBarPin.addEventListener('click', () => toggleMeasurementPin());
     }
+
+    const measurementInfo = document.getElementById('measurement-info');
+    if (measurementInfo) {
+        measurementInfo.addEventListener('mousedown', startMeasurementPanelDrag);
+    }
+
+    window.addEventListener('resize', () => {
+        if (app.isMeasuring || app.measurements.length > 0 || app.measurePinned) {
+            updateMeasurementDisplay();
+            applyMeasurementPanelPosition();
+        }
+    });
 
     // Trailing space controls
     const trailingSlider = document.getElementById('config-trailing-slider');
@@ -5308,6 +6655,16 @@ function init() {
         deleteLaneBtn.addEventListener('click', () => handleDeleteLane());
     }
 
+    const undoBtn = document.getElementById('undo-btn');
+    if (undoBtn) {
+        undoBtn.addEventListener('click', () => undoLaneDeletion());
+    }
+    const redoBtn = document.getElementById('redo-btn');
+    if (redoBtn) {
+        redoBtn.addEventListener('click', () => redoLaneDeletion());
+    }
+    updateUndoRedoButtons();
+
     // Global mouse events for dragging
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
@@ -5333,12 +6690,14 @@ function init() {
     });
 
     document.addEventListener('mousemove', (e) => {
+        handleMeasurementPanelDrag(e);
         if (app.isMeasuring) {
             updateMeasurement(e);
         }
     });
 
     document.addEventListener('mouseup', (e) => {
+        stopMeasurementPanelDrag();
         if (app.isMeasuring && e.button === 0) {
             endMeasurement();
         }
@@ -5348,8 +6707,10 @@ function init() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && app.isMeasuring) {
             app.isMeasuring = false;
-            const overlay = document.getElementById('measurement-overlay');
-            overlay.classList.remove('active');
+            app.measureSnapPoints = null;
+            app.measureStart = null;
+            app.measureEnd = null;
+            updateMeasurementDisplay();
         }
     });
 
@@ -5362,30 +6723,95 @@ function init() {
 
     // Click-away lane deselection
     document.addEventListener('mousedown', (e) => {
-        if (app.selectedLaneId === null || typeof app.selectedLaneId === 'undefined') return;
+        const hasSelectedLane = !(app.selectedLaneId === null || typeof app.selectedLaneId === 'undefined');
+        const hasPendingLaneDelete = !!pendingLaneDeleteId;
+        if (!hasSelectedLane && !hasPendingLaneDelete) return;
 
         // Keep selection when interacting with lane-specific controls/areas
         if (
             e.target.closest('.lane-item') ||
             e.target.closest('.lane-label') ||
-            e.target.closest('#lane-props')
+            e.target.closest('#lane-props') ||
+            e.target.closest('#measurement-info')
         ) {
             return;
         }
 
+        clearPendingLaneDelete();
         clearSelectedLaneSelection();
     });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+        const active = document.activeElement;
+        const isTextInputActive = !!active && (
+            active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA' ||
+            active.tagName === 'SELECT' ||
+            active.isContentEditable
+        );
+
+        if (e.key === 'Escape') {
+            if (pendingPurgeRequest) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                clearPendingPurgeRequest();
+                return;
+            }
+            if (pendingDiagramDeleteId) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                clearPendingDiagramDelete();
+                return;
+            }
+            if (pendingLaneDeleteId) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                clearPendingLaneDelete();
+                return;
+            }
+        }
+
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.altKey && !isTextInputActive) {
+            if (pendingPurgeRequest) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                confirmPurgeOperation();
+                return;
+            }
+            if (pendingDiagramDeleteId) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                confirmDiagramDelete(pendingDiagramDeleteId);
+                return;
+            }
+            if (pendingLaneDeleteId) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                confirmLaneDelete(pendingLaneDeleteId);
+                return;
+            }
+        }
+
+        const lowerKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !isTextInputActive) {
+            if (lowerKey === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    redoLaneDeletion();
+                } else {
+                    undoLaneDeletion();
+                }
+                return;
+            }
+            if (lowerKey === 'y') {
+                e.preventDefault();
+                redoLaneDeletion();
+                return;
+            }
+        }
+
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            const active = document.activeElement;
-            const isTextInputActive = !!active && (
-                active.tagName === 'INPUT' ||
-                active.tagName === 'TEXTAREA' ||
-                active.tagName === 'SELECT' ||
-                active.isContentEditable
-            );
             if (isTextInputActive) return;
 
             if (app.selectedBoxId) {
@@ -5413,17 +6839,18 @@ function init() {
     window.addEventListener('resize', () => {
         renderTimelineRuler();
         renderAlignmentCanvasOverlay();
+        syncZoomFitIndicator();
     });
 
     // Share button
     document.getElementById('share-url').addEventListener('click', shareAsURL);
 
     // Purge Application button (in settings)
-    document.getElementById('purge-app-btn').addEventListener('click', purgeApplication);
+    document.getElementById('purge-app-btn').addEventListener('click', () => purgeApplication('settings'));
 
     // Purge button in diagrams modal
     const purgeDiagramsBtn = document.getElementById('purge-diagrams-btn');
-    if (purgeDiagramsBtn) purgeDiagramsBtn.addEventListener('click', purgeApplication);
+    if (purgeDiagramsBtn) purgeDiagramsBtn.addEventListener('click', () => purgeApplication('modal'));
 
     // Measurement tool button
     document.getElementById('measure-tool-btn').addEventListener('click', toggleMeasurementTool);
@@ -5436,18 +6863,23 @@ function init() {
 
     // Try to load from URL first
     const loadedFromURL = loadFromURL();
+    const sessionState = loadSessionState();
 
     if (loadedFromURL) {
         // URL loaded - create new diagram ID for this shared diagram
-        currentDiagramId = generateDiagramId();
+        setCurrentDiagramId(generateDiagramId());
         app.elements.diagramTitle.value = app.diagram.title;
         app.elements.startTime.value = app.diagram.startTime;
         saveCurrentDiagram();
-    } else if (!loadMostRecentDiagram()) {
+    } else if (!loadActiveDiagramFromStorage() && !loadMostRecentDiagram()) {
         // No saved diagrams - create new one
-        currentDiagramId = generateDiagramId();
+        setCurrentDiagramId(generateDiagramId());
         app.diagram.addLane('Lane 1');
         saveCurrentDiagram();
+    }
+
+    if (!loadedFromURL && sessionState) {
+        applySessionState(sessionState);
     }
 
     // Initial render
@@ -5456,6 +6888,7 @@ function init() {
     renderDiagramsList();
     updateTotalDuration();
     updateBoxLabelsState();
+    saveSessionState();
 
     // Open diagrams panel by default if there are saved diagrams (V1 only)
     const diagrams = getAllDiagrams();
@@ -5643,6 +7076,8 @@ const V2 = {
 
         if (closeBtn && modal) {
             closeBtn.addEventListener('click', () => {
+                clearPendingDiagramDelete({ rerender: false });
+                clearPendingPurgeRequest();
                 modal.classList.add('hidden');
             });
         }
@@ -5651,6 +7086,8 @@ const V2 = {
         if (modal) {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
+                    clearPendingDiagramDelete({ rerender: false });
+                    clearPendingPurgeRequest();
                     modal.classList.add('hidden');
                 }
             });
@@ -5659,6 +7096,8 @@ const V2 = {
         // Close on Escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+                clearPendingDiagramDelete({ rerender: false });
+                clearPendingPurgeRequest();
                 modal.classList.add('hidden');
             }
         });
@@ -6018,14 +7457,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!V2.isV2) { _origRenderLaneList(); return; }
 
         const container = app.elements.laneList;
+        if (pendingLaneDeleteId && !app.diagram.lanes.some(l => l.id === pendingLaneDeleteId)) {
+            pendingLaneDeleteId = null;
+        }
         container.innerHTML = '';
 
         app.diagram.lanes.forEach((lane, index) => {
+            const isDeletePending = pendingLaneDeleteId === lane.id;
             const item = document.createElement('div');
             item.className = 'lane-item';
             if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
+            if (isDeletePending) item.classList.add('is-delete-pending');
             item.dataset.laneId = lane.id;
-            item.draggable = true;
+            item.draggable = !isDeletePending;
 
             const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -6036,8 +7480,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
             `;
 
+            if (isDeletePending) {
+                const overlay = createInlineDeleteOverlay({
+                    title: 'Delete Lane?',
+                    message: getLaneDeleteMessage(lane.id),
+                    confirmLabel: 'Delete',
+                    cancelLabel: 'Cancel',
+                    onConfirm: () => confirmLaneDelete(lane.id),
+                    onCancel: () => clearPendingLaneDelete()
+                });
+                overlay.classList.add('lane-inline-delete');
+                item.appendChild(overlay);
+            }
+
             // Add click listener to open properties on the item (excluding controls)
             item.addEventListener('click', (e) => {
+                if (e.target.closest('.inline-delete-overlay')) return;
                 if (e.target.closest('.lane-color-btn')) return;
                 showLanePropertiesPanel(lane.id);
             });
@@ -7400,7 +8858,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.setAttribute('height', 0);
 
         // Get lane-label width offset (SVG is positioned at left: var(--lane-label-width))
-        const labelWidth = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width')) || 0;
+        const labelWidth = getLaneLabelWidthPx();
 
         // Set overlay dimensions to match the lane-track area (not full canvas)
         const canvasHeight = lanesCanvas.scrollHeight;

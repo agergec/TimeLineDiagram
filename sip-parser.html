@@ -4,8 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="version" content="2.0.0">
+    <meta name="version" content="2.1.0">
     <title>SIP Log Parser - Timeline Diagram</title>
+    <script>
+        (function () {
+            var theme = 'dark';
+            try {
+                if (localStorage.getItem('sip_parser_theme') === 'light') {
+                    theme = 'light';
+                }
+            } catch (_) {}
+            var root = document.documentElement;
+            root.classList.remove('dark-theme', 'light-theme');
+            root.classList.add(theme + '-theme');
+        })();
+    </script>
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><circle cx='50' cy='50' r='42' fill='%23fff'/><circle cx='50' cy='50' r='4' fill='%232563eb'/><line x1='50' y1='50' x2='50' y2='20' stroke='%232563eb' stroke-width='3' stroke-linecap='round'/><line x1='50' y1='50' x2='18' y2='51' stroke='%232563eb' stroke-width='4' stroke-linecap='round'/><circle cx='50' cy='14' r='3' fill='%232563eb'/><circle cx='86' cy='50' r='3' fill='%232563eb'/><circle cx='50' cy='86' r='3' fill='%232563eb'/><circle cx='14' cy='50' r='3' fill='%232563eb'/></svg>">
     <link
@@ -15,6 +28,7 @@
         /* ============================================
            THEME SYSTEM
            ============================================ */
+        :root.dark-theme,
         body.dark-theme {
             --bg-primary: #0a0e14;
             --bg-secondary: #12171f;
@@ -50,6 +64,7 @@
             --cid-9: #67e8f9;
         }
 
+        :root.light-theme,
         body.light-theme {
             --bg-primary: #f5f6f8;
             --bg-secondary: #ffffff;
@@ -1543,17 +1558,7 @@
     </style>
 </head>
 
-<body class="dark-theme">
-    <script>
-        (function () {
-            try {
-                if (localStorage.getItem('sip_parser_theme') === 'light') {
-                    document.body.classList.remove('dark-theme');
-                    document.body.classList.add('light-theme');
-                }
-            } catch (_) {}
-        })();
-    </script>
+<body>
     <div class="app-shell">
 
         <!-- HEADER BAR -->
@@ -1563,7 +1568,7 @@
                 <h1>SIP Log Parser</h1>
             </div>
             <div class="header-right">
-                <span class="version-label">v2.0.0</span>
+                <span class="version-label">v2.1.0</span>
             </div>
         </header>
 

@@ -1,12 +1,14 @@
 // SIP Log Parser - Redesigned UI
 // Parses SIP logs, Events, and Requests - saves to Timeline Diagram app storage
 
-const SIP_PARSER_VERSION = '2.0.0';
+const SIP_PARSER_VERSION = '2.1.0';
 
 // =====================================================
 // Constants
 // =====================================================
 const STORAGE_KEY = 'timeline_diagrams';
+const ACTIVE_DIAGRAM_KEY = 'timeline_active_diagram';
+const SESSION_STATE_KEY = 'timeline_session_state';
 const SIP_LOGS_KEY = 'sip_saved_logs';
 const MAX_DIAGRAMS = 10;
 const MAX_SAVED_LOGS = 20;
@@ -431,26 +433,49 @@ function escapeHtml(str) {
 // Theme Toggle
 // =====================================================
 
-function toggleTheme() {
+function applyTheme(theme, persist = true) {
+    const normalized = theme === 'light' ? 'light' : 'dark';
+    const root = document.documentElement;
     const body = document.body;
     const btn = document.getElementById('theme-toggle-btn');
-    if (body.classList.contains('dark-theme')) {
-        body.classList.replace('dark-theme', 'light-theme');
-        btn.textContent = '\u2600'; // sun
-        localStorage.setItem('sip_parser_theme', 'light');
-    } else {
-        body.classList.replace('light-theme', 'dark-theme');
-        btn.textContent = '\u263E'; // moon
-        localStorage.setItem('sip_parser_theme', 'dark');
+
+    root.classList.remove('dark-theme', 'light-theme');
+    root.classList.add(`${normalized}-theme`);
+
+    if (body) {
+        body.classList.remove('dark-theme', 'light-theme');
+        body.classList.add(`${normalized}-theme`);
+    }
+
+    if (btn) {
+        btn.textContent = normalized === 'light' ? '\u2600' : '\u263E';
+    }
+
+    if (persist) {
+        try {
+            localStorage.setItem('sip_parser_theme', normalized);
+        } catch (_) {}
     }
 }
 
+function toggleTheme() {
+    const isLight = document.documentElement.classList.contains('light-theme');
+    applyTheme(isLight ? 'dark' : 'light', true);
+}
+
 function restoreTheme() {
-    const saved = localStorage.getItem('sip_parser_theme');
-    if (saved === 'light') {
-        document.body.classList.replace('dark-theme', 'light-theme');
-        document.getElementById('theme-toggle-btn').textContent = '\u2600';
+    let saved = null;
+    try {
+        saved = localStorage.getItem('sip_parser_theme');
+    } catch (_) {}
+
+    if (saved === 'light' || saved === 'dark') {
+        applyTheme(saved, false);
+        return;
     }
+
+    const inferred = document.documentElement.classList.contains('light-theme') ? 'light' : 'dark';
+    applyTheme(inferred, false);
 }
 
 // =====================================================
@@ -1692,7 +1717,8 @@ function generateSipDiagram() {
         return {
             id: index + 1,
             name: laneName,
-            color: CID_COLORS[index % CID_COLORS.length]
+            order: index,
+            baseColor: CID_COLORS[index % CID_COLORS.length]
         };
     });
 
@@ -1703,7 +1729,7 @@ function generateSipDiagram() {
         var setup = callSetups[j];
         var laneId = cids.indexOf(setup.cid) + 1;
         boxes.push({
-            id: 'box-' + boxId++,
+            id: boxId++,
             laneId: laneId,
             startOffset: setup.inviteTime - minTime,
             duration: Math.max(setup.duration, 1),
@@ -1717,17 +1743,31 @@ function generateSipDiagram() {
     var startSeconds = Math.floor((minTime % 60000) / 1000);
     var startMs = minTime % 1000;
     var startTimeStr = String(startHours).padStart(2, '0') + ':' + String(startMinutes).padStart(2, '0') + ':' + String(startSeconds).padStart(2, '0') + ' ' + String(startMs).padStart(3, '0');
+    var totalDuration = boxes.reduce(function(maxEnd, b) {
+        return Math.max(maxEnd, b.startOffset + b.duration);
+    }, 0);
+    var timelineDuration = Math.max(8000, Math.ceil((totalDuration + 1000) / 1000) * 1000);
 
     return {
         title: 'SIP Call Setup (INVITE \u2192 ACK)',
         startTime: startTimeStr,
         lanes: lanes,
         boxes: boxes,
-        config: {
+        nextLaneId: lanes.length + 1,
+        nextBoxId: boxId,
+        locked: false,
+        compressionEnabled: false,
+        settings: {
             timeFormatThreshold: 1000,
             showAlignmentLines: true,
-            showBoxLabels: true
-        }
+            showBoxLabels: true,
+            autoOpenBoxProperties: false,
+            trailingSpace: 1000,
+            compressionThreshold: 500,
+            compactView: true,
+            timelineDuration: timelineDuration
+        },
+        measurementState: null
     };
 }
 
@@ -1739,15 +1779,24 @@ function handleImport() {
         return;
     }
 
+    var diagramId = generateDiagramId();
     var diagrams = getAllDiagrams();
     diagrams.unshift({
-        id: generateDiagramId(),
+        id: diagramId,
         title: diagramData.title,
         updatedAt: Date.now(),
         data: diagramData
     });
 
     if (saveDiagramsList(diagrams.slice(0, MAX_DIAGRAMS))) {
+        try {
+            localStorage.setItem(ACTIVE_DIAGRAM_KEY, diagramId);
+            var rawSession = localStorage.getItem(SESSION_STATE_KEY);
+            var sessionState = rawSession ? JSON.parse(rawSession) : {};
+            if (!sessionState || typeof sessionState !== 'object') sessionState = {};
+            sessionState.activeDiagramId = diagramId;
+            localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(sessionState));
+        } catch (_) {}
         showToast('Diagram created! <a href="index.html">Open Timeline Editor \u2192</a>', 'success', 5000);
     } else {
         showToast('Failed to save diagram', 'error');
