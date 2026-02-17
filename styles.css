@@ -3146,6 +3146,12 @@ body.diagram-locked .header-badge {
     display: none !important;
 }
 
+/* Keep measurement visuals behind the diagrams modal/backdrop blur layer */
+#diagrams-modal:not(.hidden) ~ #measurement-overlay,
+#diagrams-modal:not(.hidden) ~ #measurement-info {
+    z-index: 150;
+}
+
 @keyframes fadeInOverlay {
     from {
         opacity: 0;
