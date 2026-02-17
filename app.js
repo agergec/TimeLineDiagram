@@ -292,6 +292,7 @@ const app = {
     minPixelsPerMs: 0.001, // Allow extreme zoom out (0.67% - see entire timeline)
     maxPixelsPerMs: 1000,  // Allow extreme zoom in (666,666% - sub-microsecond detail)
     zoomBeforeFitScale: null,
+    zoomBeforeFitScrollLeft: null,
     isDragging: false,
     dragData: null,
     isActivelyDraggingOrResizing: false, // Prevents properties panel updates during drag/resize
@@ -1515,7 +1516,8 @@ function saveSessionState() {
         const payload = {
             activeDiagramId: currentDiagramId || null,
             pixelsPerMs: Number.isFinite(app?.pixelsPerMs) ? app.pixelsPerMs : 0.15,
-            zoomBeforeFitScale: Number.isFinite(app?.zoomBeforeFitScale) ? app.zoomBeforeFitScale : null
+            zoomBeforeFitScale: Number.isFinite(app?.zoomBeforeFitScale) ? app.zoomBeforeFitScale : null,
+            zoomBeforeFitScrollLeft: Number.isFinite(app?.zoomBeforeFitScrollLeft) ? app.zoomBeforeFitScrollLeft : null
         };
         localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
     } catch (e) {
@@ -1547,6 +1549,9 @@ function applySessionState(state) {
 
     app.zoomBeforeFitScale = Number.isFinite(state.zoomBeforeFitScale)
         ? Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, state.zoomBeforeFitScale))
+        : null;
+    app.zoomBeforeFitScrollLeft = Number.isFinite(state.zoomBeforeFitScrollLeft)
+        ? Math.max(0, state.zoomBeforeFitScrollLeft)
         : null;
 }
 
@@ -4629,14 +4634,18 @@ function updateMeasurementDisplay() {
 }
 
 function getFitToViewScale() {
-    const totalDuration = app.diagram.getTotalDuration();
-    if (totalDuration <= 0) return null;
+    const settingsDuration = app.settings?.timelineDuration || 8000;
+    const totalDuration = Math.max(app.diagram.getTotalDuration(), settingsDuration);
+    const visibleDuration = Compression.enabled
+        ? Math.max(Compression.getCompressedDuration(), settingsDuration)
+        : totalDuration;
+    const fitDuration = Math.max(1, visibleDuration + (app.settings?.trailingSpace || 0));
 
     const laneLabelWidth = getLaneLabelWidthPx();
     const canvasWidth = app.elements.lanesCanvas.clientWidth - (laneLabelWidth + 20);
     if (canvasWidth <= 0) return null;
 
-    const fitScale = canvasWidth / (totalDuration * 1.1);
+    const fitScale = canvasWidth / (fitDuration * 1.1);
     return Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fitScale));
 }
 
@@ -4690,32 +4699,41 @@ function handleZoom(direction) {
 
 function handleZoomFit() {
     const canvas = app.elements.lanesCanvas;
-    const laneLabelWidth = getLaneLabelWidthPx();
-    const viewportWidth = Math.max(1, canvas.clientWidth - laneLabelWidth);
-    const centerX = canvas.scrollLeft + viewportWidth / 2;
-    const centerTimeMs = centerX / app.pixelsPerMs;
+    if (!canvas) return;
     const fitScale = getFitToViewScale();
     if (!fitScale) {
         syncZoomFitIndicator();
         return;
     }
 
+    const applyScroll = (targetLeft) => {
+        const maxScroll = Math.max(0, canvas.scrollWidth - canvas.clientWidth);
+        const clamped = Math.max(0, Math.min(maxScroll, targetLeft));
+        canvas.scrollLeft = clamped;
+        app.elements.timelineRuler.scrollLeft = clamped;
+        app.elements.timeMarkers.scrollLeft = clamped;
+    };
+
     if (isZoomAtFitScale()) {
         const fallbackScale = Number.isFinite(app.zoomBeforeFitScale) ? app.zoomBeforeFitScale : 0.15;
+        const fallbackScrollLeft = Number.isFinite(app.zoomBeforeFitScrollLeft)
+            ? app.zoomBeforeFitScrollLeft
+            : canvas.scrollLeft;
         app.pixelsPerMs = Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fallbackScale));
         app.zoomBeforeFitScale = null;
+        app.zoomBeforeFitScrollLeft = null;
+        app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
+        renderLanesCanvas();
+        applyScroll(fallbackScrollLeft);
     } else {
         app.zoomBeforeFitScale = app.pixelsPerMs;
+        app.zoomBeforeFitScrollLeft = canvas.scrollLeft;
         app.pixelsPerMs = fitScale;
+        app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
+        renderLanesCanvas();
+        // Fit should show the projected diagram from its start edge.
+        applyScroll(0);
     }
-
-    app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
-
-    renderLanesCanvas();
-    const newCenterX = centerTimeMs * app.pixelsPerMs;
-    canvas.scrollLeft = Math.max(0, newCenterX - viewportWidth / 2);
-    app.elements.timelineRuler.scrollLeft = canvas.scrollLeft;
-    app.elements.timeMarkers.scrollLeft = canvas.scrollLeft;
     syncZoomFitIndicator();
     saveSessionState();
 }
