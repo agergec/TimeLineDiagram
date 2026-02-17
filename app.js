@@ -1602,6 +1602,7 @@ function saveCurrentDiagram() {
 }
 
 function autoSave() {
+    if (!currentDiagramId) return;
     // Debounce auto-save
     if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
@@ -1707,15 +1708,11 @@ function confirmDiagramDelete(diagramId) {
     const filtered = diagrams.filter(d => d.id !== diagramId);
     saveDiagramsList(filtered);
 
-    // If deleting current diagram, load another or create new
-    if (diagramId === currentDiagramId) {
-        if (filtered.length > 0) {
-            // Load the most recent remaining diagram
-            loadDiagram(filtered[0].id);
-        } else {
-            // No diagrams left, create a new one
-            createNewDiagram();
-        }
+    if (filtered.length === 0) {
+        enterNoDiagramState();
+    } else if (diagramId === currentDiagramId) {
+        // If deleting current diagram, load the most recent remaining diagram
+        loadDiagram(filtered[0].id);
     } else {
         renderDiagramsList();
     }
@@ -1858,7 +1855,7 @@ function executePurgeOperation(mode) {
             if (lockedDiagrams.length > 0) {
                 loadDiagram(lockedDiagrams[0].id);
             } else {
-                createNewDiagram();
+                enterNoDiagramState();
             }
         } else {
             renderDiagramsList();
@@ -1878,35 +1875,7 @@ function executePurgeOperation(mode) {
     localStorage.removeItem(ACTIVE_DIAGRAM_KEY);
     localStorage.removeItem(SESSION_STATE_KEY);
 
-    setCurrentDiagramId(generateDiagramId());
-    app.diagram = new TimelineDiagram();
-    app.diagram.title = generateDiagramTitle();
-    app.diagram.addLane('Lane 1');
-    app.selectedBoxId = null;
-    app.selectedLaneId = null;
-    app.settings = getDefaultTimelineSettings();
-
-    closeMeasurement();
-    clearLaneHistory();
-
-    app.elements.diagramTitle.value = app.diagram.title;
-    app.elements.startTime.value = app.diagram.startTime;
-    syncToolbarSettingsControls();
-
-    deselectBox();
-    renderLaneList();
-    renderLanesCanvas();
-    renderTimelineRuler();
-    renderTimeMarkers();
-    renderAlignmentCanvasOverlay();
-    updateTotalDuration();
-    renderDiagramsList();
-
-    saveCurrentDiagram();
-
-    if (app.elements.propertiesPanel) {
-        app.elements.propertiesPanel.classList.add('hidden');
-    }
+    enterNoDiagramState({ resetSettings: true });
 
     showToast({ type: 'success', title: 'Purged', message: 'All data has been removed.', duration: 2600 });
 }
@@ -1989,6 +1958,45 @@ function createNewDiagram() {
         message: `"${app.diagram.title}" is ready to use.`,
         duration: 2000
     });
+}
+
+function enterNoDiagramState(options = {}) {
+    const { resetSettings = false } = options;
+
+    pendingDiagramDeleteId = null;
+    pendingLaneDeleteId = null;
+    clearPendingPurgeRequest();
+    clearLaneHistory();
+
+    setCurrentDiagramId(null);
+    app.diagram = new TimelineDiagram();
+    if (resetSettings) {
+        app.settings = getDefaultTimelineSettings();
+    }
+    app.selectedBoxId = null;
+    app.selectedLaneId = null;
+    closeMeasurement();
+
+    if (app.elements?.diagramTitle) app.elements.diagramTitle.value = '';
+    if (app.elements?.startTime) app.elements.startTime.value = app.diagram.startTime;
+    syncToolbarSettingsControls();
+
+    deselectBox();
+    renderLaneList();
+    renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentCanvasOverlay();
+    updateTotalDuration();
+    renderDiagramsList();
+    updateLockState();
+    updateBoxLabelsState();
+
+    if (app.elements.propertiesPanel) {
+        app.elements.propertiesPanel.classList.add('hidden');
+    }
+
+    saveSessionState();
 }
 
 function loadMostRecentDiagram() {
@@ -2084,6 +2092,9 @@ function renderDiagramsList() {
     if (diagrams.length === 0) {
         pendingDiagramDeleteId = null;
         container.innerHTML = '<div class="empty-state">No saved diagrams found.</div>';
+        updateNewDiagramButton();
+        updateLoadButton();
+        updateDiagramsBadge();
         return;
     }
 
@@ -3660,6 +3671,13 @@ function getLaneLabelWidthPx() {
     return Number.isFinite(parsed) ? parsed : 160;
 }
 
+function getLaneLabelWidthForExportPx() {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--lane-label-width');
+    const parsed = parseFloat(raw);
+    // Exports must keep lane headers visible even when UI labels are hidden.
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 160;
+}
+
 function visualMsToActualMs(visualMs) {
     const safeVisualMs = Math.max(0, visualMs);
     return Compression.enabled ? Compression.compressedToActual(safeVisualMs) : safeVisualMs;
@@ -5073,7 +5091,7 @@ function exportToPNG() {
     const scale = 2; // High DPI
     const headerHeight = 50;
     const laneHeight = getLaneHeightPx();
-    const laneLabelWidth = getLaneLabelWidthPx();
+    const laneLabelWidth = getLaneLabelWidthForExportPx();
     const rulerHeight = 40;
     const footerHeight = 40;
     const metrics = getExportTimelineMetrics();
@@ -5513,7 +5531,7 @@ function exportToSVG() {
 
     const headerHeight = 50;
     const laneHeight = getLaneHeightPx();
-    const laneLabelWidth = getLaneLabelWidthPx();
+    const laneLabelWidth = getLaneLabelWidthForExportPx();
     const rulerHeight = 40;
     const footerHeight = 40;
     const metrics = getExportTimelineMetrics();
@@ -6649,6 +6667,10 @@ function init() {
     // Lane management
     document.getElementById('add-lane').addEventListener('click', () => {
         if (!isEditingAllowed()) return;
+        if (!currentDiagramId) {
+            createNewDiagram();
+            return;
+        }
         const name = `Lane ${app.diagram.lanes.length + 1}`;
         app.diagram.addLane(name);
         renderLaneList();
@@ -6925,10 +6947,8 @@ function init() {
         app.elements.startTime.value = app.diagram.startTime;
         saveCurrentDiagram();
     } else if (!loadActiveDiagramFromStorage() && !loadMostRecentDiagram()) {
-        // No saved diagrams - create new one
-        setCurrentDiagramId(generateDiagramId());
-        app.diagram.addLane('Lane 1');
-        saveCurrentDiagram();
+        // No saved diagrams - keep an empty workspace until user/import creates a diagram.
+        enterNoDiagramState();
     }
 
     if (!loadedFromURL && sessionState) {
