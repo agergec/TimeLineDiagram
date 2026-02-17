@@ -1031,6 +1031,26 @@ const Compression = {
     }
 };
 
+function resetCompressionView(options = {}) {
+    const { rerender = true, persist = true } = options;
+    Compression.setEnabled(false);
+    Compression.invalidate();
+
+    if (rerender) {
+        renderTimelineRuler();
+        renderLanesCanvas();
+        renderTimeMarkers();
+        renderAlignmentCanvasOverlay();
+        Minimap.render();
+        syncZoomFitIndicator();
+    }
+
+    if (persist) {
+        autoSave();
+        saveSessionState();
+    }
+}
+
 // Color palette reordered to maximize difference between adjacent lanes
 // Original: Red, Pink, Purple, Deep Purple, Indigo, Blue, Light Blue, Cyan,
 //           Teal, Green, Light Green, Lime, Yellow, Orange, Deep Orange, Brown
@@ -1717,6 +1737,9 @@ function confirmDiagramDelete(diagramId) {
         renderDiagramsList();
     }
 
+    // Deleting any diagram should reset compression view to avoid stale gap markers.
+    resetCompressionView({ rerender: true, persist: true });
+
     showToast({ type: 'success', title: 'Deleted', message: 'Diagram removed.', duration: 1600 });
 }
 
@@ -1947,10 +1970,11 @@ function createNewDiagram() {
     renderTimeMarkers();
     renderAlignmentCanvasOverlay();
     updateTotalDuration();
-    renderDiagramsList();
 
     // Save the new empty diagram
     saveCurrentDiagram();
+    // Render list after save so first diagram appears immediately after zero-diagram state.
+    renderDiagramsList();
 
     showToast({
         type: 'success',
@@ -1975,6 +1999,8 @@ function enterNoDiagramState(options = {}) {
     }
     app.selectedBoxId = null;
     app.selectedLaneId = null;
+    Compression.setEnabled(false);
+    Compression.invalidate();
     closeMeasurement();
 
     if (app.elements?.diagramTitle) app.elements.diagramTitle.value = '';
@@ -2394,6 +2420,25 @@ function updateUndoRedoButtons() {
     }
 }
 
+function flashUndoButton() {
+    const undoBtn = document.getElementById('undo-btn');
+    if (!undoBtn) return;
+
+    if (flashUndoButton.timer) {
+        clearTimeout(flashUndoButton.timer);
+    }
+
+    undoBtn.classList.remove('undo-flash');
+    // Force reflow so repeated deletions retrigger the animation.
+    void undoBtn.offsetWidth;
+    undoBtn.classList.add('undo-flash');
+
+    flashUndoButton.timer = setTimeout(() => {
+        undoBtn.classList.remove('undo-flash');
+        flashUndoButton.timer = null;
+    }, 850);
+}
+
 function clearLaneHistory() {
     laneHistory.undoStack = [];
     laneHistory.redoStack = [];
@@ -2504,8 +2549,13 @@ function undoLaneDeletion() {
     }
 
     pendingLaneDeleteId = null;
+    Compression.invalidate();
     renderLaneList();
     renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentCanvasOverlay();
+    Minimap.render();
     updateTotalDuration();
     autoSave();
 
@@ -2527,8 +2577,16 @@ function redoLaneDeletion() {
     }
 
     pendingLaneDeleteId = null;
+    Compression.invalidate();
     renderLaneList();
     renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentCanvasOverlay();
+    Minimap.render();
+    if (app.diagram.lanes.length === 0) {
+        resetCompressionView({ rerender: true, persist: false });
+    }
     updateTotalDuration();
     autoSave();
 
@@ -2554,21 +2612,12 @@ function requestLaneDelete(laneId) {
     const resolvedLaneId = parseInt(laneId, 10);
     if (!Number.isInteger(resolvedLaneId)) return;
     if (!app.diagram.lanes.some(l => l.id === resolvedLaneId)) return;
-    if (pendingLaneDeleteId === resolvedLaneId) return;
-    pendingLaneDeleteId = resolvedLaneId;
-    renderLaneList();
-
-    const row = app.elements?.laneList?.querySelector(`.lane-item[data-lane-id="${resolvedLaneId}"]`);
-    if (row) {
-        row.scrollIntoView({ block: 'nearest' });
-    }
+    pendingLaneDeleteId = null;
+    deleteLaneWithUndo(resolvedLaneId);
 }
 
 function confirmLaneDelete(laneId) {
-    const resolvedLaneId = parseInt(laneId, 10);
-    if (!Number.isInteger(resolvedLaneId)) return;
-    pendingLaneDeleteId = null;
-    deleteLaneWithUndo(resolvedLaneId);
+    requestLaneDelete(laneId);
 }
 
 function deleteLaneWithUndo(laneId) {
@@ -2576,10 +2625,19 @@ function deleteLaneWithUndo(laneId) {
     if (!entry) return;
 
     pushLaneHistoryEntry(entry);
+    Compression.invalidate();
     renderLaneList();
     renderLanesCanvas();
+    renderTimelineRuler();
+    renderTimeMarkers();
+    renderAlignmentCanvasOverlay();
+    Minimap.render();
+    if (app.diagram.lanes.length === 0) {
+        resetCompressionView({ rerender: true, persist: false });
+    }
     updateTotalDuration();
     autoSave();
+    flashUndoButton();
 }
 
 function syncSelectedLaneUI() {
@@ -2611,19 +2669,14 @@ function clearSelectedLaneSelection() {
 // =====================================================
 function renderLaneList() {
     const container = app.elements.laneList;
-    if (pendingLaneDeleteId && !app.diagram.lanes.some(l => l.id === pendingLaneDeleteId)) {
-        pendingLaneDeleteId = null;
-    }
     container.innerHTML = '';
 
     app.diagram.lanes.forEach((lane, index) => {
-        const isDeletePending = pendingLaneDeleteId === lane.id;
         const item = document.createElement('div');
         item.className = 'lane-item';
         if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
-        if (isDeletePending) item.classList.add('is-delete-pending');
         item.dataset.laneId = lane.id;
-        item.draggable = !isDeletePending;
+        item.draggable = true;
 
         const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -2633,19 +2686,6 @@ function renderLaneList() {
             <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
             <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
         `;
-
-        if (isDeletePending) {
-            const overlay = createInlineDeleteOverlay({
-                title: 'Delete Lane?',
-                message: getLaneDeleteMessage(lane.id),
-                confirmLabel: 'Delete',
-                cancelLabel: 'Cancel',
-                onConfirm: () => confirmLaneDelete(lane.id),
-                onCancel: () => clearPendingLaneDelete()
-            });
-            overlay.classList.add('lane-inline-delete');
-            item.appendChild(overlay);
-        }
 
         // Add click listener to open properties on the item (excluding controls)
         item.addEventListener('click', (e) => {
@@ -4951,6 +4991,42 @@ function loadFromURL() {
     return false;
 }
 
+function triggerToolbarButtonFeedback(buttonId, activeTitle, duration = 1200) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    const defaultTitle = btn.dataset.defaultTitle || btn.title || '';
+    if (defaultTitle) {
+        btn.dataset.defaultTitle = defaultTitle;
+    }
+
+    if (!triggerToolbarButtonFeedback.feedbackTimers) {
+        triggerToolbarButtonFeedback.feedbackTimers = new Map();
+    }
+
+    const timers = triggerToolbarButtonFeedback.feedbackTimers;
+    if (timers.has(buttonId)) {
+        clearTimeout(timers.get(buttonId));
+    }
+
+    btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
+    if (activeTitle) {
+        btn.title = activeTitle;
+    }
+
+    const timer = setTimeout(() => {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-pressed', 'false');
+        if (btn.dataset.defaultTitle) {
+            btn.title = btn.dataset.defaultTitle;
+        }
+        timers.delete(buttonId);
+    }, duration);
+
+    timers.set(buttonId, timer);
+}
+
 function shareAsURL() {
     const encoded = encodeToURL();
     const url = `${window.location.origin}${window.location.pathname}?d=${encoded}`;
@@ -4968,23 +5044,7 @@ function shareAsURL() {
     // Copy to clipboard
     navigator.clipboard.writeText(url).then(() => {
         // Share button feedback uses the same active/toggle styling as other toolbar controls.
-        const btn = document.getElementById('share-url');
-        if (btn) {
-            const defaultTitle = btn.dataset.defaultTitle || btn.title || 'Copy shareable URL to clipboard';
-            btn.dataset.defaultTitle = defaultTitle;
-            if (shareAsURL.feedbackTimer) {
-                clearTimeout(shareAsURL.feedbackTimer);
-            }
-            btn.classList.add('active');
-            btn.setAttribute('aria-pressed', 'true');
-            btn.title = 'Link copied';
-
-            shareAsURL.feedbackTimer = setTimeout(() => {
-                btn.classList.remove('active');
-                btn.setAttribute('aria-pressed', 'false');
-                btn.title = defaultTitle;
-            }, 1200);
-        }
+        triggerToolbarButtonFeedback('share-url', 'Link copied');
 
         // Show instructive toast
         showToast({
@@ -5368,21 +5428,10 @@ function exportToPNG() {
     ctx.fillStyle = '#1a1f2e';
     ctx.fillRect(0, timeMarkersY, laneLabelWidth, timeMarkersHeight);
 
-    // Draw time markers with vertical lines extending up through lanes
+    // Draw time markers with marker-area ticks only
     ctx.font = '9px Monaco, monospace';
     markers.forEach(m => {
         const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
-
-        // Draw vertical line extending up through lanes area (solid, colored)
-        ctx.strokeStyle = m.color;
-        ctx.globalAlpha = 0.4;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(m.x, lanesStartY);
-        ctx.lineTo(m.x, timeMarkersY);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
 
         // Draw tick line in time markers area
         ctx.strokeStyle = m.color;
@@ -5490,6 +5539,7 @@ function exportToPNG() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    triggerToolbarButtonFeedback('export-png', 'PNG exported');
 }
 
 // Helper function to wrap text for SVG (returns array of lines)
@@ -5724,11 +5774,9 @@ function exportToSVG() {
     svg += `  <rect x="${laneLabelWidth}" y="${timeMarkersY}" width="${width - laneLabelWidth}" height="${timeMarkersHeight}" fill="#0f1419"/>\n`;
     svg += `  <rect x="0" y="${timeMarkersY}" width="${laneLabelWidth}" height="${timeMarkersHeight}" fill="#1a1f2e"/>\n`;
 
-    // Draw time markers with colored labels and vertical lines extending up
+    // Draw time markers with colored labels and marker-area ticks
     markers.forEach(m => {
         const yPos = timeMarkersY + timeMarkersHeight - 6 - (m.level * 14);
-        // Vertical line extending up through lanes area (solid, colored)
-        svg += `  <line x1="${Math.round(m.x)}" y1="${lanesStartY}" x2="${Math.round(m.x)}" y2="${timeMarkersY}" stroke="${m.color}" stroke-opacity="0.4"/>\n`;
         // Tick line in time markers area
         svg += `  <line x1="${Math.round(m.x)}" y1="${timeMarkersY + 2}" x2="${Math.round(m.x)}" y2="${yPos - 6}" stroke="${m.color}"/>\n`;
         // Label
@@ -5795,6 +5843,7 @@ function exportToSVG() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    triggerToolbarButtonFeedback('export-svg', 'SVG exported');
 }
 
 function escapeHtml(text) {
@@ -7530,19 +7579,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!V2.isV2) { _origRenderLaneList(); return; }
 
         const container = app.elements.laneList;
-        if (pendingLaneDeleteId && !app.diagram.lanes.some(l => l.id === pendingLaneDeleteId)) {
-            pendingLaneDeleteId = null;
-        }
         container.innerHTML = '';
 
         app.diagram.lanes.forEach((lane, index) => {
-            const isDeletePending = pendingLaneDeleteId === lane.id;
             const item = document.createElement('div');
             item.className = 'lane-item';
             if (parseInt(app.selectedLaneId, 10) === lane.id) item.classList.add('is-selected');
-            if (isDeletePending) item.classList.add('is-delete-pending');
             item.dataset.laneId = lane.id;
-            item.draggable = !isDeletePending;
+            item.draggable = true;
 
             const laneColorStyle = lane.baseColor ? `background-color: ${lane.baseColor}` : `background-color: ${PALETTE[index % PALETTE.length]}`;
 
@@ -7552,19 +7596,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="lane-color-btn" data-lane-id="${lane.id}" title="Change lane color" style="${laneColorStyle}"></button>
                 <div class="lane-name-div" data-lane-id="${lane.id}">${escapeHtml(lane.name).replace(/\n/g, '<br>')}</div>
             `;
-
-            if (isDeletePending) {
-                const overlay = createInlineDeleteOverlay({
-                    title: 'Delete Lane?',
-                    message: getLaneDeleteMessage(lane.id),
-                    confirmLabel: 'Delete',
-                    cancelLabel: 'Cancel',
-                    onConfirm: () => confirmLaneDelete(lane.id),
-                    onCancel: () => clearPendingLaneDelete()
-                });
-                overlay.classList.add('lane-inline-delete');
-                item.appendChild(overlay);
-            }
 
             // Add click listener to open properties on the item (excluding controls)
             item.addEventListener('click', (e) => {
