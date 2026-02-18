@@ -3,7 +3,7 @@
 A web-based toolkit for creating timeline diagrams and analyzing Genesys SIP call flows.
 
 ![Made by UCS](https://img.shields.io/badge/Made%20by-UCS-blue)
-![Version](https://img.shields.io/badge/version-2.1.0-6366f1)
+![Version](https://img.shields.io/badge/version-2.1.1-6366f1)
 
 ---
 

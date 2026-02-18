@@ -2,7 +2,7 @@
    Timeline Diagram Editor - Main Application Logic
    ===================================================== */
 
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
@@ -711,9 +711,9 @@ const Minimap = {
         const totalDuration = Compression.enabled
             ? Compression.getCompressedDuration()
             : (app.diagram?.getTotalDuration() || 1);
-        const timelineWidth = totalDuration + app.settings.trailingSpace;
+        const timelineWidth = Math.max(1, totalDuration + (app.settings.trailingSpace || 0));
         const padding = 4;
-        const availableWidth = rect.width - padding * 2;
+        const availableWidth = Math.max(1, rect.width - padding * 2);
         const minimapToTimelineRatio = msToPixels(timelineWidth) / availableWidth;
 
         // Calculate max scroll (total scrollable width minus visible width)
@@ -761,8 +761,9 @@ const Minimap = {
         const availableWidth = this.canvas.width - padding * 2;
         const availableHeight = this.canvas.height - padding * 2;
         const laneHeight = Math.max(2, Math.floor(availableHeight / lanes.length));
-        const timelineWidth = totalDuration + app.settings.trailingSpace;
-        const timeScale = availableWidth / timelineWidth;
+        const timelineWidth = Math.max(1, totalDuration + (app.settings.trailingSpace || 0));
+        const safeAvailableWidth = Math.max(1, availableWidth);
+        const timeScale = safeAvailableWidth / timelineWidth;
 
         // Draw compression indicators in minimap
         if (Compression.enabled) {
@@ -810,8 +811,9 @@ const Minimap = {
         const containerWidth = this.container.getBoundingClientRect().width;
         const padding = 4;
         const availableWidth = containerWidth - padding * 2;
-        const timelineWidth = totalDuration + app.settings.trailingSpace;
-        const timeScale = availableWidth / timelineWidth;
+        const timelineWidth = Math.max(1, totalDuration + (app.settings.trailingSpace || 0));
+        const safeAvailableWidth = Math.max(1, availableWidth);
+        const timeScale = safeAvailableWidth / timelineWidth;
 
         // Get visible viewport in time
         const scrollLeft = lanesCanvas.scrollLeft;
@@ -841,8 +843,9 @@ const Minimap = {
             ? Compression.getCompressedDuration()
             : (app.diagram?.getTotalDuration() || 1);
 
-        const timelineWidth = totalDuration + app.settings.trailingSpace;
-        const timeScale = availableWidth / timelineWidth;
+        const timelineWidth = Math.max(1, totalDuration + (app.settings.trailingSpace || 0));
+        const safeAvailableWidth = Math.max(1, availableWidth);
+        const timeScale = safeAvailableWidth / timelineWidth;
 
         // Calculate target time from click position
         const targetTimeMs = (clickX - padding) / timeScale;
@@ -1758,10 +1761,8 @@ function loadDiagram(diagramId) {
 
     deselectBox();
     renderLaneList();
+    // renderLanesCanvas already refreshes ruler, markers, alignment overlay and minimap.
     renderLanesCanvas();
-    renderTimelineRuler();
-    renderTimeMarkers();
-    renderAlignmentCanvasOverlay();
     updateTotalDuration();
     renderDiagramsList();
 
@@ -7664,9 +7665,8 @@ function updateDiagramsBadge() {
 
 // Initialize V2 after the main init
 document.addEventListener('DOMContentLoaded', () => {
-    // Small delay to ensure init() has completed
-    setTimeout(() => V2.init(), 0);
-});
+    V2.init();
+}, { once: true });
 
 // =====================================================
 // V2 Refinements (Scroll Sync, Strict Duration, Multi-line Lanes)
@@ -7678,25 +7678,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!V2.isV2) return;
         const lanesCanvas = document.getElementById('lanes-canvas');
         const timeMarkers = document.getElementById('time-markers');
-        if (!lanesCanvas || !timeMarkers) return;
+        const timelineRuler = document.getElementById('timeline-ruler');
+        if (!lanesCanvas || !timeMarkers || !timelineRuler) return;
 
         let isSyncing = false;
+        const syncScrollLeft = (source, left) => {
+            if (isSyncing) return;
+            isSyncing = true;
 
-        lanesCanvas.addEventListener('scroll', () => {
-            if (!isSyncing) {
-                isSyncing = true;
-                timeMarkers.scrollLeft = lanesCanvas.scrollLeft;
-                requestAnimationFrame(() => isSyncing = false);
-            }
-        });
+            if (source !== lanesCanvas) lanesCanvas.scrollLeft = left;
+            if (source !== timeMarkers) timeMarkers.scrollLeft = left;
+            if (source !== timelineRuler) timelineRuler.scrollLeft = left;
 
-        timeMarkers.addEventListener('scroll', () => {
-            if (!isSyncing) {
-                isSyncing = true;
-                lanesCanvas.scrollLeft = timeMarkers.scrollLeft;
-                requestAnimationFrame(() => isSyncing = false);
-            }
-        });
+            requestAnimationFrame(() => {
+                isSyncing = false;
+            });
+        };
+
+        lanesCanvas.addEventListener('scroll', () => syncScrollLeft(lanesCanvas, lanesCanvas.scrollLeft));
+        timeMarkers.addEventListener('scroll', () => syncScrollLeft(timeMarkers, timeMarkers.scrollLeft));
+        timelineRuler.addEventListener('scroll', () => syncScrollLeft(timelineRuler, timelineRuler.scrollLeft));
     }
 
     // Override renderLaneList for div instead of input (Multi-line)
@@ -7810,6 +7811,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const settingsDuration = app.settings.timelineDuration || 8000;
         const compressedDuration = Math.max(0, Compression.getCompressedDuration());
 
+        if (totalDuration > settingsDuration) {
+            app.settings.timelineDuration = totalDuration;
+            const durationInput = document.getElementById('config-timeline-duration');
+            if (durationInput) durationInput.value = totalDuration;
+        }
+
         // Compression view should size to compressed content (+ configured trailing only),
         // while normal view keeps the explicit timeline duration floor.
         const finalDuration = Compression.enabled
@@ -7921,18 +7928,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Initialize
+    function runWhenV2Ready(callback) {
+        if (V2.isV2) {
+            callback();
+            return;
+        }
+        requestAnimationFrame(() => runWhenV2Ready(callback));
+    }
+
+    // Initialize once V2 has been activated.
     document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
+        runWhenV2Ready(() => {
             initScrollSync();
             initCompactView();
-            // Trigger initial render for new overrides
-            if (V2.isV2) {
-                renderLaneList();
-                renderLanesCanvas();
-            }
-        }, 100);
-    });
+        });
+    }, { once: true });
 
 })();
 
@@ -7978,66 +7988,10 @@ document.addEventListener('DOMContentLoaded', () => {
             autoSave();
         });
 
-        // Hook into renderLanesCanvas (which we already patched in v2_patch_refinements.js)
-        // to update input if content expands.
-        // We can't easily "hook" the hook without infinite recursion or complex wrapping.
-        // Instead, we can add a periodic check or specialized observer? 
-        // Better: Redefine the patch to include this logic. This script runs AFTER v2_patch_refinements.js
-        // so we can wrap the existing renderLanesCanvas.
-
-        const _prevRenderLanesCanvas = renderLanesCanvas;
-        renderLanesCanvas = function () {
-            // First run the rendering logic (which calculates minTrackWidth based on duration)
-            _prevRenderLanesCanvas();
-
-            if (!V2.isV2) return;
-
-            // Check if we need to auto-expand status
-            const totalDur = app.diagram.getTotalDuration();
-            const currentSetting = app.settings.timelineDuration || 8000;
-
-            if (totalDur > currentSetting) {
-                // Content determines width now. Update setting and input to match.
-                app.settings.timelineDuration = totalDur;
-                durationInput.value = totalDur;
-                // Note: We don't need to re-render immediately because _prevRenderLanesCanvas 
-                // already used Math.max(totalDur, settingsDuration) to set width.
-            }
-        };
+        // Auto-expansion sync is handled inside the V2 renderLanesCanvas override.
     }
 
-    // 2. RESIZE CLICK FIX
-    // Prevent box properties from opening when clicking resize handles.
-    // The issue is `selectBox` is called on mousedown in `handleResizeStart`.
-    // We can monkey-patch `selectBox` to ignore calls if we are resizing?
-    // Or improved: Patch `handleResizeStart` to NOT call selectBox or call it with a flag.
-    // But `handleResizeStart` is global.
-
-    // Changing `handleResizeStart` is hard because it's defined in app.js closure or global scope.
-    // However, `handleResizeStart` sets `app.dragData.type = 'resize'`.
-    // We can PATCH `updatePropertiesPanel` (again) to check this!
-
-    // We already patched updatePropertiesPanel in v2_patch.js. Let's wrap it again.
-    // The previous patch is: if (isNewBox) ... else if (!panelWasVisible) ...
-    // If we are resizing, we want to NOT open the panel if it's closed.
-
-    const _prevUpdateProps = updatePropertiesPanel;
-    updatePropertiesPanel = function (isNewBox) {
-        // If we are starting a resize, DO NOT open the panel.
-        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
-            // If panel is already open for this box, update values. 
-            // If closed, KEEP CLOSED.
-            const panel = app.elements.propertiesPanel; // patched to right sidebar
-            const isVisible = panel && (panel.classList.contains('visible') || (panel.offsetWidth > 0));
-
-            if (!isVisible) {
-                return; // Do nothing, keep closed.
-            }
-        }
-        _prevUpdateProps(isNewBox);
-    };
-
-    // 3. COMPACT VIEW ALIGNMENT
+    // 2. COMPACT VIEW ALIGNMENT
     // User: "timeline indicators remain in previous state".
     // This implies that while .lane-label-spacer is hidden, the markers (absoluted positioned?) might not shift?
     // In styles.css: .time-markers-container has .lane-label-spacer inside it.
@@ -8058,422 +8012,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const checkbox = document.getElementById('config-compact-view');
         if (checkbox) {
             checkbox.addEventListener('change', () => {
-                // Force full re-layout cycle
-                setTimeout(() => {
+                // Force full re-layout on next frame.
+                requestAnimationFrame(() => {
                     renderTimelineRuler();
                     renderLanesCanvas();
                     renderTimeMarkers();
-                    // Also force scroll update in case
                     const canvas = document.getElementById('lanes-canvas');
                     if (canvas) canvas.dispatchEvent(new Event('scroll'));
-                }, 50);
+                });
             });
         }
     }
 
-    // Initialize fixes
+    function runWhenV2Ready(callback) {
+        if (V2.isV2) {
+            callback();
+            return;
+        }
+        requestAnimationFrame(() => runWhenV2Ready(callback));
+    }
+
+    // Initialize once V2 has been activated.
     document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
+        runWhenV2Ready(() => {
             initDurationSync();
             initCompactViewFix();
-        }, 200); // Run after other V2 patches
-    });
-
-})();
-
-// =====================================================
-// V2 Fixes: Render Logic for Strict Duration
-// =====================================================
-
-(function () {
-    // Override renderTimelineRuler to respect settings.timelineDuration
-    const _origRenderTimelineRuler = renderTimelineRuler;
-    renderTimelineRuler = function () {
-        if (!V2.isV2) { _origRenderTimelineRuler(); return; }
-
-        const ruler = app.elements.timelineRuler;
-        if (!ruler) return;
-
-        ruler.innerHTML = '';
-
-        // STRICT DURATION LOGIC
-        const totalDuration = Compression.enabled
-            ? Compression.getCompressedDuration()
-            : app.diagram.getTotalDuration();
-
-        const settingsDuration = app.settings.timelineDuration || 8000;
-
-        // Display duration is MAX of content vs settings
-        const displayDuration = Math.max(totalDuration, settingsDuration);
-
-        // Standard logic from original function, but using our displayDuration
-        const DEFAULT_MIN_TIMELINE_MS = 10000;
-
-        // Calculate interval
-        let interval = 100;
-        const intervals = [
-            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
-            1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
-            10000, 30000, 60000, 120000, 300000, 600000
-        ];
-
-        for (const int of intervals) {
-            const pixelsPerInterval = msToPixels(int);
-            if (pixelsPerInterval >= 60) {
-                interval = int;
-                break;
-            }
-        }
-
-        // Fallback
-        if (interval === 100 && msToPixels(600000) < 60) {
-            interval = 600000;
-        }
-
-        const endTime = displayDuration + (app.settings.trailingSpace || 0);
-
-        const rulerWidth = msToPixels(endTime);
-        const innerWrapper = document.createElement('div');
-        innerWrapper.className = 'timeline-ruler-inner';
-        innerWrapper.style.position = 'relative';
-        innerWrapper.style.width = `${rulerWidth}px`;
-        innerWrapper.style.height = '100%';
-        ruler.appendChild(innerWrapper);
-
-        if (Compression.enabled) {
-            // Compressed mode logic (keep existing behavior for now, assume compression handles scaling internally)
-            // But we might need to extend the empty space if settingsDuration > compressedDuration
-            // For now, just render normally.
-            const breakMarkers = Compression.getBreakMarkers();
-            for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
-                const actualTime = Compression.compressedToActual(compressedTime);
-                const mark = document.createElement('div');
-                mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
-                mark.style.left = `${msToPixels(compressedTime)}px`;
-                mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
-                innerWrapper.appendChild(mark);
-            }
-            breakMarkers.forEach(marker => {
-                const breakMark = document.createElement('div');
-                breakMark.className = 'ruler-break-marker';
-                breakMark.style.left = `${msToPixels(marker.compressedStart)}px`;
-                const actualGapSize = marker.actualEnd - marker.actualStart;
-                breakMark.title = `Gap: ${formatDuration(actualGapSize)}`;
-                breakMark.innerHTML = `<span class="break-label">${formatDuration(actualGapSize)}</span>`;
-                innerWrapper.appendChild(breakMark);
-            });
-        } else {
-            // Normal mode
-            for (let time = 0; time <= endTime; time += interval) {
-                const mark = document.createElement('div');
-                mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
-                mark.style.left = `${msToPixels(time)}px`;
-                mark.innerHTML = `<span>${formatDuration(time)}</span>`;
-                innerWrapper.appendChild(mark);
-            }
-        }
-    };
-
-    // Override renderTimeMarkers to respect settings.timelineDuration
-    const _origRenderTimeMarkers = renderTimeMarkers;
-    renderTimeMarkers = function () {
-        if (!V2.isV2) { _origRenderTimeMarkers(); return; }
-
-        const container = app.elements.timeMarkers;
-        if (!container) return; // Might be null in V2 if ID changed? No, it's same ID.
-
-        container.innerHTML = '';
-
-        const totalDuration = app.diagram.getTotalDuration();
-        const settingsDuration = app.settings.timelineDuration || 8000;
-        const actualTotalDuration = Math.max(totalDuration, settingsDuration);
-
-        const displayDuration = Compression.enabled
-            ? Compression.getCompressedDuration() // Compression might complicate "min duration" logic
-            : actualTotalDuration;
-
-        const endTime = displayDuration + (app.settings.trailingSpace || 0);
-        const markerWidth = msToPixels(endTime);
-
-        const innerWrapper = document.createElement('div');
-        innerWrapper.className = 'time-markers-inner';
-        innerWrapper.style.position = 'relative';
-        innerWrapper.style.width = `${markerWidth}px`;
-        innerWrapper.style.height = '100%';
-        container.appendChild(innerWrapper);
-
-        if (app.diagram.boxes.length === 0) return;
-
-        // Copy logic from original for marker generation
-        const markers = [];
-        app.diagram.boxes.forEach(box => {
-            const edges = getRenderedBoxEdges(box);
-            const actualStart = box.startOffset;
-            const actualEnd = box.startOffset + box.duration;
-
-            markers.push({
-                visualX: edges.leftPx,
-                actualTime: actualStart,
-                type: 'start',
-                boxId: box.id,
-                color: box.color,
-                label: formatDuration(actualStart)
-            });
-            markers.push({
-                visualX: edges.rightPx,
-                actualTime: actualEnd,
-                type: 'end',
-                boxId: box.id,
-                color: box.color,
-                label: formatDuration(actualEnd)
-            });
         });
-
-        markers.sort((a, b) => a.visualX - b.visualX);
-
-        // Layout logic
-        const levels = [];
-        const charWidth = 7;
-        const padding = 10;
-
-        markers.forEach(m => {
-            const x = m.visualX;
-            const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
-            const width = text.length * charWidth + padding;
-            const startX = x + 2;
-            const endX = startX + width;
-
-            let level = 0;
-            let placed = false;
-            while (!placed) {
-                if (!levels[level] || levels[level] < startX) {
-                    levels[level] = endX;
-                    m.level = level;
-                    m.text = text;
-                    placed = true;
-                } else {
-                    level++;
-                }
-                if (level > 20) { m.level = level; m.text = text; placed = true; }
-            }
-        });
-
-        // Use fixed height or calculate
-        const lanesCanvas = document.getElementById('lanes-canvas');
-        const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight; // better fallback
-
-        markers.forEach(m => {
-            const x = m.visualX;
-
-            const el = document.createElement('div');
-            el.className = 'time-marker-h';
-            el.style.left = `${x}px`;
-            el.style.bottom = `${4 + (m.level * 16)}px`;
-            el.style.color = m.color;
-
-            const line = document.createElement('div');
-            line.className = 'time-marker-line';
-            line.style.backgroundColor = m.color;
-            // Extend line up significantly
-            line.style.height = `${lanesCanvasHeight + 200}px`;
-
-            const tick = document.createElement('div');
-            tick.className = 'time-marker-tick';
-            tick.style.backgroundColor = m.color;
-
-            const label = document.createElement('span');
-            label.className = 'time-marker-text';
-            label.textContent = m.text;
-
-            el.appendChild(line);
-            el.appendChild(tick);
-            el.appendChild(label);
-            innerWrapper.appendChild(el);
-        });
-    };
-})();
-
-// =====================================================
-// V2 FINAL FIXES (Duration, Resize, Shift+Enter)
-// =====================================================
-
-(function () {
-
-    // 1. Shift+Enter for New Line in Lane Name
-    function initLaneNameInput() {
-        if (!V2.isV2) return;
-        bindLaneNameInputOnce();
-    }
-
-    // 2. Resize Fix (Don't open properties if resizing)
-    // We patch updatePropertiesPanel to check for resize drag
-    const _prevUpdateProps = updatePropertiesPanel;
-    updatePropertiesPanel = function (isNewBox = false) {
-        if (!V2.isV2) { _prevUpdateProps(isNewBox); return; }
-
-        // Check if we are currently resizing
-        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
-            const sidebar = document.getElementById('right-sidebar');
-            const isSidebarOpen = sidebar && sidebar.classList.contains('visible');
-
-            // If sidebar is NOT open, do NOT open it.
-            if (!isSidebarOpen) {
-                return;
-            }
-            // If it IS open, let it update (so values change while dragging if we want, or we can block that too)
-            // User said: "If I click the resize parts of the box the box properties opened. don't open it"
-            // Usually we want to see values updating while resizing? 
-            // But if the panel was closed, it should stay closed.
-        }
-
-        _prevUpdateProps(isNewBox);
-    };
-
-    // 3. Duration Sync Fix (Ruler Loop)
-    // The previous patch used Math.max(total, settings) but maybe loop condition was off?
-    // Let's rewrite renderTimelineRuler to be absolutely sure.
-    const _origRenderTimelineRuler = renderTimelineRuler;
-    renderTimelineRuler = function () {
-        if (!V2.isV2) { _origRenderTimelineRuler(); return; }
-
-        const ruler = app.elements.timelineRuler;
-        if (!ruler) return;
-        ruler.innerHTML = '';
-
-        const totalDuration = app.diagram.getTotalDuration();
-        const settingsDuration = app.settings.timelineDuration || 8000;
-
-        // Ensure we cover the full settings duration
-        const displayDuration = Math.max(totalDuration, settingsDuration);
-
-        // Default interval calc
-        let interval = 100;
-        // ... (interval selection logic same as before) ...
-        const intervals = [
-            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
-            1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
-            10000, 30000, 60000, 120000, 300000, 600000
-        ];
-        for (const int of intervals) {
-            if (msToPixels(int) >= 60) {
-                interval = int;
-                break;
-            }
-        }
-        if (interval === 100 && msToPixels(600000) < 60) interval = 600000;
-
-        // Trailing space
-        const trailing = app.settings.trailingSpace || 0;
-        const endTime = displayDuration + trailing;
-
-        const rulerWidth = msToPixels(endTime);
-        const innerWrapper = document.createElement('div');
-        innerWrapper.className = 'timeline-ruler-inner';
-        innerWrapper.style.position = 'relative';
-        innerWrapper.style.width = `${rulerWidth}px`;
-        innerWrapper.style.height = '100%';
-        ruler.appendChild(innerWrapper);
-
-        // Loop condition: go until endTime
-        for (let time = 0; time <= endTime; time += interval) {
-            const mark = document.createElement('div');
-            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
-            mark.style.left = `${msToPixels(time)}px`;
-            mark.innerHTML = `<span>${formatDuration(time)}</span>`;
-            innerWrapper.appendChild(mark);
-        }
-    };
-
-    // Also override renderTimeMarkers to use same displayDuration
-    const _origRenderTimeMarkers = renderTimeMarkers;
-    renderTimeMarkers = function () {
-        if (!V2.isV2) { _origRenderTimeMarkers(); return; }
-        const container = app.elements.timeMarkers;
-        if (!container) return;
-        container.innerHTML = '';
-
-        const total = app.diagram.getTotalDuration();
-        const settings = app.settings.timelineDuration || 8000;
-        const displayDuration = Math.max(total, settings);
-        const endTime = displayDuration + (app.settings.trailingSpace || 0);
-        const markerWidth = msToPixels(endTime);
-
-        const innerWrapper = document.createElement('div');
-        innerWrapper.className = 'time-markers-inner';
-        innerWrapper.style.position = 'relative';
-        innerWrapper.style.width = `${markerWidth}px`;
-        innerWrapper.style.height = '100%';
-        container.appendChild(innerWrapper);
-
-        if (app.diagram.boxes.length === 0) return;
-
-        // Marker render logic... (simplified for brevity, assume same as before)
-        // ... (copy marker generation logic) ...
-        // We need to actually copy the logic else functionality is lost
-        const markers = [];
-        app.diagram.boxes.forEach(box => {
-            const edges = getRenderedBoxEdges(box);
-            const actualStart = box.startOffset;
-            const actualEnd = box.startOffset + box.duration;
-            markers.push({ visualX: edges.leftPx, actualTime: actualStart, type: 'start', boxId: box.id, color: box.color, label: formatDuration(actualStart) });
-            markers.push({ visualX: edges.rightPx, actualTime: actualEnd, type: 'end', boxId: box.id, color: box.color, label: formatDuration(actualEnd) });
-        });
-        markers.sort((a, b) => a.visualX - b.visualX);
-        const levels = [];
-        const charWidth = 7;
-        const padding = 10;
-        markers.forEach(m => {
-            const x = m.visualX;
-            const text = `${m.type === 'start' ? 'S' : 'E'}: ${m.label}`;
-            const width = text.length * charWidth + padding;
-            const startX = x + 2;
-            const endX = startX + width;
-            let level = 0;
-            let placed = false;
-            while (!placed) {
-                if (!levels[level] || levels[level] < startX) {
-                    levels[level] = endX;
-                    m.level = level;
-                    m.text = text;
-                    placed = true;
-                } else {
-                    level++;
-                }
-                if (level > 20) { m.level = level; m.text = text; placed = true; }
-            }
-        });
-        const lanesCanvas = document.getElementById('lanes-canvas');
-        const lanesCanvasHeight = lanesCanvas ? lanesCanvas.offsetHeight : window.innerHeight;
-        markers.forEach(m => {
-            const x = m.visualX;
-            const el = document.createElement('div');
-            el.className = 'time-marker-h';
-            el.style.left = `${x}px`;
-            el.style.bottom = `${4 + (m.level * 16)}px`;
-            el.style.color = m.color;
-            const line = document.createElement('div');
-            line.className = 'time-marker-line';
-            line.style.backgroundColor = m.color;
-            line.style.height = `${lanesCanvasHeight + 200}px`;
-            const tick = document.createElement('div');
-            tick.className = 'time-marker-tick';
-            tick.style.backgroundColor = m.color;
-            const label = document.createElement('span');
-            label.className = 'time-marker-text';
-            label.textContent = m.text;
-            el.appendChild(line);
-            el.appendChild(tick);
-            el.appendChild(label);
-            innerWrapper.appendChild(el);
-        });
-    };
-
-    // Init
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            initLaneNameInput();
-        }, 300); // Wait for other inits
-    });
+    }, { once: true });
 
 })();
 
@@ -8515,20 +8080,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindLaneNameInputOnce();
     }
 
-    // 2. Resize Fix (Don't open properties if resizing)
-    const _prevUpdateProps = updatePropertiesPanel;
-    updatePropertiesPanel = function (isNewBox = false) {
-        if (!V2.isV2) { _prevUpdateProps(isNewBox); return; }
-
-        if (app.isDragging && app.dragData && app.dragData.type === 'resize') {
-            const sidebar = document.getElementById('right-sidebar');
-            const isSidebarOpen = sidebar && sidebar.classList.contains('visible');
-            if (!isSidebarOpen) return;
-        }
-        _prevUpdateProps(isNewBox);
-    };
-
-    // 3. Duration Sync Fix (Ruler Loop & Validation)
+    // 2. Duration Sync Fix (Ruler Loop & Validation)
     // Override both renderTimelineRuler and renderTimeMarkers
     const _origRenderTimelineRuler = renderTimelineRuler;
     renderTimelineRuler = function () {
@@ -8696,68 +8248,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (trailingSlider) trailingSlider.value = trailingValue;
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            initLaneNameInput();
-            initTrailingSpace();
-            // Force re-render once to apply new trailing space and positioning
-            renderTimelineRuler();
-            renderTimeMarkers();
-            renderLanesCanvas();
-        }, 400);
-    });
-
-})();
-
-// =====================================================
-// V2 FIXES ROUND 3 (Refined + Body Overscroll)
-// =====================================================
-
-(function () {
-
-    // Inject CSS for Body Overscroll
-    const style = document.createElement('style');
-    style.textContent = `
-        html, body {
-            overscroll-behavior-x: none;
-            overscroll-behavior-y: none;
+    function runWhenV2Ready(callback) {
+        if (V2.isV2) {
+            callback();
+            return;
         }
-    `;
-    document.head.appendChild(style);
-
-    // 1. Shift+Enter for New Line in Lane Name (Refined)
-    function initLaneNameInput() {
-        if (!V2.isV2) return;
-        bindLaneNameInputOnce();
+        requestAnimationFrame(() => runWhenV2Ready(callback));
     }
 
-    // 2. Resize Fix (Don't open properties if resizing)
-    const _currentUpdateProps = updatePropertiesPanel;
-
-    updatePropertiesPanel = function (isNewBox = false) {
-        if (!V2.isV2) { _currentUpdateProps(isNewBox); return; }
-
-        // CHECK FOR RESIZE/DRAG
-        // We use a broad check: if dragging, or if dragData indicates resize
-        if (app.isDragging || (app.dragData && app.dragData.type === 'resize')) {
-            const sidebar = document.getElementById('right-sidebar');
-            const isActive = sidebar && sidebar.classList.contains('visible');
-
-            if (!isActive) {
-                // Panel is closed, keep it closed.
-                return;
-            }
-        }
-
-        // Execute original logic
-        _currentUpdateProps(isNewBox);
-    };
-
     document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
+        runWhenV2Ready(() => {
             initLaneNameInput();
-        }, 600);
-    });
+            initTrailingSpace();
+        });
+    }, { once: true });
 
 })();
 

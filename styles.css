@@ -10,6 +10,7 @@
     --bg-primary: #0a0e14;
     --bg-secondary: #141b2a;
     --bg-tertiary: #1f2937;
+    --lane-label-bg: #1b263b;
     --bg-card: rgba(20, 27, 42, 0.95);
     --bg-layer: rgba(31, 41, 55, 0.5);
 
@@ -707,7 +708,7 @@ body.show-box-labels .lanes-canvas .lane-row:first-of-type .box-floating-label {
 .lane-label-spacer {
     width: var(--lane-label-width);
     flex-shrink: 0;
-    background: var(--bg-secondary);
+    background: var(--lane-label-bg);
     border-right: 1px solid var(--border-color);
 }
 
@@ -803,7 +804,7 @@ body.show-box-labels .lanes-canvas .lane-row:first-of-type .box-floating-label {
     display: flex;
     align-items: center;
     padding: 0 var(--spacing-md);
-    background: var(--bg-secondary);
+    background: var(--lane-label-bg);
     border-right: 1px solid var(--border-color);
     font-size: 10px;
     /* Decreased font size */
@@ -3360,6 +3361,7 @@ body.light-theme {
     --bg-primary: #f5f6fa;
     --bg-secondary: #ffffff;
     --bg-tertiary: #ebedf3;
+    --lane-label-bg: #f1f4fb;
     --bg-card: rgba(255, 255, 255, 0.95);
 
     --text-primary: #1a1a2e;
@@ -3624,10 +3626,14 @@ body.hide-lane-labels .lane-row {
     padding: 4px 6px;
     border: 1px solid transparent;
     min-height: 24px;
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 4px;
     margin-bottom: 4px;
     flex: 1;
+}
+
+body.light-theme .lane-name-div {
+    background: rgba(0, 0, 0, 0.06);
 }
 
 .lane-name-edit-textarea {
