@@ -7,6 +7,7 @@ const APP_VERSION = '2.1.0';
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
 const DEFAULT_LANE_HEIGHT = 46;
+const DEFAULT_PIXELS_PER_MS = 0.15;
 const MIN_BOX_DURATION_MS = 1;
 const DEFAULT_TIMELINE_SETTINGS = {
     timeFormatThreshold: 1000,
@@ -35,6 +36,69 @@ function normalizeTimelineSettings(settings = {}) {
         compactView: !!merged.compactView,
         timelineDuration: Math.max(1000, parseInt(merged.timelineDuration, 10) || 8000)
     };
+}
+
+function getScaleBounds() {
+    const hasApp = typeof app !== 'undefined' && app;
+    const min = hasApp && Number.isFinite(app.minPixelsPerMs) ? app.minPixelsPerMs : 0.001;
+    const max = hasApp && Number.isFinite(app.maxPixelsPerMs) ? app.maxPixelsPerMs : 1000;
+    return { min, max };
+}
+
+function clampPixelsPerMs(value) {
+    const { min, max } = getScaleBounds();
+    const numericValue = Number.isFinite(value) ? value : DEFAULT_PIXELS_PER_MS;
+    return Math.max(min, Math.min(max, numericValue));
+}
+
+function normalizeDiagramViewState(viewState) {
+    if (!viewState || typeof viewState !== 'object') return null;
+    const hasScale = Number.isFinite(viewState.pixelsPerMs);
+    const hasFallbackScale = Number.isFinite(viewState.zoomBeforeFitScale);
+    const hasFallbackScroll = Number.isFinite(viewState.zoomBeforeFitScrollLeft);
+    const hasFitModeFlag = typeof viewState.fitModeActive === 'boolean';
+    if (!hasScale && !hasFallbackScale && !hasFallbackScroll && !hasFitModeFlag) return null;
+
+    return {
+        pixelsPerMs: hasScale ? clampPixelsPerMs(viewState.pixelsPerMs) : DEFAULT_PIXELS_PER_MS,
+        zoomBeforeFitScale: hasFallbackScale ? clampPixelsPerMs(viewState.zoomBeforeFitScale) : null,
+        zoomBeforeFitScrollLeft: hasFallbackScroll ? Math.max(0, viewState.zoomBeforeFitScrollLeft) : null,
+        fitModeActive: hasFitModeFlag ? !!viewState.fitModeActive : hasFallbackScale
+    };
+}
+
+function getCurrentViewStateForPersistence() {
+    return {
+        pixelsPerMs: clampPixelsPerMs(app?.pixelsPerMs),
+        zoomBeforeFitScale: Number.isFinite(app?.zoomBeforeFitScale)
+            ? clampPixelsPerMs(app.zoomBeforeFitScale)
+            : null,
+        zoomBeforeFitScrollLeft: Number.isFinite(app?.zoomBeforeFitScrollLeft)
+            ? Math.max(0, app.zoomBeforeFitScrollLeft)
+            : null,
+        fitModeActive: !!app?.fitModeActive
+    };
+}
+
+function applyDiagramViewState(viewState) {
+    const normalized = normalizeDiagramViewState(viewState);
+    if (normalized) {
+        app.pixelsPerMs = normalized.pixelsPerMs;
+        app.zoomBeforeFitScale = normalized.zoomBeforeFitScale;
+        app.zoomBeforeFitScrollLeft = normalized.zoomBeforeFitScrollLeft;
+        app.fitModeActive = !!normalized.fitModeActive;
+        app.hasDiagramViewState = true;
+    } else {
+        app.pixelsPerMs = clampPixelsPerMs(DEFAULT_PIXELS_PER_MS);
+        app.zoomBeforeFitScale = null;
+        app.zoomBeforeFitScrollLeft = null;
+        app.fitModeActive = false;
+        app.hasDiagramViewState = false;
+    }
+
+    if (app.elements?.zoomLevel) {
+        app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
+    }
 }
 
 function getLaneHeightPx() {
@@ -218,6 +282,7 @@ class TimelineDiagram {
             locked: this.locked,
             compressionEnabled: Compression.enabled, // Save compression state per diagram
             settings: app.settings, // Include global settings
+            viewState: getCurrentViewStateForPersistence(),
             measurement: measurement, // Legacy pinned measurement format
             measurementState: getMeasurementStateForPersistence()
         };
@@ -277,6 +342,8 @@ class TimelineDiagram {
         Compression.setEnabled(data.compressionEnabled || false);
         // Restore settings with code defaults when absent.
         app.settings = normalizeTimelineSettings(data.settings);
+        // Restore diagram-specific viewport state (zoom/fit toggle cache).
+        applyDiagramViewState(data.viewState || null);
         // Restore measurement state (new format) or legacy pinned measurement
         app.pinnedMeasurementData = data.measurementState || data.measurement || null;
     }
@@ -289,11 +356,13 @@ const app = {
     diagram: new TimelineDiagram(),
     selectedBoxId: null,
     selectedLaneId: null,
-    pixelsPerMs: 0.15, // Default scale: 0.15px per ms
+    pixelsPerMs: DEFAULT_PIXELS_PER_MS, // Default scale: 0.15px per ms
     minPixelsPerMs: 0.001, // Allow extreme zoom out (0.67% - see entire timeline)
     maxPixelsPerMs: 1000,  // Allow extreme zoom in (666,666% - sub-microsecond detail)
     zoomBeforeFitScale: null,
     zoomBeforeFitScrollLeft: null,
+    fitModeActive: false,
+    hasDiagramViewState: false,
     isDragging: false,
     dragData: null,
     isActivelyDraggingOrResizing: false, // Prevents properties panel updates during drag/resize
@@ -826,6 +895,7 @@ const Compression = {
         app.elements.timelineRuler.scrollLeft = scrollLeft;
         app.elements.timeMarkers.scrollLeft = scrollLeft;
 
+        persistCurrentDiagramViewState();
         autoSave();
         saveSessionState();
     },
@@ -1538,7 +1608,8 @@ function saveSessionState() {
             activeDiagramId: currentDiagramId || null,
             pixelsPerMs: Number.isFinite(app?.pixelsPerMs) ? app.pixelsPerMs : 0.15,
             zoomBeforeFitScale: Number.isFinite(app?.zoomBeforeFitScale) ? app.zoomBeforeFitScale : null,
-            zoomBeforeFitScrollLeft: Number.isFinite(app?.zoomBeforeFitScrollLeft) ? app.zoomBeforeFitScrollLeft : null
+            zoomBeforeFitScrollLeft: Number.isFinite(app?.zoomBeforeFitScrollLeft) ? app.zoomBeforeFitScrollLeft : null,
+            fitModeActive: !!app?.fitModeActive
         };
         localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(payload));
     } catch (e) {
@@ -1558,6 +1629,22 @@ function loadSessionState() {
     }
 }
 
+function persistCurrentDiagramViewState() {
+    if (!currentDiagramId) return;
+
+    const diagrams = getAllDiagrams();
+    const index = diagrams.findIndex(d => d.id === currentDiagramId);
+    if (index < 0) return;
+
+    if (!diagrams[index].data || typeof diagrams[index].data !== 'object') {
+        diagrams[index].data = {};
+    }
+    diagrams[index].data.viewState = getCurrentViewStateForPersistence();
+    diagrams[index].data.compressionEnabled = !!Compression.enabled;
+    diagrams[index].updatedAt = Date.now();
+    saveDiagramsList(diagrams);
+}
+
 function applySessionState(state) {
     if (!state || typeof state !== 'object') return;
 
@@ -1574,6 +1661,9 @@ function applySessionState(state) {
     app.zoomBeforeFitScrollLeft = Number.isFinite(state.zoomBeforeFitScrollLeft)
         ? Math.max(0, state.zoomBeforeFitScrollLeft)
         : null;
+    app.fitModeActive = (typeof state.fitModeActive === 'boolean')
+        ? state.fitModeActive
+        : Number.isFinite(app.zoomBeforeFitScale);
 }
 
 function saveDiagramsList(diagrams) {
@@ -1629,10 +1719,25 @@ function autoSave() {
     }
     autoSaveTimeout = setTimeout(() => {
         saveCurrentDiagram();
+        autoSaveTimeout = null;
     }, 1000);
 }
 
+function flushPendingAutoSave() {
+    if (!autoSaveTimeout) return;
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = null;
+    if (currentDiagramId) {
+        saveCurrentDiagram();
+    }
+}
+
 function loadDiagram(diagramId) {
+    if (currentDiagramId && currentDiagramId !== diagramId) {
+        flushPendingAutoSave();
+        persistCurrentDiagramViewState();
+    }
+
     const diagrams = getAllDiagrams();
     const diagram = diagrams.find(d => d.id === diagramId);
     if (!diagram) {
@@ -1948,11 +2053,13 @@ function createNewDiagram() {
     pendingLaneDeleteId = null;
     clearPendingPurgeRequest();
     clearLaneHistory();
+    flushPendingAutoSave();
 
     setCurrentDiagramId(generateDiagramId());
     app.diagram = new TimelineDiagram();
     app.diagram.title = generateDiagramTitle();
     app.diagram.addLane('Lane 1');
+    applyDiagramViewState(null);
     app.selectedBoxId = null;
     app.selectedLaneId = null;
 
@@ -1991,12 +2098,14 @@ function enterNoDiagramState(options = {}) {
     pendingLaneDeleteId = null;
     clearPendingPurgeRequest();
     clearLaneHistory();
+    flushPendingAutoSave();
 
     setCurrentDiagramId(null);
     app.diagram = new TimelineDiagram();
     if (resetSettings) {
         app.settings = getDefaultTimelineSettings();
     }
+    applyDiagramViewState(null);
     app.selectedBoxId = null;
     app.selectedLaneId = null;
     Compression.setEnabled(false);
@@ -4723,11 +4832,11 @@ function updateMeasurementDisplay() {
 }
 
 function getFitToViewScale() {
+    const totalDuration = app.diagram.getTotalDuration();
     const settingsDuration = app.settings?.timelineDuration || 8000;
-    const totalDuration = Math.max(app.diagram.getTotalDuration(), settingsDuration);
     const visibleDuration = Compression.enabled
-        ? Math.max(Compression.getCompressedDuration(), settingsDuration)
-        : totalDuration;
+        ? (app.diagram.boxes.length > 0 ? Math.max(0, Compression.getCompressedDuration()) : settingsDuration)
+        : Math.max(totalDuration, settingsDuration);
     const fitDuration = Math.max(1, visibleDuration + (app.settings?.trailingSpace || 0));
 
     const laneLabelWidth = getLaneLabelWidthPx();
@@ -4745,11 +4854,15 @@ function isZoomAtFitScale(scale = app.pixelsPerMs) {
     return Math.abs(scale - fitScale) <= tolerance;
 }
 
+function isFitModeActive() {
+    return !!app.fitModeActive;
+}
+
 function syncZoomFitIndicator() {
     const fitBtn = document.getElementById('zoom-fit');
     if (!fitBtn) return;
 
-    const isActive = isZoomAtFitScale();
+    const isActive = isFitModeActive();
 
     fitBtn.classList.toggle('fit-active', isActive);
     fitBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
@@ -4767,6 +4880,11 @@ function handleZoom(direction) {
 
     // Apply zoom
     const factor = direction === 'in' ? 1.25 : 0.8;
+    if (app.fitModeActive) {
+        app.fitModeActive = false;
+        app.zoomBeforeFitScale = null;
+        app.zoomBeforeFitScrollLeft = null;
+    }
     app.pixelsPerMs = Math.max(app.minPixelsPerMs,
         Math.min(app.maxPixelsPerMs, app.pixelsPerMs * factor));
 
@@ -4783,6 +4901,7 @@ function handleZoom(direction) {
     app.elements.timelineRuler.scrollLeft = canvas.scrollLeft;
     app.elements.timeMarkers.scrollLeft = canvas.scrollLeft;
     syncZoomFitIndicator();
+    persistCurrentDiagramViewState();
     saveSessionState();
 }
 
@@ -4803,12 +4922,13 @@ function handleZoomFit() {
         app.elements.timeMarkers.scrollLeft = clamped;
     };
 
-    if (isZoomAtFitScale()) {
+    if (isFitModeActive()) {
         const fallbackScale = Number.isFinite(app.zoomBeforeFitScale) ? app.zoomBeforeFitScale : 0.15;
         const fallbackScrollLeft = Number.isFinite(app.zoomBeforeFitScrollLeft)
             ? app.zoomBeforeFitScrollLeft
             : canvas.scrollLeft;
         app.pixelsPerMs = Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fallbackScale));
+        app.fitModeActive = false;
         app.zoomBeforeFitScale = null;
         app.zoomBeforeFitScrollLeft = null;
         app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
@@ -4817,6 +4937,7 @@ function handleZoomFit() {
     } else {
         app.zoomBeforeFitScale = app.pixelsPerMs;
         app.zoomBeforeFitScrollLeft = canvas.scrollLeft;
+        app.fitModeActive = true;
         app.pixelsPerMs = fitScale;
         app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
         renderLanesCanvas();
@@ -4824,6 +4945,7 @@ function handleZoomFit() {
         applyScroll(0);
     }
     syncZoomFitIndicator();
+    persistCurrentDiagramViewState();
     saveSessionState();
 }
 
@@ -6597,10 +6719,14 @@ function init() {
     // Click zoom label to reset to 100%
     app.elements.zoomLevel.style.cursor = 'pointer';
     app.elements.zoomLevel.addEventListener('click', () => {
-        app.pixelsPerMs = 0.15; // 100%
+        app.fitModeActive = false;
+        app.zoomBeforeFitScale = null;
+        app.zoomBeforeFitScrollLeft = null;
+        app.pixelsPerMs = DEFAULT_PIXELS_PER_MS; // 100%
         app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
         renderLanesCanvas();
         syncZoomFitIndicator();
+        persistCurrentDiagramViewState();
         saveSessionState();
     });
 
@@ -7000,7 +7126,7 @@ function init() {
         enterNoDiagramState();
     }
 
-    if (!loadedFromURL && sessionState) {
+    if (!loadedFromURL && sessionState && !currentDiagramId) {
         applySessionState(sessionState);
     }
 
@@ -7682,9 +7808,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const totalDuration = app.diagram.getTotalDuration();
         const settingsDuration = app.settings.timelineDuration || 8000;
+        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
 
-        // Ensure strictly >= totalDuration
-        const finalDuration = Math.max(totalDuration, settingsDuration);
+        // Compression view should size to compressed content (+ configured trailing only),
+        // while normal view keeps the explicit timeline duration floor.
+        const finalDuration = Compression.enabled
+            ? (app.diagram.boxes.length > 0 ? compressedDuration : settingsDuration)
+            : Math.max(totalDuration, settingsDuration);
 
         // Use exact pixels unless compressed
         const minTrackWidth = msToPixels(finalDuration + (app.settings.trailingSpace || 0));
@@ -7746,6 +7876,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTimeMarkers();
         Minimap.render();
         syncSelectedLaneUI();
+        syncZoomFitIndicator();
     };
 
     // Compact View (Hide Labels)
@@ -8406,12 +8537,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ruler) return;
         ruler.innerHTML = '';
 
-        // Fix: Use settings duration while preserving compression ruler markers.
         const totalDuration = app.diagram.getTotalDuration();
         const settingsDuration = app.settings.timelineDuration || 8000;
-        const actualDuration = Math.max(totalDuration, settingsDuration);
-        const compressedDuration = Compression.enabled ? Compression.getCompressedDuration() : actualDuration;
-        const displayDuration = Math.max(compressedDuration, settingsDuration);
+        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
+        const displayDuration = Compression.enabled
+            ? (app.diagram.boxes.length > 0 ? compressedDuration : settingsDuration)
+            : Math.max(totalDuration, settingsDuration);
 
         let interval = 100;
         const intervals = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 600000];
@@ -8475,7 +8606,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const total = app.diagram.getTotalDuration();
         const settings = app.settings.timelineDuration || 8000;
-        const displayDuration = Math.max(total, settings);
+        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
+        const displayDuration = Compression.enabled
+            ? (app.diagram.boxes.length > 0 ? compressedDuration : settings)
+            : Math.max(total, settings);
         const endTime = displayDuration + (app.settings.trailingSpace || 0);
         const markerWidth = msToPixels(endTime);
 
