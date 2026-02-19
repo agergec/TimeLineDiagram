@@ -196,20 +196,28 @@
                     <span class="sr-only">Measure</span>
                 </button>
                 <div class="toolbar-divider"></div>
-                <select id="config-time-threshold" class="toolbar-select"
-                    title="Switch from ms to seconds/minutes when duration exceeds this threshold">
-                    <option value="0">ms</option>
-                    <option value="1000" selected>>1s</option>
-                    <option value="5000">>5s</option>
-                    <option value="60000">>1m</option>
-                    <option value="-1">Custom</option>
-                </select>
-                <div id="config-time-threshold-custom-wrap" class="toolbar-threshold-custom hidden">
-                    <input id="config-time-threshold-custom" class="toolbar-threshold-input" type="number" min="0"
-                        step="100" inputmode="numeric" placeholder="Threshold" aria-label="Custom threshold in milliseconds">
-                    <span class="toolbar-threshold-unit">ms</span>
-                    <button id="config-time-threshold-back" class="toolbar-threshold-back" type="button"
-                        title="Back to preset threshold">Preset</button>
+                <div class="toolbar-threshold-menu">
+                    <button id="threshold-toggle-btn" class="toolbar-btn icon-btn icon-only" title="Threshold Display Rules" aria-label="Threshold Display Rules" aria-expanded="false" aria-controls="threshold-config-panel">
+                        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M4 6h16"></path>
+                            <path d="M7 12h10"></path>
+                            <path d="M10 18h4"></path>
+                        </svg>
+                        <span class="sr-only">Threshold</span>
+                    </button>
+                    <div id="threshold-config-panel" class="toolbar-threshold-panel hidden" role="dialog" aria-label="Threshold Display Rules">
+                        <div id="threshold-base-unit-options" class="threshold-base-unit-options" role="radiogroup" aria-label="Base time unit"></div>
+                        <label class="threshold-option-line" for="threshold-mode-base-only">
+                            <input type="radio" id="threshold-mode-base-only" name="threshold-mode" value="base-only">
+                            <span id="threshold-mode-base-only-label">Display ms only</span>
+                        </label>
+                        <label class="threshold-option-line threshold-option-custom" for="threshold-mode-subunit">
+                            <input type="radio" id="threshold-mode-subunit" name="threshold-mode" value="subunit">
+                            <span id="threshold-mode-subunit-prefix">Display ms below</span>
+                            <input id="config-time-threshold-custom" class="toolbar-threshold-input" type="number" min="0" step="1" inputmode="numeric" aria-label="Threshold value">
+                            <span id="threshold-mode-subunit-suffix">s</span>
+                        </label>
+                    </div>
                 </div>
                 <label class="toolbar-toggle-btn icon-only" title="Display dashed lines at box start/end times">
                     <input type="checkbox" id="config-show-alignment" checked>
@@ -374,13 +382,27 @@
                             <small class="text-muted">Absolute start time for the diagram</small>
                         </div>
                         <div class="form-group">
+                            <label for="config-base-time-unit">Base Time Unit</label>
+                            <select id="config-base-time-unit" class="form-input">
+                                <option value="ms">Milliseconds (ms)</option>
+                                <option value="s">Seconds (s)</option>
+                                <option value="min">Minutes (min)</option>
+                                <option value="h">Hours (h)</option>
+                                <option value="d">Days (d)</option>
+                                <option value="w">Weeks (w)</option>
+                                <option value="mo">Months (mo)</option>
+                                <option value="y">Years (y)</option>
+                            </select>
+                            <small class="text-muted">Display and edit values in this unit for this diagram.</small>
+                        </div>
+                        <div class="form-group">
                             <label for="config-timeline-duration">Timeline Duration</label>
                             <div class="input-with-unit">
                                 <input type="number" id="config-timeline-duration" class="form-input" value="8000"
                                     min="1000" max="600000" step="1000" style="width: 100px;">
-                                <span class="unit">ms</span>
+                                <span id="config-timeline-duration-unit" class="unit">ms</span>
                             </div>
-                            <small class="text-muted">Total canvas width in ms. Cannot be less than last box
+                            <small class="text-muted">Total canvas width in selected unit. Cannot be less than last box
                                 end.</small>
                         </div>
                         <!-- Timeline Display Settings -->
@@ -388,11 +410,11 @@
                         <div class="form-group">
                             <label for="config-trailing-space">Trailing Space</label>
                             <div class="input-with-unit">
-                                <input type="range" id="config-trailing-slider" min="0" max="30000" value="1000"
+                                <input type="range" id="config-trailing-slider" min="0" max="30000" value="0"
                                     step="500">
-                                <input type="number" id="config-trailing-space" class="form-input" value="1000" min="0"
+                                <input type="number" id="config-trailing-space" class="form-input" value="0" min="0"
                                     max="100000" style="width: 80px;">
-                                <span class="unit">ms</span>
+                                <span id="config-trailing-space-unit" class="unit">ms</span>
                             </div>
                             <small class="text-muted">Extra space after the last box</small>
                         </div>
@@ -403,7 +425,7 @@
                                     step="50">
                                 <input type="number" id="config-compression-threshold" class="form-input" value="500"
                                     min="10" max="10000" style="width: 70px;">
-                                <span class="unit">ms</span>
+                                <span id="config-compression-threshold-unit" class="unit">ms</span>
                             </div>
                             <small class="text-muted">Gaps larger than this are compressed (when enabled)</small>
                         </div>
@@ -537,18 +559,18 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="box-start">Start (ms) <button id="pick-start-btn" class="icon-btn tiny"
+                                <label for="box-start">Start (<span id="box-start-unit-label">ms</span>) <button id="pick-start-btn" class="icon-btn tiny"
                                         title="Set start from another box's end">📍</button></label>
-                                <input type="number" id="box-start" class="form-input" min="0" step="1">
+                                <input type="number" id="box-start" class="form-input" min="0" step="any">
                             </div>
                             <div class="form-group">
-                                <label for="box-duration">Duration (ms)</label>
-                                <input type="number" id="box-duration" class="form-input" min="1" step="1">
+                                <label for="box-duration">Duration (<span id="box-duration-unit-label">ms</span>)</label>
+                                <input type="number" id="box-duration" class="form-input" min="0" step="any">
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="box-end">End (ms)</label>
-                            <input type="number" id="box-end" class="form-input" min="0" step="1" readonly>
+                            <label for="box-end">End (<span id="box-end-unit-label">ms</span>)</label>
+                            <input type="number" id="box-end" class="form-input" min="0" step="any" readonly>
                         </div>
                         <div class="form-group">
                             <label>Time Range (Absolute)</label>
@@ -621,12 +643,12 @@
                     <span class="property-time-value" id="props-duration-display">—</span>
                 </div>
                 <div class="property-field" style="margin-top: var(--spacing-md);">
-                    <label>Start Offset (ms)</label>
-                    <input type="number" id="props-box-start" min="0" step="1">
+                    <label>Start Offset (<span id="props-box-start-unit-label">ms</span>)</label>
+                    <input type="number" id="props-box-start" min="0" step="any">
                 </div>
                 <div class="property-field">
-                    <label>Duration (ms)</label>
-                    <input type="number" id="props-box-duration" min="1" step="1">
+                    <label>Duration (<span id="props-box-duration-unit-label">ms</span>)</label>
+                    <input type="number" id="props-box-duration" min="0" step="any">
                 </div>
                 <div class="property-time-display" style="margin-top: var(--spacing-md); border-left-color: var(--accent-secondary);">
                     <span class="property-time-label">Absolute Time</span>

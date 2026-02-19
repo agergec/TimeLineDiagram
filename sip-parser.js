@@ -17,6 +17,16 @@ const CID_COLORS = [
     '#60a5fa', '#a78bfa', '#22d3ee', '#f472b6', '#2dd4bf',
     '#c084fc', '#38bdf8', '#818cf8', '#e879f9', '#67e8f9'
 ];
+const TIME_UNIT_FACTORS_MS = Object.freeze({
+    ms: 1,
+    s: 1000,
+    min: 60000,
+    h: 3600000,
+    d: 86400000,
+    w: 604800000,
+    mo: 2592000000,
+    y: 31536000000
+});
 
 // Hex CID colors to rgba for delta badge backgrounds
 function cidColorToRgba(hexColor, alpha) {
@@ -24,6 +34,25 @@ function cidColorToRgba(hexColor, alpha) {
     const g = parseInt(hexColor.slice(3, 5), 16);
     const b = parseInt(hexColor.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function chooseSipBaseTimeUnit(totalDurationMs) {
+    // SIP imports should default to millisecond timelines.
+    void totalDurationMs;
+    return 'ms';
+}
+
+function getDefaultThresholdForUnit(unit) {
+    return TIME_UNIT_FACTORS_MS[unit] || 1000;
+}
+
+function roundTimelineDurationToUnit(totalDurationMs, unit) {
+    const safeDuration = Math.max(1, Number(totalDurationMs) || 1);
+    const rawStep = TIME_UNIT_FACTORS_MS[unit] || 1000;
+    const step = unit === 'ms' ? 100 : rawStep;
+    const minimum = unit === 'ms' ? 1000 : rawStep;
+    const headroom = Math.max(step, Math.round(safeDuration * 0.06));
+    return Math.max(minimum, Math.ceil((safeDuration + headroom) / step) * step);
 }
 
 // =====================================================
@@ -1746,7 +1775,9 @@ function generateSipDiagram() {
     var totalDuration = boxes.reduce(function(maxEnd, b) {
         return Math.max(maxEnd, b.startOffset + b.duration);
     }, 0);
-    var timelineDuration = Math.max(8000, Math.ceil((totalDuration + 1000) / 1000) * 1000);
+    var baseTimeUnit = chooseSipBaseTimeUnit(totalDuration);
+    var timeFormatThreshold = getDefaultThresholdForUnit(baseTimeUnit);
+    var timelineDuration = roundTimelineDurationToUnit(totalDuration, baseTimeUnit);
 
     return {
         title: 'SIP Call Setup (INVITE \u2192 ACK)',
@@ -1758,14 +1789,15 @@ function generateSipDiagram() {
         locked: false,
         compressionEnabled: false,
         settings: {
-            timeFormatThreshold: 1000,
+            timeFormatThreshold: timeFormatThreshold,
             showAlignmentLines: true,
             showBoxLabels: true,
             autoOpenBoxProperties: false,
-            trailingSpace: 1000,
+            trailingSpace: 0,
             compressionThreshold: 500,
             compactView: true,
-            timelineDuration: timelineDuration
+            timelineDuration: timelineDuration,
+            baseTimeUnit: baseTimeUnit
         },
         measurementState: null
     };

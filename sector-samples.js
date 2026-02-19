@@ -6,6 +6,42 @@ const MAX_DIAGRAMS = 10;
 const LANE_COLORS = [
     '#60a5fa', '#a78bfa', '#22d3ee', '#4ade80', '#f59e0b', '#f472b6', '#818cf8', '#2dd4bf'
 ];
+const UNIT_FACTORS_MS = Object.freeze({
+    ms: 1,
+    s: 1000,
+    min: 60000,
+    h: 3600000,
+    d: 86400000,
+    w: 604800000,
+    mo: 2592000000,
+    y: 31536000000
+});
+const BASE_UNIT_SUBUNITS = Object.freeze({
+    ms: null,
+    s: 'ms',
+    min: 's',
+    h: 'min',
+    d: 'h',
+    w: 'd',
+    mo: 'd',
+    y: 'mo'
+});
+const SECTOR_TIMING_PROFILES = Object.freeze({
+    Telecom: { baseTimeUnit: 'ms', sourceUnit: 'ms', sourceDivisor: 1 },
+    'Distributed Systems': { baseTimeUnit: 's', sourceUnit: 'ms', sourceDivisor: 1 },
+    Cybersecurity: { baseTimeUnit: 'h', sourceUnit: 'min', sourceDivisor: 10 },
+    Manufacturing: { baseTimeUnit: 'h', sourceUnit: 'min', sourceDivisor: 10 },
+    Healthcare: { baseTimeUnit: 'h', sourceUnit: 'min', sourceDivisor: 10 },
+    'Media & Post-Production': { baseTimeUnit: 'min', sourceUnit: 's', sourceDivisor: 1 },
+    Construction: { baseTimeUnit: 'w', sourceUnit: 'd', sourceDivisor: 100 },
+    Logistics: { baseTimeUnit: 'd', sourceUnit: 'h', sourceDivisor: 10 },
+    'Performance Testing': { baseTimeUnit: 'min', sourceUnit: 's', sourceDivisor: 1 },
+    Legal: { baseTimeUnit: 'mo', sourceUnit: 'd', sourceDivisor: 30 },
+    'Network Protocols': { baseTimeUnit: 'ms', sourceUnit: 'ms', sourceDivisor: 1 },
+    Education: { baseTimeUnit: 'min', sourceUnit: 's', sourceDivisor: 2 },
+    Finance: { baseTimeUnit: 's', sourceUnit: 'ms', sourceDivisor: 1 },
+    ECommerce: { baseTimeUnit: 's', sourceUnit: 'ms', sourceDivisor: 1 }
+});
 
 const SAMPLE_LIBRARY = {
     Telecom: [
@@ -407,16 +443,76 @@ function saveDiagrams(diagrams) {
     }
 }
 
-function formatDuration(ms) {
-    if (ms >= 1000) return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
-    return `${ms}ms`;
+function getDefaultThresholdForUnit(unit) {
+    return UNIT_FACTORS_MS[unit] || 1000;
 }
 
-function computeTotalDuration(sample) {
-    return sample.boxes.reduce((max, b) => Math.max(max, b.start + b.dur), 0);
+function getTimingProfile(sample) {
+    const sectorProfile = SECTOR_TIMING_PROFILES[sample?._sector] || {};
+    const baseTimeUnit = sample.baseTimeUnit || sectorProfile.baseTimeUnit || 'ms';
+    const sourceUnit = sample.sourceUnit || sectorProfile.sourceUnit || 'ms';
+    const sourceDivisor = Math.max(1, Number(sample.sourceDivisor || sectorProfile.sourceDivisor || 1));
+    const configuredThreshold = Number(sample.timeFormatThreshold);
+    const profileThreshold = Number(sectorProfile.timeFormatThreshold);
+    const timeFormatThreshold = Number.isFinite(configuredThreshold)
+        ? Math.max(0, Math.round(configuredThreshold))
+        : Number.isFinite(profileThreshold)
+            ? Math.max(0, Math.round(profileThreshold))
+            : getDefaultThresholdForUnit(baseTimeUnit);
+
+    return {
+        baseTimeUnit,
+        sourceUnit,
+        sourceDivisor,
+        timeFormatThreshold
+    };
+}
+
+function sampleValueToMs(value, profile) {
+    const unitFactor = UNIT_FACTORS_MS[profile.sourceUnit] || 1;
+    return Math.max(0, Math.round((Number(value) || 0) * unitFactor / profile.sourceDivisor));
+}
+
+function formatUnitValue(value, maxDecimals = 2) {
+    if (!Number.isFinite(value)) return '0';
+    const fixed = value.toFixed(maxDecimals);
+    return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+}
+
+function formatDuration(ms, profile) {
+    const baseUnit = profile.baseTimeUnit || 'ms';
+    if (baseUnit === 'ms') {
+        if (ms >= 1000) return `${formatUnitValue(ms / 1000, 2)}s`;
+        return `${Math.round(ms)}ms`;
+    }
+
+    const threshold = Math.max(0, Number(profile.timeFormatThreshold || 0));
+    const subUnit = BASE_UNIT_SUBUNITS[baseUnit];
+    const useSubUnit = subUnit && threshold > 0 && ms < threshold;
+    const activeUnit = useSubUnit ? subUnit : baseUnit;
+    const value = ms / (UNIT_FACTORS_MS[activeUnit] || 1);
+    return `${formatUnitValue(value, 2)}${activeUnit}`;
+}
+
+function computeTotalDuration(sample, profile = getTimingProfile(sample)) {
+    return sample.boxes.reduce((max, b) => {
+        const startMs = sampleValueToMs(b.start, profile);
+        const durationMs = Math.max(1, sampleValueToMs(b.dur, profile));
+        return Math.max(max, startMs + durationMs);
+    }, 0);
+}
+
+function roundTimelineDuration(totalDurationMs, baseTimeUnit) {
+    const rawStepMs = UNIT_FACTORS_MS[baseTimeUnit] || 1000;
+    const stepMs = baseTimeUnit === 'ms' ? 100 : rawStepMs;
+    const minimumMs = baseTimeUnit === 'ms' ? 1000 : rawStepMs;
+    const safeDuration = Math.max(1, Number(totalDurationMs) || 1);
+    const headroom = Math.max(stepMs, Math.round(safeDuration * 0.08));
+    return Math.max(minimumMs, Math.ceil((safeDuration + headroom) / stepMs) * stepMs);
 }
 
 function sampleToDiagram(sample) {
+    const profile = getTimingProfile(sample);
     const lanes = sample.lanes.map((name, index) => ({
         id: index + 1,
         name,
@@ -427,14 +523,14 @@ function sampleToDiagram(sample) {
     const boxes = sample.boxes.map((b, index) => ({
         id: index + 1,
         laneId: b.lane + 1,
-        startOffset: b.start,
-        duration: Math.max(1, b.dur),
+        startOffset: sampleValueToMs(b.start, profile),
+        duration: Math.max(1, sampleValueToMs(b.dur, profile)),
         color: b.color || LANE_COLORS[b.lane % LANE_COLORS.length],
         label: b.label
     }));
 
     const totalDuration = boxes.reduce((max, b) => Math.max(max, b.startOffset + b.duration), 0);
-    const timelineDuration = Math.max(8000, Math.ceil((totalDuration + 1000) / 1000) * 1000);
+    const timelineDuration = roundTimelineDuration(totalDuration, profile.baseTimeUnit);
 
     return {
         title: sample.title,
@@ -446,14 +542,15 @@ function sampleToDiagram(sample) {
         locked: false,
         compressionEnabled: false,
         settings: {
-            timeFormatThreshold: 1000,
+            timeFormatThreshold: profile.timeFormatThreshold,
             showAlignmentLines: true,
             showBoxLabels: true,
             autoOpenBoxProperties: false,
-            trailingSpace: 1000,
+            trailingSpace: 0,
             compressionThreshold: 500,
             compactView: true,
-            timelineDuration
+            timelineDuration,
+            baseTimeUnit: profile.baseTimeUnit
         },
         measurementState: null
     };
@@ -482,14 +579,16 @@ function getSelectedSample() {
     const sector = document.getElementById('sector-select').value;
     const sampleId = document.getElementById('template-select').value;
     const templates = SAMPLE_LIBRARY[sector] || [];
-    return templates.find(t => t.id === sampleId) || null;
+    const selected = templates.find(t => t.id === sampleId) || null;
+    return selected ? { ...selected, _sector: sector } : null;
 }
 
 function renderPreview() {
     const sample = getSelectedSample();
     if (!sample) return;
 
-    const totalDuration = computeTotalDuration(sample);
+    const profile = getTimingProfile(sample);
+    const totalDuration = computeTotalDuration(sample, profile);
     const preview = document.getElementById('preview');
     const rows = [];
 
@@ -497,8 +596,10 @@ function renderPreview() {
         const laneName = sample.lanes[laneIndex];
         const laneBoxes = sample.boxes.filter(b => b.lane === laneIndex);
         const bars = laneBoxes.map((b) => {
-            const left = (b.start / totalDuration) * 100;
-            const width = (b.dur / totalDuration) * 100;
+            const startMs = sampleValueToMs(b.start, profile);
+            const durationMs = Math.max(1, sampleValueToMs(b.dur, profile));
+            const left = totalDuration > 0 ? (startMs / totalDuration) * 100 : 0;
+            const width = totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
             const color = b.color || LANE_COLORS[laneIndex % LANE_COLORS.length];
             return `<div class="sample-box" style="left:${left}%;width:${Math.max(width, 2)}%;background:${color}">${b.label}</div>`;
         }).join('');
@@ -513,7 +614,7 @@ function renderPreview() {
     document.getElementById('meta-title').textContent = sample.title;
     document.getElementById('meta-lanes').textContent = String(sample.lanes.length);
     document.getElementById('meta-boxes').textContent = String(sample.boxes.length);
-    document.getElementById('meta-duration').textContent = formatDuration(totalDuration);
+    document.getElementById('meta-duration').textContent = formatDuration(totalDuration, profile);
 }
 
 function importToTimeline(openEditor = false) {

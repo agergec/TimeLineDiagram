@@ -9,15 +9,74 @@ const DEFAULT_MIN_TIMELINE_MS = 10000;
 const DEFAULT_LANE_HEIGHT = 46;
 const DEFAULT_PIXELS_PER_MS = 0.15;
 const MIN_BOX_DURATION_MS = 1;
+const TIME_UNIT_FACTORS_MS = Object.freeze({
+    ms: 1,
+    s: 1000,
+    min: 60000,
+    h: 3600000,
+    d: 86400000,
+    w: 604800000,
+    mo: 2592000000,   // 30 days
+    y: 31536000000    // 365 days
+});
+const TIME_UNIT_LABELS = Object.freeze({
+    ms: 'ms',
+    s: 's',
+    min: 'min',
+    h: 'h',
+    d: 'd',
+    w: 'w',
+    mo: 'mo',
+    y: 'y'
+});
+const TIME_UNIT_ALIASES = Object.freeze({
+    sec: 's',
+    second: 's',
+    seconds: 's',
+    secs: 's',
+    m: 'min',
+    minute: 'min',
+    minutes: 'min',
+    mins: 'min',
+    hr: 'h',
+    hour: 'h',
+    hours: 'h',
+    day: 'd',
+    days: 'd',
+    week: 'w',
+    weeks: 'w',
+    wk: 'w',
+    wks: 'w',
+    month: 'mo',
+    months: 'mo',
+    mon: 'mo',
+    mons: 'mo',
+    year: 'y',
+    years: 'y',
+    yr: 'y',
+    yrs: 'y'
+});
+const BASE_UNIT_SUBUNITS = Object.freeze({
+    ms: null,
+    s: 'ms',
+    min: 's',
+    h: 'min',
+    d: 'h',
+    w: 'd',
+    mo: 'd',
+    y: 'mo'
+});
+const THRESHOLD_BASE_UNIT_ORDER = Object.freeze(['ms', 's', 'min', 'h', 'd', 'w', 'mo', 'y']);
 const DEFAULT_TIMELINE_SETTINGS = {
     timeFormatThreshold: 1000,
     showAlignmentLines: true,
     showBoxLabels: false,
     autoOpenBoxProperties: false,
-    trailingSpace: 1000,
+    trailingSpace: 0,
     compressionThreshold: 500,
     compactView: true,
-    timelineDuration: 8000
+    timelineDuration: 8000,
+    baseTimeUnit: 'ms'
 };
 
 function getDefaultTimelineSettings() {
@@ -26,16 +85,157 @@ function getDefaultTimelineSettings() {
 
 function normalizeTimelineSettings(settings = {}) {
     const merged = { ...getDefaultTimelineSettings(), ...(settings || {}) };
+    const baseTimeUnit = normalizeBaseTimeUnit(merged.baseTimeUnit);
+    const parsedThreshold = parseInt(merged.timeFormatThreshold, 10);
+    const defaultThreshold = getDefaultTimeThreshold(baseTimeUnit);
     return {
-        timeFormatThreshold: Math.max(0, parseInt(merged.timeFormatThreshold, 10) || 0),
+        timeFormatThreshold: Number.isFinite(parsedThreshold)
+            ? Math.max(0, parsedThreshold)
+            : defaultThreshold,
         showAlignmentLines: !!merged.showAlignmentLines,
         showBoxLabels: !!merged.showBoxLabels,
         autoOpenBoxProperties: !!merged.autoOpenBoxProperties,
         trailingSpace: Math.max(0, parseInt(merged.trailingSpace, 10) || 0),
         compressionThreshold: Math.max(10, parseInt(merged.compressionThreshold, 10) || 500),
         compactView: !!merged.compactView,
-        timelineDuration: Math.max(1000, parseInt(merged.timelineDuration, 10) || 8000)
+        timelineDuration: Math.max(1000, parseInt(merged.timelineDuration, 10) || 8000),
+        baseTimeUnit
     };
+}
+
+function normalizeBaseTimeUnit(unit) {
+    const raw = String(unit || '').trim().toLowerCase();
+    if (TIME_UNIT_FACTORS_MS[raw]) return raw;
+    if (TIME_UNIT_ALIASES[raw]) return TIME_UNIT_ALIASES[raw];
+    return 'ms';
+}
+
+function getBaseTimeUnit() {
+    const configured = (typeof app !== 'undefined' && app?.settings?.baseTimeUnit)
+        ? app.settings.baseTimeUnit
+        : DEFAULT_TIMELINE_SETTINGS.baseTimeUnit;
+    return normalizeBaseTimeUnit(configured);
+}
+
+function getUnitFactorMs(unit = getBaseTimeUnit()) {
+    return TIME_UNIT_FACTORS_MS[normalizeBaseTimeUnit(unit)] || 1;
+}
+
+function getBaseUnitLabel(unit = getBaseTimeUnit()) {
+    return TIME_UNIT_LABELS[normalizeBaseTimeUnit(unit)] || 'ms';
+}
+
+function getBaseUnitSubunit(unit = getBaseTimeUnit()) {
+    return BASE_UNIT_SUBUNITS[normalizeBaseTimeUnit(unit)] || null;
+}
+
+function getThresholdDisplaySubUnit(unit = getBaseTimeUnit()) {
+    const normalized = normalizeBaseTimeUnit(unit);
+    if (normalized === 'ms') return 'ms';
+    return getBaseUnitSubunit(normalized) || normalized;
+}
+
+function getThresholdInputUnit(unit = getBaseTimeUnit()) {
+    const normalized = normalizeBaseTimeUnit(unit);
+    if (normalized === 'ms') return 's';
+    return normalized;
+}
+
+function getRenderGranularityMs(unit = getBaseTimeUnit()) {
+    const normalized = normalizeBaseTimeUnit(unit);
+    if (normalized === 'ms') return 1;
+    const subUnit = getBaseUnitSubunit(normalized);
+    return subUnit ? getUnitFactorMs(subUnit) : getUnitFactorMs(normalized);
+}
+
+function getDefaultTimeThreshold(unit = getBaseTimeUnit()) {
+    const normalized = normalizeBaseTimeUnit(unit);
+    if (normalized === 'ms') return 1000;
+    return Math.max(1, Math.round(getUnitFactorMs(normalized)));
+}
+
+function getDefaultZoomScaleForBaseUnit(unit = getBaseTimeUnit()) {
+    const normalized = normalizeBaseTimeUnit(unit);
+    if (normalized === 'ms') return DEFAULT_PIXELS_PER_MS;
+
+    const baseMs = getUnitFactorMs(normalized);
+    const granularityMs = getRenderGranularityMs(normalized);
+    const unitsPerBase = Math.max(1, baseMs / granularityMs);
+    const targetPixelsPerBaseUnit = 120;
+    const rawScale = targetPixelsPerBaseUnit / unitsPerBase;
+    return clampPixelsPerMs(rawScale);
+}
+
+function msToUnitValue(ms, unit = getBaseTimeUnit()) {
+    return ms / getUnitFactorMs(unit);
+}
+
+function unitValueToMs(value, unit = getBaseTimeUnit()) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return NaN;
+    return numericValue * getUnitFactorMs(unit);
+}
+
+function formatUnitValue(value, maxDecimals = 3) {
+    if (!Number.isFinite(value)) return '0';
+    const fixed = value.toFixed(maxDecimals);
+    const trimmed = fixed
+        .replace(/(\.\d*?[1-9])0+$/, '$1')
+        .replace(/\.0+$/, '');
+    return trimmed === '-0' ? '0' : trimmed;
+}
+
+function formatMsForInput(ms, unit = getBaseTimeUnit(), maxDecimals = 2) {
+    return formatUnitValue(msToUnitValue(ms, unit), maxDecimals);
+}
+
+function parseInputToMs(value, {
+    unit = getBaseTimeUnit(),
+    fallbackMs = 0,
+    minMs = 0,
+    maxMs = Number.POSITIVE_INFINITY
+} = {}) {
+    const msValue = unitValueToMs(value, unit);
+    if (!Number.isFinite(msValue)) {
+        return Math.max(minMs, Math.min(maxMs, fallbackMs));
+    }
+    return Math.max(minMs, Math.min(maxMs, Math.round(msValue)));
+}
+
+function getBoxStepMs(unit = getBaseTimeUnit()) {
+    return Math.max(1, Math.round(getUnitFactorMs(unit)));
+}
+
+function snapMsToUnitStep(ms, {
+    unit = getBaseTimeUnit(),
+    mode = 'round'
+} = {}) {
+    const stepMs = getBoxStepMs(unit);
+    const numericMs = Number(ms);
+    if (!Number.isFinite(numericMs)) return 0;
+    if (stepMs <= 1) return Math.round(numericMs);
+
+    const ratio = numericMs / stepMs;
+    let snappedRatio = Math.round(ratio);
+    if (mode === 'floor') snappedRatio = Math.floor(ratio);
+    if (mode === 'ceil') snappedRatio = Math.ceil(ratio);
+    return Math.round(snappedRatio * stepMs);
+}
+
+function parseBoxInputToMs(value, {
+    fallbackMs = 0,
+    minMs = 0,
+    maxMs = Number.POSITIVE_INFINITY,
+    mode = 'round'
+} = {}) {
+    const parsedMs = parseInputToMs(value, {
+        unit: getBaseTimeUnit(),
+        fallbackMs,
+        minMs: 0,
+        maxMs
+    });
+    const snappedMs = snapMsToUnitStep(parsedMs, { unit: getBaseTimeUnit(), mode });
+    return Math.max(minMs, Math.min(maxMs, snappedMs));
 }
 
 function getScaleBounds() {
@@ -89,7 +289,7 @@ function applyDiagramViewState(viewState) {
         app.fitModeActive = !!normalized.fitModeActive;
         app.hasDiagramViewState = true;
     } else {
-        app.pixelsPerMs = clampPixelsPerMs(DEFAULT_PIXELS_PER_MS);
+        app.pixelsPerMs = getDefaultZoomScaleForBaseUnit();
         app.zoomBeforeFitScale = null;
         app.zoomBeforeFitScrollLeft = null;
         app.fitModeActive = false;
@@ -281,7 +481,7 @@ class TimelineDiagram {
             nextBoxId: this.nextBoxId,
             locked: this.locked,
             compressionEnabled: Compression.enabled, // Save compression state per diagram
-            settings: app.settings, // Include global settings
+            settings: app.settings, // Include diagram-specific settings
             viewState: getCurrentViewStateForPersistence(),
             measurement: measurement, // Legacy pinned measurement format
             measurementState: getMeasurementStateForPersistence()
@@ -2416,12 +2616,31 @@ function formatTime(ms) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} ${String(milliseconds).padStart(3, '0')}`;
 }
 
-function formatDuration(ms) {
+function formatDuration(ms, forceUnit = null) {
+    const numericMs = Number(ms);
+    const baseUnit = normalizeBaseTimeUnit(forceUnit || getBaseTimeUnit());
+    const unitLabel = getBaseUnitLabel(baseUnit);
+
+    if (!Number.isFinite(numericMs)) {
+        return `0${unitLabel}`;
+    }
+
+    // For non-ms base units, show sub-unit values below threshold and base-unit values above threshold.
+    if (baseUnit !== 'ms') {
+        const thresholdMs = Math.max(0, Number(app?.settings?.timeFormatThreshold || 0));
+        const subUnit = getBaseUnitSubunit(baseUnit);
+        const showSubUnit = !!subUnit && thresholdMs > 0 && Math.abs(numericMs) < thresholdMs;
+        const activeUnit = showSubUnit ? subUnit : baseUnit;
+        const unitValue = msToUnitValue(numericMs, activeUnit);
+        const activeLabel = getBaseUnitLabel(activeUnit);
+        return `${formatUnitValue(unitValue, 2)}${activeLabel}`;
+    }
+
     const threshold = app.settings.timeFormatThreshold;
 
     // Handle sub-millisecond values (for extreme zoom)
-    if (ms < 1 && ms > 0) {
-        const us = ms * 1000; // Convert to microseconds
+    if (numericMs < 1 && numericMs > 0) {
+        const us = numericMs * 1000; // Convert to microseconds
         if (us < 1) {
             const ns = us * 1000; // Convert to nanoseconds
             return `${ns.toFixed(ns < 10 ? 1 : 0)}ns`;
@@ -2431,22 +2650,91 @@ function formatDuration(ms) {
 
     // If threshold is 0, always show ms
     if (threshold === 0) {
-        return `${Math.round(ms)}ms`;
+        return `${Math.round(numericMs)}ms`;
     }
 
     // If duration exceeds threshold, show in appropriate unit
-    if (ms >= threshold) {
-        if (ms >= 60000) {
+    if (numericMs >= threshold) {
+        if (numericMs >= 60000) {
             // Show minutes and seconds
-            const minutes = Math.floor(ms / 60000);
-            const seconds = ((ms % 60000) / 1000).toFixed(1);
+            const minutes = Math.floor(numericMs / 60000);
+            const seconds = ((numericMs % 60000) / 1000).toFixed(1);
             return seconds === '0.0' ? `${minutes}m` : `${minutes}m ${seconds}s`;
         }
         // Show seconds
-        const seconds = (ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1);
+        const seconds = (numericMs / 1000).toFixed(numericMs % 1000 === 0 ? 0 : 1);
         return `${seconds}s`;
     }
-    return `${Math.round(ms)}ms`;
+    return `${Math.round(numericMs)}ms`;
+}
+
+function syncBaseTimeUnitUI() {
+    const baseUnit = getBaseTimeUnit();
+    const unitLabel = getBaseUnitLabel(baseUnit);
+
+    const baseUnitSelect = document.getElementById('config-base-time-unit');
+    if (baseUnitSelect && baseUnitSelect.value !== baseUnit) {
+        baseUnitSelect.value = baseUnit;
+    }
+
+    [
+        'config-timeline-duration-unit',
+        'config-trailing-space-unit',
+        'config-compression-threshold-unit',
+        'box-start-unit-label',
+        'box-duration-unit-label',
+        'box-end-unit-label',
+        'props-box-start-unit-label',
+        'props-box-duration-unit-label'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = unitLabel;
+    });
+
+    const durationInput = document.getElementById('config-timeline-duration');
+    if (durationInput) {
+        durationInput.step = 'any';
+        durationInput.min = formatMsForInput(1000, baseUnit, 6);
+        durationInput.value = formatMsForInput(app.settings.timelineDuration, baseUnit);
+    }
+
+    const trailingInput = document.getElementById('config-trailing-space');
+    if (trailingInput) {
+        trailingInput.step = 'any';
+        trailingInput.min = '0';
+        trailingInput.value = formatMsForInput(app.settings.trailingSpace, baseUnit);
+    }
+
+    const compressionInput = document.getElementById('config-compression-threshold');
+    if (compressionInput) {
+        compressionInput.step = 'any';
+        compressionInput.min = formatMsForInput(10, baseUnit, 6);
+        compressionInput.value = formatMsForInput(app.settings.compressionThreshold, baseUnit);
+    }
+
+    const boxStep = '1';
+    if (app.elements?.boxStart) app.elements.boxStart.step = boxStep;
+    if (app.elements?.boxDuration) app.elements.boxDuration.step = boxStep;
+    const propsStartInput = document.getElementById('props-box-start');
+    const propsDurationInput = document.getElementById('props-box-duration');
+    if (propsStartInput) propsStartInput.step = boxStep;
+    if (propsDurationInput) propsDurationInput.step = boxStep;
+
+    if (app.selectedBoxId && app.elements) {
+        const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+        if (box) {
+            if (app.elements.boxStart) app.elements.boxStart.value = formatMsForInput(box.startOffset, baseUnit);
+            if (app.elements.boxDuration) app.elements.boxDuration.value = formatMsForInput(box.duration, baseUnit);
+            if (app.elements.boxEnd) app.elements.boxEnd.value = formatMsForInput(box.startOffset + box.duration, baseUnit);
+
+            const propsStart = document.getElementById('props-box-start');
+            const propsDuration = document.getElementById('props-box-duration');
+            if (propsStart) propsStart.value = formatMsForInput(box.startOffset, baseUnit);
+            if (propsDuration) propsDuration.value = formatMsForInput(box.duration, baseUnit);
+        }
+    }
+
+    syncTimeThresholdControl();
 }
 
 /**
@@ -2454,7 +2742,8 @@ function formatDuration(ms) {
  * Handles very large/small zoom levels gracefully
  */
 function formatZoomLevel(pixelsPerMs) {
-    const percent = (pixelsPerMs / 0.15) * 100;
+    const baseline = Math.max(1e-9, getDefaultZoomScaleForBaseUnit());
+    const percent = (pixelsPerMs / baseline) * 100;
     if (percent >= 10000) {
         return `${(percent / 1000).toFixed(0)}k%`;
     }
@@ -2465,11 +2754,13 @@ function formatZoomLevel(pixelsPerMs) {
 }
 
 function msToPixels(ms) {
-    return ms * app.pixelsPerMs;
+    const granularityMs = getRenderGranularityMs();
+    return (ms / granularityMs) * app.pixelsPerMs;
 }
 
 function pixelsToMs(px) {
-    return px / app.pixelsPerMs;
+    const granularityMs = getRenderGranularityMs();
+    return (px / app.pixelsPerMs) * granularityMs;
 }
 
 /**
@@ -2946,42 +3237,8 @@ function renderTimelineRuler() {
 
     ruler.innerHTML = '';
 
-    // Use compressed or actual duration based on compression mode
-    // Must match the calculation in renderLanesCanvas for scroll sync
-    const displayDuration = Math.max(
-        Compression.enabled ? Compression.getCompressedDuration() : app.diagram.getTotalDuration(),
-        DEFAULT_MIN_TIMELINE_MS
-    );
-
-    // Calculate appropriate interval - extended for extreme zoom levels
-    // Includes sub-millisecond intervals for high zoom
-    let interval = 100; // Start with 100ms
-    const intervals = [
-        0.001, 0.002, 0.005,     // Microseconds (0.001ms = 1μs)
-        0.01, 0.02, 0.05,        // Tens of microseconds
-        0.1, 0.2, 0.5,           // Sub-millisecond
-        1, 2, 5,                 // Milliseconds
-        10, 20, 50,              // Tens of ms
-        100, 200, 500,           // Hundreds of ms
-        1000, 2000, 5000,        // Seconds
-        10000, 30000, 60000,     // Tens of seconds / minute
-        120000, 300000, 600000   // Minutes
-    ];
-
-    for (const int of intervals) {
-        const pixelsPerInterval = msToPixels(int);
-        if (pixelsPerInterval >= 60) {
-            interval = int;
-            break;
-        }
-    }
-    // Fallback for extreme zoom out
-    if (interval === 100 && msToPixels(600000) < 60) {
-        interval = 600000; // 10 minutes
-    }
-
-    // Match the lane-track extension using trailing space setting
-    const endTime = displayDuration + app.settings.trailingSpace;
+    const endTime = getDisplayTimelineEndTimeMs();
+    const interval = getAdaptiveRulerInterval(endTime);
 
     // Create an inner wrapper div to define scrollable width
     // (absolutely positioned children don't contribute to scroll width)
@@ -2998,12 +3255,12 @@ function renderTimelineRuler() {
         const breakMarkers = Compression.getBreakMarkers();
 
         // Generate ruler marks at compressed positions but show actual times
-        for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
+        for (let tickIndex = 0, compressedTime = 0; compressedTime <= endTime + (interval * 0.0001); tickIndex++, compressedTime = tickIndex * interval) {
             // Convert compressed position to actual time for the label
             const actualTime = Compression.compressedToActual(compressedTime);
 
             const mark = document.createElement('div');
-            mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
+            mark.className = 'ruler-mark' + (isMajorRulerTickMs(actualTime, interval) ? ' major' : '');
             mark.style.left = `${msToPixels(compressedTime)}px`;
             mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
             innerWrapper.appendChild(mark);
@@ -3021,9 +3278,9 @@ function renderTimelineRuler() {
         });
     } else {
         // Normal mode: show time at corresponding position
-        for (let time = 0; time <= endTime; time += interval) {
+        for (let tickIndex = 0, time = 0; time <= endTime + (interval * 0.0001); tickIndex++, time = tickIndex * interval) {
             const mark = document.createElement('div');
-            mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+            mark.className = 'ruler-mark' + (isMajorRulerTickMs(time, interval) ? ' major' : '');
             mark.style.left = `${msToPixels(time)}px`;
             mark.innerHTML = `<span>${formatDuration(time)}</span>`;
             innerWrapper.appendChild(mark);
@@ -3045,14 +3302,7 @@ function renderLanesCanvas() {
     // User wants: Duration value MUST affect design area first.
     // But also "Prevent design area from being decreased below end-time of last box"
 
-    const totalDuration = app.diagram.getTotalDuration();
-    const settingsDuration = app.settings.timelineDuration || 8000;
-
-    // Ensure strictly >= totalDuration
-    const finalDuration = Math.max(totalDuration, settingsDuration);
-
-    // Use exact pixels unless compressed
-    const minTrackWidth = msToPixels(finalDuration + (app.settings.trailingSpace || 0));
+    const minTrackWidth = msToPixels(getDisplayTimelineEndTimeMs());
 
     app.diagram.lanes.forEach(lane => {
         const row = document.createElement('div');
@@ -3300,12 +3550,12 @@ function updatePropertiesPanel(isNewBox = false) {
 
     app.elements.boxLabel.value = box.label;
     app.elements.boxColor.value = box.color;
-    app.elements.boxStart.value = box.startOffset;
-    app.elements.boxDuration.value = box.duration;
+    app.elements.boxStart.value = formatMsForInput(box.startOffset);
+    app.elements.boxDuration.value = formatMsForInput(box.duration);
 
     // Show end time (start + duration)
     if (app.elements.boxEnd) {
-        app.elements.boxEnd.value = box.startOffset + box.duration;
+        app.elements.boxEnd.value = formatMsForInput(box.startOffset + box.duration);
     }
 
     // Calculate absolute times
@@ -3320,13 +3570,7 @@ function renderTimeMarkers() {
 
     container.innerHTML = '';
 
-    // Match the ruler and lane-track width using trailing space setting
-    // Use compressed duration if compression is enabled
-    const actualTotalDuration = Math.max(app.diagram.getTotalDuration(), DEFAULT_MIN_TIMELINE_MS);
-    const displayDuration = Compression.enabled
-        ? Compression.getCompressedDuration()
-        : actualTotalDuration;
-    const endTime = displayDuration + app.settings.trailingSpace;
+    const endTime = getDisplayTimelineEndTimeMs();
     const markerWidth = msToPixels(endTime);
 
     // Create an inner wrapper div to define scrollable width
@@ -3635,7 +3879,7 @@ function handleMouseMove(e) {
             newStart = Compression.compressedToActual(newStart);
         }
 
-        box.startOffset = Math.round(newStart);
+        box.startOffset = Math.max(0, snapMsToUnitStep(newStart));
 
         // Invalidate compression cache after changing position, then get visual offset
         if (Compression.enabled) {
@@ -3667,14 +3911,20 @@ function handleMouseMove(e) {
             mouseMs = Compression.compressedToActual(mouseMs);
         }
 
+        const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
         if (app.dragData.side === 'right') {
-            const newDuration = Math.max(MIN_BOX_DURATION_MS, mouseMs - box.startOffset);
-            box.duration = Math.round(newDuration);
+            const snappedEnd = snapMsToUnitStep(mouseMs);
+            const minEnd = box.startOffset + boxStepMs;
+            const finalEnd = Math.max(minEnd, snappedEnd);
+            box.duration = Math.max(boxStepMs, finalEnd - box.startOffset);
         } else {
             const endOffset = app.dragData.originalStart + app.dragData.originalDuration;
-            const newStart = Math.max(0, Math.min(mouseMs, endOffset - MIN_BOX_DURATION_MS));
-            box.startOffset = Math.round(newStart);
-            box.duration = Math.round(endOffset - box.startOffset);
+            const minDurationForThisBox = Math.min(boxStepMs, Math.max(MIN_BOX_DURATION_MS, endOffset));
+            const snappedStart = snapMsToUnitStep(mouseMs);
+            const maxStart = endOffset - minDurationForThisBox;
+            const newStart = Math.max(0, Math.min(snappedStart, maxStart));
+            box.startOffset = newStart;
+            box.duration = Math.max(minDurationForThisBox, endOffset - box.startOffset);
         }
 
         // Invalidate compression cache after changing size/position, then get visual offset
@@ -3729,13 +3979,18 @@ function handleMouseUp(e) {
                 actualEndMs = Compression.compressedToActual(actualEndMs);
             }
 
-            const startOffset = actualStartMs;
-            const duration = Math.max(actualEndMs - actualStartMs, MIN_BOX_DURATION_MS);
+            const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
+            let startOffset = Math.max(0, snapMsToUnitStep(actualStartMs));
+            let endOffset = Math.max(startOffset + boxStepMs, snapMsToUnitStep(actualEndMs));
+            if (endOffset <= startOffset) {
+                endOffset = startOffset + boxStepMs;
+            }
+            const duration = Math.max(endOffset - startOffset, boxStepMs);
 
             const box = app.diagram.addBox(
                 app.dragData.laneId,
-                Math.round(startOffset),
-                Math.round(duration),
+                startOffset,
+                duration,
                 '',
                 getAutoBoxColor(app.dragData.laneId)
             );
@@ -3781,9 +4036,9 @@ function handleMouseUp(e) {
                     if (box) {
                         app.elements.boxLabel.value = box.label;
                         app.elements.boxColor.value = box.color;
-                        app.elements.boxStart.value = box.startOffset;
-                        app.elements.boxDuration.value = box.duration;
-                        if (app.elements.boxEnd) app.elements.boxEnd.value = box.startOffset + box.duration;
+                        app.elements.boxStart.value = formatMsForInput(box.startOffset);
+                        app.elements.boxDuration.value = formatMsForInput(box.duration);
+                        if (app.elements.boxEnd) app.elements.boxEnd.value = formatMsForInput(box.startOffset + box.duration);
                         const baseTime = parseTime(app.diagram.startTime);
                         app.elements.boxTimeStart.textContent = formatTime(baseTime + box.startOffset);
                         app.elements.boxTimeEnd.textContent = formatTime(baseTime + box.startOffset + box.duration);
@@ -4832,19 +5087,37 @@ function updateMeasurementDisplay() {
 
 }
 
+function getDisplayTimelineDurationMs({ forFit = false } = {}) {
+    const hasBoxes = (app?.diagram?.boxes?.length || 0) > 0;
+    const totalDuration = Math.max(0, Number(app?.diagram?.getTotalDuration?.() || 0));
+    const settingsDuration = Math.max(1, Number(app?.settings?.timelineDuration || 8000));
+    const compressedDuration = Math.max(0, Number(Compression.getCompressedDuration() || 0));
+    const fitLike = !!forFit || !!app?.fitModeActive;
+
+    if (Compression.enabled) {
+        if (hasBoxes) return Math.max(1, compressedDuration);
+        return settingsDuration;
+    }
+
+    if (!hasBoxes) return settingsDuration;
+    if (fitLike) return Math.max(1, totalDuration);
+    return Math.max(totalDuration, settingsDuration);
+}
+
+function getDisplayTimelineEndTimeMs({ forFit = false } = {}) {
+    const trailing = Math.max(0, Number(app?.settings?.trailingSpace || 0));
+    return Math.max(1, getDisplayTimelineDurationMs({ forFit }) + trailing);
+}
+
 function getFitToViewScale() {
-    const totalDuration = app.diagram.getTotalDuration();
-    const settingsDuration = app.settings?.timelineDuration || 8000;
-    const visibleDuration = Compression.enabled
-        ? (app.diagram.boxes.length > 0 ? Math.max(0, Compression.getCompressedDuration()) : settingsDuration)
-        : Math.max(totalDuration, settingsDuration);
-    const fitDuration = Math.max(1, visibleDuration + (app.settings?.trailingSpace || 0));
+    const fitDuration = getDisplayTimelineEndTimeMs({ forFit: true });
 
     const laneLabelWidth = getLaneLabelWidthPx();
     const canvasWidth = app.elements.lanesCanvas.clientWidth - (laneLabelWidth + 20);
     if (canvasWidth <= 0) return null;
 
-    const fitScale = canvasWidth / (fitDuration * 1.1);
+    const granularityMs = getRenderGranularityMs();
+    const fitScale = canvasWidth / ((fitDuration / granularityMs) * 1.1);
     return Math.max(app.minPixelsPerMs, Math.min(app.maxPixelsPerMs, fitScale));
 }
 
@@ -4877,7 +5150,7 @@ function handleZoom(direction) {
     const viewportWidth = canvas.clientWidth - laneLabelWidth;
     const scrollLeft = canvas.scrollLeft;
     const centerX = scrollLeft + viewportWidth / 2;
-    const centerTimeMs = centerX / app.pixelsPerMs;
+    const centerTimeMs = pixelsToMs(centerX);
 
     // Apply zoom
     const factor = direction === 'in' ? 1.25 : 0.8;
@@ -4894,7 +5167,7 @@ function handleZoom(direction) {
     renderLanesCanvas();
 
     // Restore scroll position to keep the same time at center
-    const newCenterX = centerTimeMs * app.pixelsPerMs;
+    const newCenterX = msToPixels(centerTimeMs);
     const newScrollLeft = newCenterX - viewportWidth / 2;
     canvas.scrollLeft = Math.max(0, newScrollLeft);
 
@@ -4924,7 +5197,9 @@ function handleZoomFit() {
     };
 
     if (isFitModeActive()) {
-        const fallbackScale = Number.isFinite(app.zoomBeforeFitScale) ? app.zoomBeforeFitScale : 0.15;
+        const fallbackScale = Number.isFinite(app.zoomBeforeFitScale)
+            ? app.zoomBeforeFitScale
+            : getDefaultZoomScaleForBaseUnit();
         const fallbackScrollLeft = Number.isFinite(app.zoomBeforeFitScrollLeft)
             ? app.zoomBeforeFitScrollLeft
             : canvas.scrollLeft;
@@ -4953,15 +5228,35 @@ function handleZoomFit() {
 // =====================================================
 // Properties Panel Handlers
 // =====================================================
-function handleBoxPropertyChange() {
+function handleBoxPropertyChange(event = null) {
     if (!app.selectedBoxId) return;
     if (app.diagram.locked) return; // Silent fail for property changes when locked
+
+    const box = app.diagram.boxes.find(b => b.id === app.selectedBoxId);
+    if (!box) return;
+
+    const sourceId = event?.target?.id || '';
+    const minDurationMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
+    let nextStartOffset = box.startOffset;
+    let nextDuration = box.duration;
+
+    if (sourceId === 'box-start') {
+        nextStartOffset = parseBoxInputToMs(app.elements.boxStart.value, {
+            fallbackMs: box.startOffset,
+            minMs: 0
+        });
+    } else if (sourceId === 'box-duration') {
+        nextDuration = parseBoxInputToMs(app.elements.boxDuration.value, {
+            fallbackMs: box.duration,
+            minMs: minDurationMs
+        });
+    }
 
     const updates = {
         label: app.elements.boxLabel.value,
         color: app.elements.boxColor.value,
-        startOffset: parseInt(app.elements.boxStart.value, 10) || 0,
-        duration: Math.max(1, parseInt(app.elements.boxDuration.value, 10) || 100)
+        startOffset: nextStartOffset,
+        duration: nextDuration
     };
 
     app.diagram.updateBox(app.selectedBoxId, updates);
@@ -5221,9 +5516,14 @@ function wrapText(ctx, text, maxWidth, lineHeight) {
     return lines;
 }
 
-function getAdaptiveRulerInterval() {
-    let interval = 100;
-    const intervals = [
+function getRulerIntervalCandidatesMs() {
+    const baseUnit = getBaseTimeUnit();
+    const baseMs = getUnitFactorMs(baseUnit);
+    const subUnit = getBaseUnitSubunit(baseUnit);
+    const subMs = subUnit ? getUnitFactorMs(subUnit) : baseMs;
+    const thresholdMs = Math.max(0, Number(app?.settings?.timeFormatThreshold || 0));
+
+    const canonical = [
         0.001, 0.002, 0.005,
         0.01, 0.02, 0.05,
         0.1, 0.2, 0.5,
@@ -5232,21 +5532,87 @@ function getAdaptiveRulerInterval() {
         100, 200, 500,
         1000, 2000, 5000,
         10000, 30000, 60000,
-        120000, 300000, 600000
+        120000, 300000, 600000,
+        900000, 1800000, 3600000,
+        7200000, 21600000, 43200000,
+        86400000, 172800000, 604800000,
+        1209600000, 2592000000, 7776000000,
+        31536000000, 63072000000, 157680000000
     ];
 
-    for (const int of intervals) {
-        if (msToPixels(int) >= 60) {
-            interval = int;
-            break;
+    const dynamic = [
+        subMs / 10, subMs / 5, subMs / 2,
+        subMs, subMs * 2, subMs * 3, subMs * 6, subMs * 12,
+        baseMs / 20, baseMs / 10, baseMs / 5, baseMs / 2,
+        baseMs, baseMs * 2, baseMs * 5
+    ];
+
+    if (thresholdMs > 0) {
+        dynamic.push(thresholdMs / 4, thresholdMs / 2, thresholdMs, thresholdMs * 2);
+    }
+
+    const merged = [...dynamic, ...canonical]
+        .filter(v => Number.isFinite(v) && v > 0)
+        .sort((a, b) => a - b);
+
+    // Deduplicate near-equal values to keep selection deterministic.
+    const deduped = [];
+    merged.forEach(value => {
+        if (deduped.length === 0 || Math.abs(deduped[deduped.length - 1] - value) > (value * 1e-9)) {
+            deduped.push(value);
         }
+    });
+    return deduped;
+}
+
+function getAdaptiveRulerInterval(endTimeMs, options = {}) {
+    const minPixelSpacing = Number.isFinite(options.minPixelSpacing) ? options.minPixelSpacing : 60;
+    const maxTicks = Number.isFinite(options.maxTicks) ? options.maxTicks : 360;
+    const safeEndTime = Math.max(1, Number(endTimeMs) || 1);
+    const intervals = getRulerIntervalCandidatesMs();
+
+    for (const interval of intervals) {
+        const tickCount = Math.ceil(safeEndTime / interval) + 1;
+        if (tickCount > maxTicks) continue;
+        if (msToPixels(interval) >= minPixelSpacing) return interval;
     }
 
-    if (interval === 100 && msToPixels(600000) < 60) {
-        interval = 600000;
+    for (const interval of intervals) {
+        const tickCount = Math.ceil(safeEndTime / interval) + 1;
+        if (tickCount <= maxTicks) return interval;
     }
 
-    return interval;
+    return Math.max(1, Math.ceil(safeEndTime / Math.max(2, maxTicks - 1)));
+}
+
+function getRulerMajorIntervalMs(intervalMs) {
+    const safeInterval = Math.max(1, Number(intervalMs) || 1);
+    const baseUnit = getBaseTimeUnit();
+
+    // In ms mode, keep emphasis on human-friendly second/minute boundaries.
+    if (baseUnit === 'ms') {
+        if (safeInterval < 1000) return 1000;
+        if (safeInterval < 5000) return 5000;
+        if (safeInterval < 60000) return 10000;
+        if (safeInterval < 300000) return 60000;
+        return Math.max(60000, safeInterval * 5);
+    }
+
+    // In non-ms modes, emphasize base-unit boundaries, then reduce density for larger steps.
+    const baseMs = getUnitFactorMs(baseUnit);
+    if (safeInterval < baseMs) return baseMs;
+    if (safeInterval < baseMs * 5) return baseMs * 5;
+    return Math.max(baseMs, safeInterval * 5);
+}
+
+function isMajorRulerTickMs(valueMs, intervalMs) {
+    const majorInterval = getRulerMajorIntervalMs(intervalMs);
+    const numericValue = Number(valueMs);
+    if (!Number.isFinite(numericValue)) return false;
+
+    const normalizedRemainder = ((numericValue % majorInterval) + majorInterval) % majorInterval;
+    const epsilon = Math.max(0.001, majorInterval * 1e-6);
+    return normalizedRemainder < epsilon || Math.abs(majorInterval - normalizedRemainder) < epsilon;
 }
 
 function getExportTimelineMetrics() {
@@ -5262,7 +5628,7 @@ function getExportTimelineMetrics() {
         visualDuration,
         trailingSpace,
         endTime,
-        interval: getAdaptiveRulerInterval()
+        interval: getAdaptiveRulerInterval(endTime)
     };
 }
 
@@ -6041,40 +6407,115 @@ function handleLaneNameChange() {
     }
 }
 
-const PRESET_TIME_THRESHOLDS = [0, 1000, 5000, 60000];
+function formatThresholdInputValue(msValue, baseUnit = getBaseTimeUnit()) {
+    return formatMsForInput(msValue, getThresholdInputUnit(baseUnit), 0);
+}
 
-function setCustomTimeThresholdInputState(show, value = null, focus = false) {
-    const customWrap = document.getElementById('config-time-threshold-custom-wrap');
-    const customInput = document.getElementById('config-time-threshold-custom');
-    if (!customWrap || !customInput) return;
+function parseThresholdInputValue(rawValue, baseUnit = getBaseTimeUnit(), fallbackMs = null) {
+    const fallback = Number.isFinite(fallbackMs)
+        ? fallbackMs
+        : Number(app.settings.timeFormatThreshold || getDefaultTimeThreshold(baseUnit));
+    const parsedUnits = Number(rawValue);
+    if (!Number.isFinite(parsedUnits)) {
+        return parseInputToMs(fallback, {
+            unit: 'ms',
+            fallbackMs: fallback,
+            minMs: 0
+        });
+    }
+    const roundedUnits = Math.max(0, Math.round(parsedUnits));
+    return parseInputToMs(roundedUnits, {
+        unit: getThresholdInputUnit(baseUnit),
+        fallbackMs: fallback,
+        minMs: 0
+    });
+}
 
-    customWrap.classList.toggle('hidden', !show);
-    if (!show) return;
+function isThresholdPanelOpen() {
+    const panel = document.getElementById('threshold-config-panel');
+    return !!panel && !panel.classList.contains('hidden');
+}
 
-    const normalized = Math.max(
-        0,
-        parseInt(value ?? app.settings.timeFormatThreshold ?? 0, 10) || 0
-    );
-    customInput.value = normalized;
+function setThresholdPanelOpen(open) {
+    const panel = document.getElementById('threshold-config-panel');
+    const toggleBtn = document.getElementById('threshold-toggle-btn');
+    if (!panel || !toggleBtn) return;
+    const shouldOpen = !!open;
+    panel.classList.toggle('hidden', !shouldOpen);
+    toggleBtn.classList.toggle('active', shouldOpen);
+    toggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+}
 
-    if (focus) {
-        requestAnimationFrame(() => {
-            customInput.focus();
-            customInput.select();
+function toggleThresholdPanel() {
+    setThresholdPanelOpen(!isThresholdPanelOpen());
+}
+
+function closeThresholdPanel() {
+    setThresholdPanelOpen(false);
+}
+
+function ensureThresholdBaseUnitOptions() {
+    const options = document.getElementById('threshold-base-unit-options');
+    if (!options) return;
+
+    if (options.childElementCount !== THRESHOLD_BASE_UNIT_ORDER.length) {
+        options.innerHTML = '';
+        THRESHOLD_BASE_UNIT_ORDER.forEach(unit => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'threshold-unit-btn';
+            button.dataset.unit = unit;
+            button.setAttribute('role', 'radio');
+            button.setAttribute('aria-checked', 'false');
+            button.textContent = getBaseUnitLabel(unit);
+            options.appendChild(button);
         });
     }
 }
 
+function syncThresholdBaseUnitButtons() {
+    const options = document.getElementById('threshold-base-unit-options');
+    if (!options) return;
+    const activeUnit = getBaseTimeUnit();
+
+    options.querySelectorAll('.threshold-unit-btn').forEach(button => {
+        const unit = normalizeBaseTimeUnit(button.dataset.unit);
+        const isActive = unit === activeUnit;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-checked', isActive ? 'true' : 'false');
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.title = `${getBaseUnitLabel(unit)} base unit`;
+    });
+}
+
+function handleThresholdBaseUnitSelect(unit) {
+    const normalizedUnit = normalizeBaseTimeUnit(unit);
+    if (normalizedUnit === getBaseTimeUnit()) return;
+
+    const baseUnitSelect = document.getElementById('config-base-time-unit');
+    if (baseUnitSelect) {
+        baseUnitSelect.value = normalizedUnit;
+    } else {
+        app.settings.baseTimeUnit = normalizedUnit;
+    }
+    handleSettingsChange();
+}
+
 function commitCustomTimeThreshold() {
     const customInput = document.getElementById('config-time-threshold-custom');
-    if (!customInput) return false;
+    const modeSubunit = document.getElementById('threshold-mode-subunit');
+    if (!customInput || !modeSubunit || !modeSubunit.checked) return false;
 
-    const customValue = parseInt(customInput.value, 10);
-    if (!Number.isFinite(customValue) || customValue < 0) {
+    const baseUnit = getBaseTimeUnit();
+    const thresholdInputUnit = getThresholdInputUnit(baseUnit);
+    const fallbackMs = Math.max(1, Number(app.settings.timeFormatThreshold) || getDefaultTimeThreshold(baseUnit));
+    const customValue = parseThresholdInputValue(customInput.value, baseUnit, fallbackMs);
+
+    if (!Number.isFinite(customValue) || customValue <= 0) {
         showToast({
             type: 'warning',
             title: 'Invalid Threshold',
-            message: 'Please enter a non-negative number (milliseconds).',
+            message: `Enter a value greater than 0 (${getBaseUnitLabel(thresholdInputUnit)}).`,
             duration: 2500
         });
         requestAnimationFrame(() => {
@@ -6084,45 +6525,30 @@ function commitCustomTimeThreshold() {
         return false;
     }
 
-    app.settings.timeFormatThreshold = customValue;
+    app.settings.timeFormatThreshold = Math.max(1, customValue);
     syncTimeThresholdControl();
     handleSettingsChange();
-    autoSave();
     return true;
 }
 
-function getNearestPresetTimeThreshold(value) {
-    const numericValue = Math.max(0, parseInt(value, 10) || 0);
-    let nearest = PRESET_TIME_THRESHOLDS[0];
-    let minDiff = Math.abs(numericValue - nearest);
-    PRESET_TIME_THRESHOLDS.forEach(preset => {
-        const diff = Math.abs(numericValue - preset);
-        if (diff < minDiff) {
-            minDiff = diff;
-            nearest = preset;
-        }
-    });
-    return nearest;
-}
+function handleTimeThresholdModeChange() {
+    const modeBaseOnly = document.getElementById('threshold-mode-base-only');
+    const modeSubunit = document.getElementById('threshold-mode-subunit');
+    if (!modeBaseOnly || !modeSubunit) return;
 
-function switchToPresetTimeThreshold(targetPreset = null) {
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    const currentValue = Number(app.settings.timeFormatThreshold || 1000);
-    const lastPreset = thresholdSelect ? Number(thresholdSelect.dataset.lastPreset || 1000) : 1000;
-    const resolvedPreset = PRESET_TIME_THRESHOLDS.includes(targetPreset)
-        ? targetPreset
-        : (PRESET_TIME_THRESHOLDS.includes(lastPreset)
-            ? lastPreset
-            : getNearestPresetTimeThreshold(currentValue));
-
-    app.settings.timeFormatThreshold = resolvedPreset;
-    if (thresholdSelect) {
-        thresholdSelect.value = String(resolvedPreset);
-        thresholdSelect.dataset.lastPreset = String(resolvedPreset);
+    if (modeBaseOnly.checked) {
+        app.settings.timeFormatThreshold = 0;
+        syncTimeThresholdControl();
+        handleSettingsChange();
+        return;
     }
-    syncTimeThresholdControl();
-    handleSettingsChange();
-    autoSave();
+
+    if (modeSubunit.checked) {
+        const committed = commitCustomTimeThreshold();
+        if (!committed) {
+            syncTimeThresholdControl();
+        }
+    }
 }
 
 function updateToolbarToggleButtons() {
@@ -6145,22 +6571,59 @@ function updateToolbarToggleButtons() {
 }
 
 function syncTimeThresholdControl() {
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    if (!thresholdSelect) return;
+    const toggleBtn = document.getElementById('threshold-toggle-btn');
+    const baseUnitOptions = document.getElementById('threshold-base-unit-options');
+    const modeBaseOnly = document.getElementById('threshold-mode-base-only');
+    const modeSubunit = document.getElementById('threshold-mode-subunit');
+    const baseOnlyLabel = document.getElementById('threshold-mode-base-only-label');
+    const subunitPrefix = document.getElementById('threshold-mode-subunit-prefix');
+    const subunitSuffix = document.getElementById('threshold-mode-subunit-suffix');
+    const thresholdInput = document.getElementById('config-time-threshold-custom');
+    if (!toggleBtn || !baseUnitOptions || !modeBaseOnly || !modeSubunit || !baseOnlyLabel || !subunitPrefix || !subunitSuffix || !thresholdInput) {
+        return;
+    }
+    ensureThresholdBaseUnitOptions();
 
-    const threshold = Number(app.settings.timeFormatThreshold || 0);
-    const customOption = thresholdSelect.querySelector('option[value="-1"]');
-    const isPreset = PRESET_TIME_THRESHOLDS.includes(threshold);
-
-    if (customOption) {
-        customOption.textContent = 'Custom';
+    const baseUnit = getBaseTimeUnit();
+    const threshold = Number(app.settings.timeFormatThreshold);
+    if (!Number.isFinite(threshold) || threshold < 0) {
+        app.settings.timeFormatThreshold = getDefaultTimeThreshold(baseUnit);
     }
 
-    thresholdSelect.value = isPreset ? String(threshold) : '-1';
-    if (isPreset) {
-        thresholdSelect.dataset.lastPreset = String(threshold);
+    const baseLabel = getBaseUnitLabel(baseUnit);
+    const subunit = getThresholdDisplaySubUnit(baseUnit);
+    const subunitLabel = getBaseUnitLabel(subunit);
+    const thresholdUnit = getThresholdInputUnit(baseUnit);
+    const thresholdUnitLabel = getBaseUnitLabel(thresholdUnit);
+    const thresholdUnitMs = getUnitFactorMs(thresholdUnit);
+
+    baseOnlyLabel.textContent = `Display ${baseLabel} only`;
+    subunitPrefix.textContent = `Display ${subunitLabel} below`;
+    subunitSuffix.textContent = thresholdUnitLabel;
+
+    toggleBtn.title = baseUnit === 'ms'
+        ? 'Threshold Rules: display ms only or switch to s/min above threshold'
+        : `Threshold Rules: display ${baseLabel} only or show ${subunitLabel} below threshold`;
+
+    thresholdInput.step = '1';
+    thresholdInput.min = '0';
+
+    let normalizedThreshold = Math.max(0, parseInt(app.settings.timeFormatThreshold, 10) || 0);
+    if (normalizedThreshold > 0) {
+        normalizedThreshold = Math.max(
+            thresholdUnitMs,
+            Math.round(normalizedThreshold / thresholdUnitMs) * thresholdUnitMs
+        );
     }
-    setCustomTimeThresholdInputState(!isPreset, threshold, false);
+    app.settings.timeFormatThreshold = normalizedThreshold;
+    const showBaseOnly = normalizedThreshold === 0;
+    modeBaseOnly.checked = showBaseOnly;
+    modeSubunit.checked = !showBaseOnly;
+    thresholdInput.disabled = showBaseOnly;
+
+    const displayThresholdMs = showBaseOnly ? getDefaultTimeThreshold(baseUnit) : normalizedThreshold;
+    thresholdInput.value = formatThresholdInputValue(displayThresholdMs, baseUnit);
+    syncThresholdBaseUnitButtons();
 }
 
 function syncToolbarSettingsControls() {
@@ -6179,29 +6642,8 @@ function syncToolbarSettingsControls() {
     const lockCheckbox = document.getElementById('config-lock-diagram');
     if (lockCheckbox) lockCheckbox.checked = !!app.diagram.locked;
 
-    syncTimeThresholdControl();
+    syncBaseTimeUnitUI();
     updateToolbarToggleButtons();
-}
-
-function handleTimeThresholdChange() {
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    if (!thresholdSelect) return;
-
-    if (thresholdSelect.value === '-1') {
-        const currentValue = Number(app.settings.timeFormatThreshold || 1000);
-        if (PRESET_TIME_THRESHOLDS.includes(currentValue)) {
-            thresholdSelect.dataset.lastPreset = String(currentValue);
-        }
-        const seedValue = PRESET_TIME_THRESHOLDS.includes(currentValue) ? 1000 : currentValue;
-        setCustomTimeThresholdInputState(true, seedValue, true);
-        return;
-    }
-
-    app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
-    thresholdSelect.dataset.lastPreset = thresholdSelect.value;
-    syncTimeThresholdControl();
-    handleSettingsChange();
-    autoSave();
 }
 
 // =====================================================
@@ -6236,7 +6678,7 @@ function showSettingsPanel() {
         pageTitleInput.value = app.diagram.title;
     }
 
-    syncTimeThresholdControl();
+    syncBaseTimeUnitUI();
 
     const alignmentCheckbox = document.getElementById('config-show-alignment');
     if (alignmentCheckbox) {
@@ -6266,6 +6708,8 @@ function showSettingsPanel() {
 }
 
 function handleSettingsChange() {
+    const previousBaseUnit = getBaseTimeUnit();
+
     // Page title
     const pageTitleInput = document.getElementById('config-page-title');
     if (pageTitleInput) {
@@ -6273,12 +6717,25 @@ function handleSettingsChange() {
         app.elements.diagramTitle.value = pageTitleInput.value;
     }
 
-    // Time format threshold
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    if (thresholdSelect) {
-        if (thresholdSelect.value !== '-1') {
-            app.settings.timeFormatThreshold = parseInt(thresholdSelect.value, 10);
+    const baseUnitSelect = document.getElementById('config-base-time-unit');
+    if (baseUnitSelect) {
+        app.settings.baseTimeUnit = normalizeBaseTimeUnit(baseUnitSelect.value);
+    }
+
+    const baseUnit = getBaseTimeUnit();
+    if (baseUnit !== previousBaseUnit) {
+        // Reset positive threshold to the new unit default while preserving "base unit only" mode (0).
+        const currentThreshold = Math.max(0, Number(app.settings.timeFormatThreshold) || 0);
+        app.settings.timeFormatThreshold = currentThreshold === 0
+            ? 0
+            : getDefaultTimeThreshold(baseUnit);
+        app.pixelsPerMs = getDefaultZoomScaleForBaseUnit(baseUnit);
+        if (app.elements?.zoomLevel) {
+            app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
         }
+        app.fitModeActive = false;
+        app.zoomBeforeFitScale = null;
+        app.zoomBeforeFitScrollLeft = null;
     }
 
     // Alignment lines toggle
@@ -6301,7 +6758,7 @@ function handleSettingsChange() {
     }
 
     updateToolbarToggleButtons();
-    syncTimeThresholdControl();
+    syncBaseTimeUnitUI();
 
     // Re-render to apply changes
     renderLanesCanvas();
@@ -6664,9 +7121,38 @@ function init() {
         pageTitleInput.addEventListener('input', handleSettingsChange);
     }
 
-    const thresholdSelect = document.getElementById('config-time-threshold');
-    if (thresholdSelect) {
-        thresholdSelect.addEventListener('change', handleTimeThresholdChange);
+    const thresholdToggleBtn = document.getElementById('threshold-toggle-btn');
+    if (thresholdToggleBtn) {
+        thresholdToggleBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleThresholdPanel();
+        });
+    }
+
+    const thresholdPanel = document.getElementById('threshold-config-panel');
+    if (thresholdPanel) {
+        thresholdPanel.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+
+    const thresholdBaseUnitOptions = document.getElementById('threshold-base-unit-options');
+    if (thresholdBaseUnitOptions) {
+        thresholdBaseUnitOptions.addEventListener('click', (e) => {
+            const button = e.target.closest('.threshold-unit-btn');
+            if (!button) return;
+            e.preventDefault();
+            handleThresholdBaseUnitSelect(button.dataset.unit);
+        });
+    }
+
+    const thresholdModeBaseOnly = document.getElementById('threshold-mode-base-only');
+    if (thresholdModeBaseOnly) {
+        thresholdModeBaseOnly.addEventListener('change', handleTimeThresholdModeChange);
+    }
+
+    const thresholdModeSubunit = document.getElementById('threshold-mode-subunit');
+    if (thresholdModeSubunit) {
+        thresholdModeSubunit.addEventListener('change', handleTimeThresholdModeChange);
     }
 
     const thresholdCustomInput = document.getElementById('config-time-threshold-custom');
@@ -6678,16 +7164,26 @@ function init() {
                 commitCustomTimeThreshold();
                 thresholdCustomInput.blur();
             } else if (e.key === 'Escape') {
+                e.preventDefault();
                 syncTimeThresholdControl();
                 thresholdCustomInput.blur();
             }
         });
     }
 
-    const thresholdBackBtn = document.getElementById('config-time-threshold-back');
-    if (thresholdBackBtn) {
-        thresholdBackBtn.addEventListener('click', () => switchToPresetTimeThreshold());
-    }
+    document.addEventListener('mousedown', (e) => {
+        if (!isThresholdPanelOpen()) return;
+        const thresholdMenu = document.querySelector('.toolbar-threshold-menu');
+        if (thresholdMenu && !thresholdMenu.contains(e.target)) {
+            closeThresholdPanel();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isThresholdPanelOpen()) {
+            closeThresholdPanel();
+        }
+    });
 
     const alignmentCheckbox = document.getElementById('config-show-alignment');
     if (alignmentCheckbox) {
@@ -6702,6 +7198,11 @@ function init() {
     const autoOpenCheckbox = document.getElementById('config-auto-open-properties');
     if (autoOpenCheckbox) {
         autoOpenCheckbox.addEventListener('change', handleSettingsChange);
+    }
+
+    const baseUnitSelect = document.getElementById('config-base-time-unit');
+    if (baseUnitSelect) {
+        baseUnitSelect.addEventListener('change', handleSettingsChange);
     }
 
     ['config-show-alignment', 'config-show-labels', 'config-compact-view', 'config-auto-open-properties', 'config-lock-diagram']
@@ -6723,7 +7224,7 @@ function init() {
         app.fitModeActive = false;
         app.zoomBeforeFitScale = null;
         app.zoomBeforeFitScrollLeft = null;
-        app.pixelsPerMs = DEFAULT_PIXELS_PER_MS; // 100%
+        app.pixelsPerMs = getDefaultZoomScaleForBaseUnit(); // 100%
         app.elements.zoomLevel.textContent = formatZoomLevel(app.pixelsPerMs);
         renderLanesCanvas();
         syncZoomFitIndicator();
@@ -6761,27 +7262,35 @@ function init() {
     if (trailingSlider && trailingInput) {
         // Initialize with current value
         trailingSlider.value = app.settings.trailingSpace;
-        trailingInput.value = app.settings.trailingSpace;
+        trailingInput.value = formatMsForInput(app.settings.trailingSpace);
 
-        const syncTrailing = (value) => {
-            app.settings.trailingSpace = parseInt(value, 10);
-            trailingSlider.value = value;
-            trailingInput.value = value;
+        const syncTrailing = (msValue) => {
+            const nextValue = Math.max(0, parseInt(msValue, 10) || 0);
+            app.settings.trailingSpace = nextValue;
+            trailingSlider.value = String(nextValue);
+            trailingInput.value = formatMsForInput(nextValue);
             renderLanesCanvas();
             Minimap.render();
         };
         trailingSlider.addEventListener('input', () => syncTrailing(trailingSlider.value));
-        trailingInput.addEventListener('change', () => syncTrailing(trailingInput.value));
+        trailingInput.addEventListener('change', () => {
+            const parsedMs = parseInputToMs(trailingInput.value, {
+                fallbackMs: app.settings.trailingSpace,
+                minMs: 0
+            });
+            syncTrailing(parsedMs);
+        });
     }
 
     // Compression threshold controls
     const compressionSlider = document.getElementById('config-compression-slider');
     const compressionInput = document.getElementById('config-compression-threshold');
     if (compressionSlider && compressionInput) {
-        const syncCompression = (value) => {
-            app.settings.compressionThreshold = parseInt(value, 10);
-            compressionSlider.value = value;
-            compressionInput.value = value;
+        const syncCompression = (msValue) => {
+            const nextValue = Math.max(10, parseInt(msValue, 10) || 500);
+            app.settings.compressionThreshold = nextValue;
+            compressionSlider.value = String(nextValue);
+            compressionInput.value = formatMsForInput(nextValue);
             if (Compression.enabled) {
                 Compression.invalidate(); // Clear cache before re-render
                 renderTimelineRuler();
@@ -6791,7 +7300,13 @@ function init() {
             }
         };
         compressionSlider.addEventListener('input', () => syncCompression(compressionSlider.value));
-        compressionInput.addEventListener('change', () => syncCompression(compressionInput.value));
+        compressionInput.addEventListener('change', () => {
+            const parsedMs = parseInputToMs(compressionInput.value, {
+                fallbackMs: app.settings.compressionThreshold,
+                minMs: 10
+            });
+            syncCompression(parsedMs);
+        });
     }
 
     // Also sync header title input changes to settings
@@ -7412,24 +7927,28 @@ const V2 = {
 
         const durationInput = document.getElementById('config-timeline-duration');
         if (durationInput) {
-            durationInput.value = app.settings.timelineDuration;
+            durationInput.value = formatMsForInput(app.settings.timelineDuration);
             durationInput.addEventListener('change', () => {
                 const lastBoxEnd = app.diagram.getTotalDuration();
-                let newValue = parseInt(durationInput.value, 10);
+                let newValue = parseInputToMs(durationInput.value, {
+                    fallbackMs: app.settings.timelineDuration,
+                    minMs: 1000
+                });
 
                 // Validate: can't be less than last box end
                 if (newValue < lastBoxEnd) {
                     newValue = Math.ceil(lastBoxEnd / 100) * 100; // Round up to nearest 100
-                    durationInput.value = newValue;
+                    durationInput.value = formatMsForInput(newValue);
                     showToast({
                         type: 'warning',
                         title: 'Duration adjusted',
-                        message: `Cannot be less than last box end (${lastBoxEnd}ms)`,
+                        message: `Cannot be less than last box end (${formatDuration(lastBoxEnd)}).`,
                         duration: 3000
                     });
                 }
 
                 app.settings.timelineDuration = newValue;
+                durationInput.value = formatMsForInput(newValue);
                 renderTimelineRuler();
                 renderLanesCanvas();
                 renderTimeMarkers();
@@ -7482,7 +8001,7 @@ const V2 = {
             const pageTitleInput = document.getElementById('config-page-title');
             if (pageTitleInput) pageTitleInput.value = app.diagram.title;
 
-            syncTimeThresholdControl();
+            syncBaseTimeUnitUI();
 
             const alignmentCb = document.getElementById('config-show-alignment');
             if (alignmentCb) alignmentCb.checked = app.settings.showAlignmentLines;
@@ -7498,7 +8017,7 @@ const V2 = {
             updateToolbarToggleButtons();
 
             const durationInput = document.getElementById('config-timeline-duration');
-            if (durationInput) durationInput.value = app.settings.timelineDuration || 8000;
+            if (durationInput) durationInput.value = formatMsForInput(app.settings.timelineDuration || 8000);
 
             const startTimeInput = document.getElementById('start-time');
             if (startTimeInput) startTimeInput.value = app.diagram.startTime;
@@ -7542,11 +8061,11 @@ const V2 = {
             // Populate values
             app.elements.boxLabel.value = box.label;
             app.elements.boxColor.value = box.color;
-            app.elements.boxStart.value = box.startOffset;
-            app.elements.boxDuration.value = box.duration;
+            app.elements.boxStart.value = formatMsForInput(box.startOffset);
+            app.elements.boxDuration.value = formatMsForInput(box.duration);
 
             if (app.elements.boxEnd) {
-                app.elements.boxEnd.value = box.startOffset + box.duration;
+                app.elements.boxEnd.value = formatMsForInput(box.startOffset + box.duration);
             }
 
             const baseTime = parseTime(app.diagram.startTime);
@@ -7809,22 +8328,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const totalDuration = app.diagram.getTotalDuration();
         const settingsDuration = app.settings.timelineDuration || 8000;
-        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
 
         if (totalDuration > settingsDuration) {
             app.settings.timelineDuration = totalDuration;
             const durationInput = document.getElementById('config-timeline-duration');
-            if (durationInput) durationInput.value = totalDuration;
+            if (durationInput) durationInput.value = formatMsForInput(totalDuration);
         }
 
-        // Compression view should size to compressed content (+ configured trailing only),
-        // while normal view keeps the explicit timeline duration floor.
-        const finalDuration = Compression.enabled
-            ? (app.diagram.boxes.length > 0 ? compressedDuration : settingsDuration)
-            : Math.max(totalDuration, settingsDuration);
-
-        // Use exact pixels unless compressed
-        const minTrackWidth = msToPixels(finalDuration + (app.settings.trailingSpace || 0));
+        const minTrackWidth = msToPixels(getDisplayTimelineEndTimeMs());
 
         app.diagram.lanes.forEach(lane => {
             const row = document.createElement('div');
@@ -7964,11 +8475,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!app.settings.timelineDuration) {
             app.settings.timelineDuration = 8000;
         }
-        durationInput.value = app.settings.timelineDuration;
+        durationInput.value = formatMsForInput(app.settings.timelineDuration);
 
         // Listen for input changes (User changes duration manually)
         durationInput.addEventListener('change', () => {
-            let val = parseInt(durationInput.value, 10);
+            let val = parseInputToMs(durationInput.value, {
+                fallbackMs: app.settings.timelineDuration,
+                minMs: 1000
+            });
             const totalDur = app.diagram.getTotalDuration();
 
             // Allow user to set larger, but not smaller than total content
@@ -7976,11 +8490,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Determine if we should warn or just clamp. User said "Cannot be less than last box end" in HTML.
                 // But user also said "If the working area is expanded automatically... change the size of the option"
                 val = totalDur;
-                durationInput.value = val;
-                showToast({ type: 'info', title: 'Duration Adjusted', message: `Minimum duration is ${totalDur}ms based on existing boxes.` });
+                durationInput.value = formatMsForInput(val);
+                showToast({ type: 'info', title: 'Duration Adjusted', message: `Minimum duration is ${formatDuration(totalDur)} based on existing boxes.` });
             }
 
             app.settings.timelineDuration = val;
+            durationInput.value = formatMsForInput(val);
             renderLanesCanvas();
             renderTimelineRuler();
             renderTimeMarkers();
@@ -8089,22 +8604,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!ruler) return;
         ruler.innerHTML = '';
 
-        const totalDuration = app.diagram.getTotalDuration();
-        const settingsDuration = app.settings.timelineDuration || 8000;
-        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
-        const displayDuration = Compression.enabled
-            ? (app.diagram.boxes.length > 0 ? compressedDuration : settingsDuration)
-            : Math.max(totalDuration, settingsDuration);
-
-        let interval = 100;
-        const intervals = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 600000];
-        for (const int of intervals) {
-            if (msToPixels(int) >= 60) { interval = int; break; }
-        }
-        if (interval === 100 && msToPixels(600000) < 60) interval = 600000;
-
-        const trailing = app.settings.trailingSpace || 0;
-        const endTime = displayDuration + trailing;
+        const endTime = getDisplayTimelineEndTimeMs();
+        const interval = getAdaptiveRulerInterval(endTime);
         const rulerWidth = msToPixels(endTime);
 
         const innerWrapper = document.createElement('div');
@@ -8118,10 +8619,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const breakMarkers = Compression.getBreakMarkers();
 
             // Draw marks at compressed positions while showing actual times.
-            for (let compressedTime = 0; compressedTime <= endTime; compressedTime += interval) {
+            for (let tickIndex = 0, compressedTime = 0; compressedTime <= endTime + (interval * 0.0001); tickIndex++, compressedTime = tickIndex * interval) {
                 const actualTime = Compression.compressedToActual(compressedTime);
                 const mark = document.createElement('div');
-                mark.className = 'ruler-mark' + (compressedTime % (interval * 5) === 0 ? ' major' : '');
+                mark.className = 'ruler-mark' + (isMajorRulerTickMs(actualTime, interval) ? ' major' : '');
                 mark.style.left = `${msToPixels(compressedTime)}px`;
                 mark.innerHTML = `<span>${formatDuration(actualTime)}</span>`;
                 innerWrapper.appendChild(mark);
@@ -8139,9 +8640,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         } else {
             // Correct loop logic
-            for (let time = 0; time <= endTime; time += interval) {
+            for (let tickIndex = 0, time = 0; time <= endTime + (interval * 0.0001); tickIndex++, time = tickIndex * interval) {
                 const mark = document.createElement('div');
-                mark.className = 'ruler-mark' + (time % (interval * 5) === 0 ? ' major' : '');
+                mark.className = 'ruler-mark' + (isMajorRulerTickMs(time, interval) ? ' major' : '');
                 mark.style.left = `${msToPixels(time)}px`;
                 mark.innerHTML = `<span>${formatDuration(time)}</span>`;
                 innerWrapper.appendChild(mark);
@@ -8156,13 +8657,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!container) return;
         container.innerHTML = '';
 
-        const total = app.diagram.getTotalDuration();
-        const settings = app.settings.timelineDuration || 8000;
-        const compressedDuration = Math.max(0, Compression.getCompressedDuration());
-        const displayDuration = Compression.enabled
-            ? (app.diagram.boxes.length > 0 ? compressedDuration : settings)
-            : Math.max(total, settings);
-        const endTime = displayDuration + (app.settings.trailingSpace || 0);
+        const endTime = getDisplayTimelineEndTimeMs();
         const markerWidth = msToPixels(endTime);
 
         const innerWrapper = document.createElement('div');
@@ -8242,7 +8737,7 @@ document.addEventListener('DOMContentLoaded', () => {
         app.settings.trailingSpace = trailingValue;
 
         const trailingInput = document.getElementById('config-trailing-space');
-        if (trailingInput) trailingInput.value = trailingValue;
+        if (trailingInput) trailingInput.value = formatMsForInput(trailingValue);
 
         const trailingSlider = document.getElementById('config-trailing-slider');
         if (trailingSlider) trailingSlider.value = trailingValue;
@@ -8457,8 +8952,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Populate fields
             document.getElementById('props-box-label').value = box.label || '';
-            document.getElementById('props-box-start').value = box.startOffset;
-            document.getElementById('props-box-duration').value = box.duration;
+            document.getElementById('props-box-start').value = formatMsForInput(box.startOffset);
+            document.getElementById('props-box-duration').value = formatMsForInput(box.duration);
             document.getElementById('props-box-color').value = box.color;
             document.getElementById('props-duration-display').textContent = formatDuration(box.duration);
             document.getElementById('props-absolute-time').textContent = absoluteStart;
@@ -8517,9 +9012,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (property === 'label') {
                 box.label = boxLabel.value;
             } else if (property === 'start') {
-                box.startOffset = parseInt(boxStart.value) || 0;
+                box.startOffset = parseBoxInputToMs(boxStart.value, { fallbackMs: 0, minMs: 0 });
             } else if (property === 'duration') {
-                box.duration = Math.max(MIN_BOX_DURATION_MS, parseInt(boxDuration.value, 10) || MIN_BOX_DURATION_MS);
+                const minDurationMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
+                box.duration = parseBoxInputToMs(boxDuration.value, {
+                    fallbackMs: minDurationMs,
+                    minMs: minDurationMs
+                });
             } else if (property === 'color') {
                 box.color = boxColor.value;
             }

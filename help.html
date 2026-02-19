@@ -601,11 +601,11 @@
                 </tr>
                 <tr>
                     <td>Start Time</td>
-                    <td>Offset from diagram start time in milliseconds.</td>
+                    <td>Offset from diagram start time in the selected base unit.</td>
                 </tr>
                 <tr>
                     <td>Duration</td>
-                    <td>Box length in milliseconds.</td>
+                    <td>Box length in the selected base unit.</td>
                 </tr>
             </table>
 
@@ -853,7 +853,11 @@
                 </tr>
                 <tr>
                     <td>Time Format Threshold</td>
-                    <td>Millisecond threshold for switching to seconds/minutes display</td>
+                    <td>Dynamic detail threshold. For ms mode it controls ms→s/min formatting. For larger base units it controls when sub-units are shown (example: day↔hour).</td>
+                </tr>
+                <tr>
+                    <td>Base Time Unit</td>
+                    <td>Per-diagram display/edit unit: ms, s, min, h, d, w, mo, y (mo=30 days, y=365 days)</td>
                 </tr>
                 <tr>
                     <td>Show Alignment Lines</td>
@@ -869,7 +873,7 @@
                 </tr>
                 <tr>
                     <td>Timeline Duration</td>
-                    <td>Total canvas width in milliseconds (cannot be less than last box end)</td>
+                    <td>Total canvas width in the selected base unit (cannot be less than last box end)</td>
                 </tr>
                 <tr>
                     <td>Auto-Open Box Properties</td>
@@ -877,11 +881,11 @@
                 </tr>
                 <tr>
                     <td>Trailing Space</td>
-                    <td>Extra timeline space after the last box (in milliseconds)</td>
+                    <td>Extra timeline space after the last box (in selected base unit)</td>
                 </tr>
                 <tr>
                     <td>Gap Compression Threshold</td>
-                    <td>Minimum gap size to compress (in milliseconds)</td>
+                    <td>Minimum gap size to compress (in selected base unit)</td>
                 </tr>
                 <tr>
                     <td>Purge Application</td>

@@ -2885,76 +2885,123 @@ body.diagram-locked .header-badge {
     box-shadow: 0 0 0 1px rgba(10, 15, 31, 0.9);
 }
 
-.toolbar-select {
-    height: 28px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    font-size: 12px;
-    padding: 0 8px;
-    min-width: 88px;
+.toolbar-threshold-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
 }
 
-.toolbar-select:hover {
+.toolbar-threshold-panel {
+    position: absolute;
+    top: calc(100% + 7px);
+    right: 0;
+    z-index: 320;
+    min-width: 246px;
+    max-width: min(292px, calc(100vw - 24px));
+    padding: 9px 9px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(17, 23, 41, 0.92);
+    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(14px);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.threshold-base-unit-options {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.threshold-unit-btn {
+    height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+
+.threshold-unit-btn:hover {
     border-color: var(--text-muted);
+    color: var(--text-primary);
+    background: var(--bg-primary);
+}
+
+.threshold-unit-btn.active {
+    border-color: rgba(56, 189, 248, 0.78);
+    color: #d6f5ff;
+    background: var(--bg-secondary);
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25) inset, 0 0 8px rgba(56, 189, 248, 0.3);
+}
+
+.threshold-option-line {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 28px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.threshold-option-line:hover {
     color: var(--text-primary);
 }
 
-.toolbar-threshold-custom {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-secondary);
-    min-width: 122px;
+.threshold-option-line input[type="radio"] {
+    margin: 0;
+    accent-color: #38bdf8;
 }
 
-.toolbar-threshold-custom:focus-within {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 2px var(--border-focus);
+.threshold-option-custom {
+    justify-content: flex-start;
+    gap: 6px;
 }
 
 .toolbar-threshold-input {
-    width: 84px;
-    border: none;
+    width: 64px;
+    height: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
     outline: none;
-    background: transparent;
+    background: var(--bg-primary);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 11px;
     font-family: var(--font-mono);
+    padding: 0 6px;
+}
+
+#threshold-mode-subunit-prefix,
+#threshold-mode-subunit-suffix {
+    white-space: nowrap;
+}
+
+.toolbar-threshold-input:focus {
+    border-color: rgba(56, 189, 248, 0.7);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.22);
+}
+
+.toolbar-threshold-input:disabled {
+    color: var(--text-muted);
+    opacity: 0.65;
+    cursor: default;
 }
 
 .toolbar-threshold-input::-webkit-outer-spin-button,
 .toolbar-threshold-input::-webkit-inner-spin-button {
     margin: 0;
-}
-
-.toolbar-threshold-unit {
-    color: var(--text-muted);
-    font-size: 11px;
-    font-family: var(--font-mono);
-    user-select: none;
-}
-
-.toolbar-threshold-back {
-    height: 20px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 0 6px;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-size: 10px;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.toolbar-threshold-back:hover {
-    border-color: var(--accent-primary);
-    color: var(--text-primary);
 }
 
 .toolbar-toggle-btn {
@@ -3439,6 +3486,44 @@ body.light-theme #zoom-fit.fit-active {
 body.light-theme #zoom-fit.fit-active::after {
     background: #2563eb;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95);
+}
+
+body.light-theme .toolbar-threshold-panel {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+body.light-theme .threshold-unit-btn {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.12);
+    color: var(--text-secondary);
+}
+
+body.light-theme .threshold-unit-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: rgba(0, 0, 0, 0.2);
+    color: var(--text-primary);
+}
+
+body.light-theme .threshold-unit-btn.active {
+    background: #fff;
+    border-color: rgba(37, 99, 235, 0.65);
+    color: #1d4ed8;
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2) inset, 0 0 8px rgba(37, 99, 235, 0.28);
+}
+
+body.light-theme .threshold-option-line input[type="radio"] {
+    accent-color: #2563eb;
+}
+
+body.light-theme .toolbar-threshold-input {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.14);
+}
+
+body.light-theme .toolbar-threshold-input:focus {
+    border-color: rgba(37, 99, 235, 0.72);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 /* Keep properties-pane delete actions styled as danger in light mode */
