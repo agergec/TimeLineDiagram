@@ -3,7 +3,7 @@
    ===================================================== */
 
 const APP_VERSION = '2.1.1';
-
+const DESIGNER_HINT_TOAST_KEY = 'designer-hint-mode-help';
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
 const DEFAULT_LANE_HEIGHT = 46;
@@ -206,11 +206,31 @@ function getBoxStepMs(unit = getBaseTimeUnit()) {
     return Math.max(1, Math.round(getUnitFactorMs(unit)));
 }
 
+function getSnapStepMs({
+    unit = getBaseTimeUnit(),
+    subUnitPrecision = false
+} = {}) {
+    const normalizedUnit = normalizeBaseTimeUnit(unit);
+    if (subUnitPrecision) {
+        const subUnit = getBaseUnitSubunit(normalizedUnit);
+        if (subUnit) {
+            return Math.max(1, Math.round(getUnitFactorMs(subUnit)));
+        }
+    }
+    return getBoxStepMs(normalizedUnit);
+}
+
+function isSubUnitPrecisionActive(event) {
+    if (!event || !event.altKey) return false;
+    return !!getBaseUnitSubunit(getBaseTimeUnit());
+}
+
 function snapMsToUnitStep(ms, {
     unit = getBaseTimeUnit(),
-    mode = 'round'
+    mode = 'round',
+    subUnitPrecision = false
 } = {}) {
-    const stepMs = getBoxStepMs(unit);
+    const stepMs = getSnapStepMs({ unit, subUnitPrecision });
     const numericMs = Number(ms);
     if (!Number.isFinite(numericMs)) return 0;
     if (stepMs <= 1) return Math.round(numericMs);
@@ -226,7 +246,8 @@ function parseBoxInputToMs(value, {
     fallbackMs = 0,
     minMs = 0,
     maxMs = Number.POSITIVE_INFINITY,
-    mode = 'round'
+    mode = 'round',
+    subUnitPrecision = false
 } = {}) {
     const parsedMs = parseInputToMs(value, {
         unit: getBaseTimeUnit(),
@@ -234,7 +255,11 @@ function parseBoxInputToMs(value, {
         minMs: 0,
         maxMs
     });
-    const snappedMs = snapMsToUnitStep(parsedMs, { unit: getBaseTimeUnit(), mode });
+    const snappedMs = snapMsToUnitStep(parsedMs, {
+        unit: getBaseTimeUnit(),
+        mode,
+        subUnitPrecision
+    });
     return Math.max(minMs, Math.min(maxMs, snappedMs));
 }
 
@@ -581,6 +606,15 @@ const app = {
     measurePanelDrag: null,
     measurePanelPosition: null,
     pinnedMeasurementData: null, // Stored measurement state from loaded diagram
+
+    // Regular tooltip state
+    activeUiTooltipTarget: null,
+
+    // Designer helper mode (H shortcut)
+    designerHintsVisible: false,
+    designerHintsRaf: null,
+    designerHintTargets: [],
+    designerHintIndex: -1,
 
     // Global settings
     settings: getDefaultTimelineSettings(),
@@ -1527,7 +1561,9 @@ function showToast(options) {
         actions = null,
         toastKey = null,
         onClose = null,
-        replaceExisting = false
+        replaceExisting = false,
+        className = '',
+        showClose = true
     } = options;
 
     const container = getToastContainer();
@@ -1547,6 +1583,11 @@ function showToast(options) {
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    if (typeof className === 'string' && className.trim()) {
+        className.trim().split(/\s+/).forEach((token) => {
+            if (token) toast.classList.add(token);
+        });
+    }
     if (actions) toast.classList.add('toast-has-actions');
     if (toastKey) {
         toast.dataset.toastKey = toastKey;
@@ -1563,7 +1604,9 @@ function showToast(options) {
     if (actions) {
         html += `<div class="toast-actions"></div>`;
     }
-    html += `<button class="toast-close" aria-label="Close notification" title="Close">×</button>`;
+    if (showClose) {
+        html += `<button class="toast-close" aria-label="Close notification" title="Close">×</button>`;
+    }
 
     toast.innerHTML = html;
 
@@ -3501,6 +3544,377 @@ function hideBoxTooltip() {
     tooltip.classList.remove('visible');
 }
 
+function getUiTooltipText(target) {
+    if (!target) return '';
+    const raw = target.getAttribute('data-tooltip')
+        || target.getAttribute('title')
+        || '';
+    return raw.replace(/\s+/g, ' ').trim();
+}
+
+function primeUiTooltipTarget(target) {
+    if (!target || typeof target.getAttribute !== 'function') return '';
+    const nativeTitle = target.getAttribute('title');
+    if (nativeTitle && !target.getAttribute('data-tooltip')) {
+        target.setAttribute('data-tooltip', nativeTitle);
+    }
+    if (nativeTitle) {
+        target.removeAttribute('title');
+    }
+    return getUiTooltipText(target);
+}
+
+function normalizeNativeTitleTooltips(root = document) {
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+    root.querySelectorAll('[title]').forEach((node) => {
+        if (node.closest('#box-tooltip') || node.closest('#app-tooltip')) return;
+        primeUiTooltipTarget(node);
+    });
+}
+
+function getUiTooltipTargetFromNode(node) {
+    if (!(node instanceof Element)) return null;
+    const target = node.closest('[data-tooltip], [title]');
+    if (!target) return null;
+    if (target.closest('#box-tooltip') || target.closest('#app-tooltip')) return null;
+    const text = getUiTooltipText(target);
+    return text ? target : null;
+}
+
+function positionUiTooltip(target, tooltipEl) {
+    if (!target || !tooltipEl) return;
+    const gap = 8;
+    const rect = target.getBoundingClientRect();
+    const tipRect = tooltipEl.getBoundingClientRect();
+    let x = rect.left + ((rect.width - tipRect.width) / 2);
+    x = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, x));
+    let y = rect.top - tipRect.height - gap;
+    let below = false;
+
+    if (y < 6) {
+        y = rect.bottom + gap;
+        below = true;
+    }
+    if ((y + tipRect.height) > (window.innerHeight - 6) && below) {
+        y = Math.max(6, rect.top - tipRect.height - gap);
+        below = false;
+    }
+
+    tooltipEl.classList.toggle('below', below);
+    tooltipEl.style.left = `${Math.round(x)}px`;
+    tooltipEl.style.top = `${Math.round(y)}px`;
+}
+
+function showUiTooltip(target) {
+    const tooltipEl = app.elements.uiTooltip;
+    if (!tooltipEl) return;
+    if (app.designerHintsVisible) {
+        hideUiTooltip();
+        return;
+    }
+
+    const text = primeUiTooltipTarget(target);
+    if (!text) {
+        hideUiTooltip();
+        return;
+    }
+
+    tooltipEl.textContent = text;
+    tooltipEl.classList.add('visible');
+    positionUiTooltip(target, tooltipEl);
+    app.activeUiTooltipTarget = target;
+}
+
+function hideUiTooltip() {
+    const tooltipEl = app.elements.uiTooltip;
+    if (!tooltipEl) return;
+    tooltipEl.classList.remove('visible', 'below');
+    app.activeUiTooltipTarget = null;
+}
+
+function initRegularTooltips() {
+    document.addEventListener('mouseover', (e) => {
+        const target = getUiTooltipTargetFromNode(e.target);
+        if (!target) return;
+        if (target !== app.activeUiTooltipTarget) {
+            showUiTooltip(target);
+        } else {
+            positionUiTooltip(target, app.elements.uiTooltip);
+        }
+    }, true);
+
+    document.addEventListener('mouseout', (e) => {
+        if (!app.activeUiTooltipTarget) return;
+        const activeTarget = app.activeUiTooltipTarget;
+        if (!(e.target instanceof Element) || !activeTarget.contains(e.target)) return;
+        const related = e.relatedTarget;
+        if (related instanceof Element && activeTarget.contains(related)) return;
+        hideUiTooltip();
+    }, true);
+
+    document.addEventListener('focusin', (e) => {
+        const target = getUiTooltipTargetFromNode(e.target);
+        if (target) showUiTooltip(target);
+    });
+
+    document.addEventListener('focusout', (e) => {
+        if (!app.activeUiTooltipTarget) return;
+        const activeTarget = app.activeUiTooltipTarget;
+        if (e.target === activeTarget || (e.target instanceof Element && activeTarget.contains(e.target))) {
+            hideUiTooltip();
+        }
+    });
+
+    document.addEventListener('scroll', () => {
+        if (app.activeUiTooltipTarget && app.elements.uiTooltip?.classList.contains('visible')) {
+            positionUiTooltip(app.activeUiTooltipTarget, app.elements.uiTooltip);
+        }
+    }, true);
+}
+
+function getToolbarHintText(element) {
+    if (!element) return '';
+    const raw = element.getAttribute('data-hint')
+        || element.getAttribute('title')
+        || element.getAttribute('aria-label')
+        || element.textContent
+        || '';
+    return raw.replace(/\s+/g, ' ').trim();
+}
+
+function collectToolbarHintTargets() {
+    const toolbar = document.querySelector('.toolbar');
+    if (!toolbar) return [];
+
+    const hintNodes = Array.from(toolbar.querySelectorAll('.toolbar-btn, .toolbar-toggle-btn'));
+    return hintNodes
+        .filter((node) => {
+            if (!node.isConnected) return false;
+            if (node.closest('.toolbar-threshold-panel')) return false;
+            if (node.closest('.hidden')) return false;
+            const style = window.getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            const rect = node.getBoundingClientRect();
+            if (rect.width < 8 || rect.height < 8) return false;
+            return !!getToolbarHintText(node);
+        })
+        .map((node) => {
+            return {
+                node,
+                text: getToolbarHintText(node)
+            };
+        });
+}
+
+function ensureDesignerHintsLayer() {
+    if (app.elements.designerHintsLayer && app.elements.designerHintsLayer.isConnected) {
+        return app.elements.designerHintsLayer;
+    }
+    const layer = document.createElement('div');
+    layer.id = 'designer-hints-layer';
+    layer.className = 'designer-hints-layer';
+    document.body.appendChild(layer);
+    app.elements.designerHintsLayer = layer;
+    return layer;
+}
+
+function clearDesignerHintTargetHighlight() {
+    document.querySelectorAll('.designer-hint-target-active').forEach((node) => {
+        node.classList.remove('designer-hint-target-active');
+    });
+}
+
+function handleDesignerHintTargetPointer(event) {
+    if (!app.designerHintsVisible) return;
+    const targetNode = event.currentTarget;
+    const nextIndex = app.designerHintTargets.findIndex((target) => target.node === targetNode);
+    if (nextIndex >= 0) {
+        app.designerHintIndex = nextIndex;
+        renderDesignerHints();
+    }
+}
+
+function refreshDesignerHintTargets({ preserveCurrent = true } = {}) {
+    normalizeNativeTitleTooltips(document.body);
+
+    const previousNode = preserveCurrent && app.designerHintIndex >= 0
+        ? app.designerHintTargets[app.designerHintIndex]?.node
+        : null;
+
+    (app.designerHintTargets || []).forEach((target) => {
+        if (!target?.node) return;
+        target.node.removeEventListener('mouseenter', handleDesignerHintTargetPointer);
+        target.node.removeEventListener('focus', handleDesignerHintTargetPointer);
+    });
+    clearDesignerHintTargetHighlight();
+
+    app.designerHintTargets = collectToolbarHintTargets();
+    app.designerHintTargets.forEach((target) => {
+        target.node.addEventListener('mouseenter', handleDesignerHintTargetPointer);
+        target.node.addEventListener('focus', handleDesignerHintTargetPointer);
+    });
+
+    if (!app.designerHintTargets.length) {
+        app.designerHintIndex = -1;
+        return;
+    }
+
+    const preservedIndex = previousNode
+        ? app.designerHintTargets.findIndex((target) => target.node === previousNode)
+        : -1;
+    if (preservedIndex >= 0) {
+        app.designerHintIndex = preservedIndex;
+        return;
+    }
+
+    const clampedPrevious = Number.isFinite(app.designerHintIndex)
+        ? Math.max(0, Math.min(app.designerHintTargets.length - 1, app.designerHintIndex))
+        : 0;
+    app.designerHintIndex = clampedPrevious;
+}
+
+function setActiveDesignerHintIndex(nextIndex) {
+    const total = app.designerHintTargets.length;
+    if (!total) {
+        app.designerHintIndex = -1;
+        renderDesignerHints();
+        return;
+    }
+    const numericIndex = Number(nextIndex);
+    if (!Number.isFinite(numericIndex)) return;
+    const wrappedIndex = ((Math.round(numericIndex) % total) + total) % total;
+    app.designerHintIndex = wrappedIndex;
+    renderDesignerHints();
+}
+
+function cycleDesignerHints(direction = 1) {
+    const total = app.designerHintTargets.length;
+    if (!total) return;
+    const current = Number.isFinite(app.designerHintIndex) ? app.designerHintIndex : 0;
+    setActiveDesignerHintIndex(current + (direction >= 0 ? 1 : -1));
+}
+
+function showDesignerHintsGuidanceToast() {
+    showToast({
+        type: 'info',
+        title: 'Help Mode',
+        message: 'Hover toolbar buttons or use \u2190/\u2192 to navigate. Press H or Esc to exit.',
+        duration: 4500,
+        toastKey: DESIGNER_HINT_TOAST_KEY,
+        replaceExisting: true
+    });
+}
+
+function hideDesignerHintsGuidanceToast() {
+    const toast = activeToastByKey.get(DESIGNER_HINT_TOAST_KEY);
+    if (toast && toast.isConnected) {
+        hideToast(toast, { reason: 'dismiss' });
+    }
+}
+
+function renderDesignerHints() {
+    if (!app.designerHintsVisible) return;
+
+    const layer = ensureDesignerHintsLayer();
+    layer.innerHTML = '';
+    clearDesignerHintTargetHighlight();
+
+    const total = app.designerHintTargets.length;
+    if (!total || app.designerHintIndex < 0 || app.designerHintIndex >= total) {
+        layer.classList.remove('active');
+        return;
+    }
+
+    const target = app.designerHintTargets[app.designerHintIndex];
+    if (!target || !target.node || !target.node.isConnected) {
+        layer.classList.remove('active');
+        return;
+    }
+    target.node.classList.add('designer-hint-target-active');
+
+    const hint = document.createElement('div');
+    hint.className = 'designer-hint-chip';
+
+    const indexChip = document.createElement('span');
+    indexChip.className = 'designer-hint-step';
+    indexChip.textContent = `${app.designerHintIndex + 1}/${total}`;
+    hint.appendChild(indexChip);
+
+    const textChip = document.createElement('span');
+    textChip.className = 'designer-hint-text';
+    textChip.textContent = target.text;
+    hint.appendChild(textChip);
+
+    layer.appendChild(hint);
+    layer.classList.add('active');
+
+    const rect = target.node.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    const gap = 8;
+    let x = rect.left + ((rect.width - hintRect.width) / 2);
+    x = Math.max(8, Math.min(window.innerWidth - hintRect.width - 8, x));
+    let y = rect.top - hintRect.height - gap;
+    if (y < 4) {
+        y = rect.bottom + gap;
+    }
+    if (y + hintRect.height > window.innerHeight - 4) {
+        y = Math.max(4, rect.top - hintRect.height - gap);
+    }
+
+    hint.style.left = `${Math.round(x)}px`;
+    hint.style.top = `${Math.round(y)}px`;
+}
+
+function scheduleDesignerHintsRender({ refreshTargets = true } = {}) {
+    if (!app.designerHintsVisible) return;
+    if (app.designerHintsRaf) {
+        cancelAnimationFrame(app.designerHintsRaf);
+        app.designerHintsRaf = null;
+    }
+    app.designerHintsRaf = requestAnimationFrame(() => {
+        app.designerHintsRaf = null;
+        if (refreshTargets) {
+            refreshDesignerHintTargets({ preserveCurrent: true });
+        }
+        renderDesignerHints();
+    });
+}
+
+function toggleDesignerHints(forceVisible = null) {
+    const shouldShow = typeof forceVisible === 'boolean'
+        ? forceVisible
+        : !app.designerHintsVisible;
+    if (shouldShow === app.designerHintsVisible) return;
+    app.designerHintsVisible = shouldShow;
+    document.body.classList.toggle('designer-hints-active', shouldShow);
+    if (shouldShow) {
+        normalizeNativeTitleTooltips(document.body);
+        hideUiTooltip();
+        refreshDesignerHintTargets({ preserveCurrent: false });
+        showDesignerHintsGuidanceToast();
+        scheduleDesignerHintsRender({ refreshTargets: false });
+        return;
+    }
+    if (app.designerHintsRaf) {
+        cancelAnimationFrame(app.designerHintsRaf);
+        app.designerHintsRaf = null;
+    }
+    hideDesignerHintsGuidanceToast();
+    (app.designerHintTargets || []).forEach((target) => {
+        if (!target?.node) return;
+        target.node.removeEventListener('mouseenter', handleDesignerHintTargetPointer);
+        target.node.removeEventListener('focus', handleDesignerHintTargetPointer);
+    });
+    clearDesignerHintTargetHighlight();
+    app.designerHintTargets = [];
+    app.designerHintIndex = -1;
+    const layer = app.elements.designerHintsLayer || document.getElementById('designer-hints-layer');
+    if (layer) {
+        layer.classList.remove('active');
+        layer.innerHTML = '';
+    }
+}
+
 function updateTotalDuration() {
     const duration = app.diagram.getTotalDuration();
     app.elements.totalDuration.textContent = formatDuration(duration);
@@ -3879,7 +4293,8 @@ function handleMouseMove(e) {
             newStart = Compression.compressedToActual(newStart);
         }
 
-        box.startOffset = Math.max(0, snapMsToUnitStep(newStart));
+        const subUnitPrecision = isSubUnitPrecisionActive(e);
+        box.startOffset = Math.max(0, snapMsToUnitStep(newStart, { subUnitPrecision }));
 
         // Invalidate compression cache after changing position, then get visual offset
         if (Compression.enabled) {
@@ -3911,16 +4326,17 @@ function handleMouseMove(e) {
             mouseMs = Compression.compressedToActual(mouseMs);
         }
 
-        const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
+        const subUnitPrecision = isSubUnitPrecisionActive(e);
+        const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getSnapStepMs({ subUnitPrecision }));
         if (app.dragData.side === 'right') {
-            const snappedEnd = snapMsToUnitStep(mouseMs);
+            const snappedEnd = snapMsToUnitStep(mouseMs, { subUnitPrecision });
             const minEnd = box.startOffset + boxStepMs;
             const finalEnd = Math.max(minEnd, snappedEnd);
             box.duration = Math.max(boxStepMs, finalEnd - box.startOffset);
         } else {
             const endOffset = app.dragData.originalStart + app.dragData.originalDuration;
             const minDurationForThisBox = Math.min(boxStepMs, Math.max(MIN_BOX_DURATION_MS, endOffset));
-            const snappedStart = snapMsToUnitStep(mouseMs);
+            const snappedStart = snapMsToUnitStep(mouseMs, { subUnitPrecision });
             const maxStart = endOffset - minDurationForThisBox;
             const newStart = Math.max(0, Math.min(snappedStart, maxStart));
             box.startOffset = newStart;
@@ -3979,9 +4395,10 @@ function handleMouseUp(e) {
                 actualEndMs = Compression.compressedToActual(actualEndMs);
             }
 
-            const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getBoxStepMs());
-            let startOffset = Math.max(0, snapMsToUnitStep(actualStartMs));
-            let endOffset = Math.max(startOffset + boxStepMs, snapMsToUnitStep(actualEndMs));
+            const subUnitPrecision = isSubUnitPrecisionActive(e);
+            const boxStepMs = Math.max(MIN_BOX_DURATION_MS, getSnapStepMs({ subUnitPrecision }));
+            let startOffset = Math.max(0, snapMsToUnitStep(actualStartMs, { subUnitPrecision }));
+            let endOffset = Math.max(startOffset + boxStepMs, snapMsToUnitStep(actualEndMs, { subUnitPrecision }));
             if (endOffset <= startOffset) {
                 endOffset = startOffset + boxStepMs;
             }
@@ -5140,6 +5557,7 @@ function syncZoomFitIndicator() {
 
     fitBtn.classList.toggle('fit-active', isActive);
     fitBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    scheduleDesignerHintsRender();
 }
 
 function handleZoom(direction) {
@@ -6444,6 +6862,7 @@ function setThresholdPanelOpen(open) {
     panel.classList.toggle('hidden', !shouldOpen);
     toggleBtn.classList.toggle('active', shouldOpen);
     toggleBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    scheduleDesignerHintsRender();
 }
 
 function toggleThresholdPanel() {
@@ -6568,6 +6987,7 @@ function updateToolbarToggleButtons() {
             label.classList.toggle('active', !!input.checked);
         }
     });
+    scheduleDesignerHintsRender();
 }
 
 function syncTimeThresholdControl() {
@@ -7056,6 +7476,12 @@ function init() {
     tooltip.className = 'box-tooltip';
     document.body.appendChild(tooltip);
 
+    const uiTooltip = document.createElement('div');
+    uiTooltip.id = 'app-tooltip';
+    uiTooltip.className = 'tooltip app-tooltip';
+    uiTooltip.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(uiTooltip);
+
     // Cache DOM elements
     app.elements = {
         diagramTitle: document.getElementById('diagram-title'),
@@ -7077,8 +7503,11 @@ function init() {
         boxTimeEnd: document.getElementById('box-time-end'),
         alignmentMarkers: document.getElementById('alignment-markers'),
         fileInput: document.getElementById('file-input'),
-        tooltip: tooltip
+        tooltip: tooltip,
+        uiTooltip: uiTooltip
     };
+
+    initRegularTooltips();
 
     // Header event listeners
     app.elements.diagramTitle.addEventListener('change', (e) => {
@@ -7255,6 +7684,7 @@ function init() {
             updateMeasurementDisplay();
             applyMeasurementPanelPosition();
         }
+        scheduleDesignerHintsRender();
     });
 
     // Trailing space controls
@@ -7517,8 +7947,33 @@ function init() {
             active.tagName === 'SELECT' ||
             active.isContentEditable
         );
+        const lowerKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+
+        if (!isTextInputActive && !e.ctrlKey && !e.metaKey && !e.altKey && lowerKey === 'h') {
+            e.preventDefault();
+            toggleDesignerHints();
+            return;
+        }
+
+        if (app.designerHintsVisible && !isTextInputActive && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                cycleDesignerHints(1);
+                return;
+            }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                cycleDesignerHints(-1);
+                return;
+            }
+        }
 
         if (e.key === 'Escape') {
+            if (app.designerHintsVisible) {
+                e.preventDefault();
+                toggleDesignerHints(false);
+                return;
+            }
             if (pendingPurgeRequest) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -7560,7 +8015,6 @@ function init() {
             }
         }
 
-        const lowerKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !isTextInputActive) {
             if (lowerKey === 'z') {
                 e.preventDefault();
@@ -7607,6 +8061,7 @@ function init() {
         renderTimelineRuler();
         renderAlignmentCanvasOverlay();
         syncZoomFitIndicator();
+        scheduleDesignerHintsRender();
     });
 
     // Share button

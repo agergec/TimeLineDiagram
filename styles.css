@@ -584,16 +584,21 @@ h1, h2, h3, h4 {
 /* Box Floating Tooltip */
 .box-tooltip {
     position: fixed;
-    background: var(--bg-card);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    color: var(--text-primary);
+    --helper-tooltip-bg: rgba(11, 18, 32, 0.92);
+    --helper-tooltip-border: rgba(45, 212, 191, 0.42);
+    --helper-tooltip-text: #d6f5ff;
+    --helper-tooltip-muted: rgba(182, 228, 242, 0.82);
+    --helper-tooltip-value: rgba(226, 252, 255, 0.97);
+    background: var(--helper-tooltip-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--helper-tooltip-border);
+    border-radius: 6px;
+    padding: 9px 11px;
+    font-size: 11px;
+    color: var(--helper-tooltip-text);
     z-index: 1000;
     pointer-events: none;
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 8px 20px rgba(3, 8, 20, 0.42);
     max-width: 300px;
     opacity: 0;
     transform: translateY(5px);
@@ -607,26 +612,27 @@ h1, h2, h3, h4 {
 
 .box-tooltip .tooltip-label {
     font-weight: 600;
-    font-size: 13px;
-    margin-bottom: 6px;
-    color: var(--text-primary);
+    font-size: 12px;
+    margin-bottom: 5px;
+    color: var(--helper-tooltip-text);
+    letter-spacing: 0.01em;
 }
 
 .box-tooltip .tooltip-row {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
-    margin-top: 4px;
-    font-family: 'Monaco', 'Menlo', monospace;
+    gap: 12px;
+    margin-top: 3px;
+    font-family: var(--font-mono);
     font-size: 11px;
 }
 
 .box-tooltip .tooltip-row .label {
-    color: var(--text-muted);
+    color: var(--helper-tooltip-muted);
 }
 
 .box-tooltip .tooltip-row .value {
-    color: var(--text-secondary);
+    color: var(--helper-tooltip-value);
 }
 
 /* Persistent Box Labels (floating above boxes) */
@@ -1748,17 +1754,33 @@ body.show-box-labels .lanes-canvas .lane-row:first-of-type .box-floating-label {
    ===================================================== */
 .tooltip {
     position: absolute;
-    background: var(--bg-card);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border-color);
+    --helper-tooltip-bg: rgba(11, 18, 32, 0.92);
+    --helper-tooltip-border: rgba(45, 212, 191, 0.42);
+    --helper-tooltip-text: #d6f5ff;
+    background: var(--helper-tooltip-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--helper-tooltip-border);
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 11px;
-    color: var(--text-primary);
+    color: var(--helper-tooltip-text);
     white-space: nowrap;
     z-index: 1000;
     pointer-events: none;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 6px 16px rgba(3, 8, 20, 0.4);
+}
+
+.tooltip.app-tooltip {
+    position: fixed;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 1100;
+}
+
+.tooltip.app-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .tooltip::after {
@@ -1768,7 +1790,14 @@ body.show-box-labels .lanes-canvas .lane-row:first-of-type .box-floating-label {
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-top-color: var(--bg-card);
+    border-top-color: var(--helper-tooltip-bg);
+}
+
+.tooltip.app-tooltip.below::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: var(--helper-tooltip-bg);
 }
 
 /* =====================================================
@@ -3091,6 +3120,59 @@ body.diagram-locked .header-badge {
     border: 0;
 }
 
+.designer-hints-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    pointer-events: none;
+}
+
+.designer-hints-layer:not(.active) {
+    display: none;
+}
+
+.designer-hint-chip {
+    position: absolute;
+    min-height: 24px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(45, 212, 191, 0.5);
+    background: rgba(11, 18, 32, 0.9);
+    color: #d6f5ff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    text-transform: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    box-shadow: 0 6px 16px rgba(3, 8, 20, 0.45);
+}
+
+.designer-hint-step {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    color: rgba(148, 248, 226, 0.95);
+    border: 1px solid rgba(45, 212, 191, 0.36);
+    border-radius: 999px;
+    background: rgba(10, 16, 30, 0.76);
+    padding: 2px 6px;
+}
+
+.designer-hint-text {
+    line-height: 1.2;
+}
+
+.toolbar-btn.designer-hint-target-active,
+.toolbar-toggle-btn.designer-hint-target-active {
+    border-color: rgba(45, 212, 191, 0.72) !important;
+    box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.3) inset, 0 0 10px rgba(45, 212, 191, 0.38);
+    color: #d6f5ff;
+}
+
 /* Zoom controls in toolbar */
 .zoom-controls-v2 {
     display: flex;
@@ -3491,6 +3573,39 @@ body.light-theme #zoom-fit.fit-active::after {
 body.light-theme .toolbar-threshold-panel {
     background: rgba(255, 255, 255, 0.96);
     border-color: rgba(0, 0, 0, 0.12);
+}
+
+body.light-theme .box-tooltip,
+body.light-theme .tooltip {
+    --helper-tooltip-bg: rgba(243, 248, 255, 0.96);
+    --helper-tooltip-border: rgba(8, 145, 178, 0.36);
+    --helper-tooltip-text: #124160;
+}
+
+body.light-theme .box-tooltip {
+    --helper-tooltip-muted: rgba(49, 94, 123, 0.8);
+    --helper-tooltip-value: rgba(20, 76, 109, 0.96);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+}
+
+body.light-theme .designer-hint-chip {
+    border-color: rgba(8, 145, 178, 0.4);
+    background: rgba(243, 248, 255, 0.95);
+    color: #124160;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+}
+
+body.light-theme .designer-hint-step {
+    color: #0f4f6d;
+    border-color: rgba(8, 145, 178, 0.36);
+    background: rgba(235, 247, 255, 0.94);
+}
+
+body.light-theme .toolbar-btn.designer-hint-target-active,
+body.light-theme .toolbar-toggle-btn.designer-hint-target-active {
+    border-color: rgba(8, 145, 178, 0.62) !important;
+    box-shadow: 0 0 0 1px rgba(8, 145, 178, 0.22) inset, 0 0 10px rgba(8, 145, 178, 0.25);
+    color: #0f4f6d;
 }
 
 body.light-theme .threshold-unit-btn {
