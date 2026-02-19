@@ -4,6 +4,7 @@
 
 const APP_VERSION = '2.1.1';
 const DESIGNER_HINT_TOAST_KEY = 'designer-hint-mode-help';
+const REGULAR_TOOLTIP_DELAY_MS = 550;
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
 const DEFAULT_LANE_HEIGHT = 46;
@@ -609,6 +610,8 @@ const app = {
 
     // Regular tooltip state
     activeUiTooltipTarget: null,
+    pendingUiTooltipTarget: null,
+    uiTooltipShowTimer: null,
 
     // Designer helper mode (H shortcut)
     designerHintsVisible: false,
@@ -3577,30 +3580,40 @@ function getUiTooltipTargetFromNode(node) {
     const target = node.closest('[data-tooltip], [title]');
     if (!target) return null;
     if (target.closest('#box-tooltip') || target.closest('#app-tooltip')) return null;
-    const text = getUiTooltipText(target);
+    const text = primeUiTooltipTarget(target);
     return text ? target : null;
+}
+
+function clearUiTooltipShowTimer() {
+    if (app.uiTooltipShowTimer) {
+        clearTimeout(app.uiTooltipShowTimer);
+        app.uiTooltipShowTimer = null;
+    }
+    app.pendingUiTooltipTarget = null;
 }
 
 function positionUiTooltip(target, tooltipEl) {
     if (!target || !tooltipEl) return;
-    const gap = 8;
+    const offsetX = 8;
+    const offsetY = 7;
+    const edgePadding = 6;
     const rect = target.getBoundingClientRect();
     const tipRect = tooltipEl.getBoundingClientRect();
-    let x = rect.left + ((rect.width - tipRect.width) / 2);
-    x = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, x));
-    let y = rect.top - tipRect.height - gap;
-    let below = false;
 
-    if (y < 6) {
-        y = rect.bottom + gap;
-        below = true;
+    let x = rect.right + offsetX;
+    let y = rect.bottom + offsetY;
+
+    if ((x + tipRect.width) > (window.innerWidth - edgePadding)) {
+        x = rect.left - tipRect.width - offsetX;
     }
-    if ((y + tipRect.height) > (window.innerHeight - 6) && below) {
-        y = Math.max(6, rect.top - tipRect.height - gap);
-        below = false;
+    if ((y + tipRect.height) > (window.innerHeight - edgePadding)) {
+        y = rect.top - tipRect.height - offsetY;
     }
 
-    tooltipEl.classList.toggle('below', below);
+    x = Math.max(edgePadding, Math.min(window.innerWidth - tipRect.width - edgePadding, x));
+    y = Math.max(edgePadding, Math.min(window.innerHeight - tipRect.height - edgePadding, y));
+
+    tooltipEl.classList.remove('below');
     tooltipEl.style.left = `${Math.round(x)}px`;
     tooltipEl.style.top = `${Math.round(y)}px`;
 }
@@ -3613,6 +3626,7 @@ function showUiTooltip(target) {
         return;
     }
 
+    clearUiTooltipShowTimer();
     const text = primeUiTooltipTarget(target);
     if (!text) {
         hideUiTooltip();
@@ -3625,7 +3639,25 @@ function showUiTooltip(target) {
     app.activeUiTooltipTarget = target;
 }
 
+function scheduleUiTooltip(target, { immediate = false } = {}) {
+    if (!target) return;
+    clearUiTooltipShowTimer();
+    if (immediate) {
+        showUiTooltip(target);
+        return;
+    }
+    app.pendingUiTooltipTarget = target;
+    app.uiTooltipShowTimer = setTimeout(() => {
+        const pendingTarget = app.pendingUiTooltipTarget;
+        clearUiTooltipShowTimer();
+        if (pendingTarget && pendingTarget.isConnected) {
+            showUiTooltip(pendingTarget);
+        }
+    }, REGULAR_TOOLTIP_DELAY_MS);
+}
+
 function hideUiTooltip() {
+    clearUiTooltipShowTimer();
     const tooltipEl = app.elements.uiTooltip;
     if (!tooltipEl) return;
     tooltipEl.classList.remove('visible', 'below');
@@ -3637,24 +3669,25 @@ function initRegularTooltips() {
         const target = getUiTooltipTargetFromNode(e.target);
         if (!target) return;
         if (target !== app.activeUiTooltipTarget) {
-            showUiTooltip(target);
+            scheduleUiTooltip(target);
         } else {
             positionUiTooltip(target, app.elements.uiTooltip);
         }
     }, true);
 
     document.addEventListener('mouseout', (e) => {
-        if (!app.activeUiTooltipTarget) return;
-        const activeTarget = app.activeUiTooltipTarget;
-        if (!(e.target instanceof Element) || !activeTarget.contains(e.target)) return;
+        const tooltipTarget = getUiTooltipTargetFromNode(e.target);
+        if (!tooltipTarget) return;
         const related = e.relatedTarget;
-        if (related instanceof Element && activeTarget.contains(related)) return;
-        hideUiTooltip();
+        if (related instanceof Element && tooltipTarget.contains(related)) return;
+        if (app.pendingUiTooltipTarget === tooltipTarget || app.activeUiTooltipTarget === tooltipTarget) {
+            hideUiTooltip();
+        }
     }, true);
 
     document.addEventListener('focusin', (e) => {
         const target = getUiTooltipTargetFromNode(e.target);
-        if (target) showUiTooltip(target);
+        if (target) scheduleUiTooltip(target, { immediate: true });
     });
 
     document.addEventListener('focusout', (e) => {
@@ -3850,16 +3883,21 @@ function renderDesignerHints() {
 
     const rect = target.node.getBoundingClientRect();
     const hintRect = hint.getBoundingClientRect();
-    const gap = 8;
-    let x = rect.left + ((rect.width - hintRect.width) / 2);
-    x = Math.max(8, Math.min(window.innerWidth - hintRect.width - 8, x));
-    let y = rect.top - hintRect.height - gap;
-    if (y < 4) {
-        y = rect.bottom + gap;
+    const edgePadding = 6;
+    const offsetX = 10;
+    const offsetY = 7;
+    let x = rect.right + offsetX;
+    let y = rect.bottom + offsetY;
+
+    if ((x + hintRect.width) > (window.innerWidth - edgePadding)) {
+        x = rect.left - hintRect.width - offsetX;
     }
-    if (y + hintRect.height > window.innerHeight - 4) {
-        y = Math.max(4, rect.top - hintRect.height - gap);
+    if ((y + hintRect.height) > (window.innerHeight - edgePadding)) {
+        y = rect.top - hintRect.height - offsetY;
     }
+
+    x = Math.max(edgePadding, Math.min(window.innerWidth - hintRect.width - edgePadding, x));
+    y = Math.max(edgePadding, Math.min(window.innerHeight - hintRect.height - edgePadding, y));
 
     hint.style.left = `${Math.round(x)}px`;
     hint.style.top = `${Math.round(y)}px`;
