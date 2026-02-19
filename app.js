@@ -4,6 +4,7 @@
 
 const APP_VERSION = '2.1.1';
 const DESIGNER_HINT_TOAST_KEY = 'designer-hint-mode-help';
+const HELP_SHORTCUT_HINT_SESSION_KEY = 'timeline-help-shortcut-tip-shown';
 const REGULAR_TOOLTIP_DELAY_MS = 550;
 // Default minimum timeline scale for new diagrams (in milliseconds)
 const DEFAULT_MIN_TIMELINE_MS = 10000;
@@ -3827,12 +3828,38 @@ function cycleDesignerHints(direction = 1) {
     setActiveDesignerHintIndex(current + (direction >= 0 ? 1 : -1));
 }
 
+function showHelpShortcutHintIfNeeded() {
+    if (app.designerHintsVisible) return;
+
+    let alreadyShown = false;
+    try {
+        alreadyShown = sessionStorage.getItem(HELP_SHORTCUT_HINT_SESSION_KEY) === '1';
+    } catch (_) {}
+    if (alreadyShown) return;
+
+    try {
+        sessionStorage.setItem(HELP_SHORTCUT_HINT_SESSION_KEY, '1');
+    } catch (_) {}
+
+    showToast({
+        type: 'info',
+        title: 'Help Shortcuts',
+        message: 'H = Help mode, Esc = Exit help mode.',
+        duration: 4200,
+        className: 'toast-help-shortcuts',
+        toastKey: 'help-shortcut-tip',
+        replaceExisting: true
+    });
+}
+
 function showDesignerHintsGuidanceToast() {
     showToast({
         type: 'info',
-        title: 'Help Mode',
-        message: 'Hover toolbar buttons or use \u2190/\u2192 to navigate. Press H or Esc to exit.',
-        duration: 4500,
+        title: 'Help Mode Active',
+        message: 'H = Help mode, Esc = Exit. Click toolbar buttons for contextual help.',
+        duration: 0,
+        showClose: false,
+        className: 'toast-help-shortcuts',
         toastKey: DESIGNER_HINT_TOAST_KEY,
         replaceExisting: true
     });
@@ -8154,6 +8181,11 @@ function init() {
     if (diagrams.length > 0 && diagramsPanel) {
         diagramsPanel.classList.add('open');
     }
+
+    // One-time per-tab onboarding hint for helper mode shortcuts.
+    window.setTimeout(() => {
+        showHelpShortcutHintIfNeeded();
+    }, 900);
 }
 
 // Start the app when DOM is ready

@@ -42,7 +42,8 @@ Visual tool for creating timeline diagrams to map processes, API calls, and sequ
 |-----|--------|
 | `Cmd/Ctrl` + Click + Drag | Measure time distance |
 | `Delete` / `Backspace` | Delete selected box |
-| `Escape` | Deselect / Cancel / Close sidebar |
+| `H` | Toggle helper mode |
+| `Escape` | Exit helper mode, deselect, cancel, or close sidebar |
 
 ---
 
