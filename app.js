@@ -6707,12 +6707,13 @@ function showSettingsPanel() {
     if (settingsBtn) settingsBtn.classList.add('active');
 }
 
-function handleSettingsChange() {
+function handleSettingsChange(event = null) {
     const previousBaseUnit = getBaseTimeUnit();
 
-    // Page title
+    // Page title: only sync when title input actually triggered the update.
     const pageTitleInput = document.getElementById('config-page-title');
-    if (pageTitleInput) {
+    const titleTriggered = !!(event && event.target && event.target.id === 'config-page-title');
+    if (pageTitleInput && titleTriggered) {
         app.diagram.title = pageTitleInput.value;
         app.elements.diagramTitle.value = pageTitleInput.value;
     }
